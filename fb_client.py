@@ -364,3 +364,45 @@ class FileBrowserClient:
         except Exception as e:
             print(f"[FileBrowserClient] delete error for {remote_path}: {e}")
             return False
+
+    def get_or_create_share_link(self, remote_path: str) -> Optional[str]:
+        """
+        Retrieves an existing public share link or creates a new one via FileBrowser API.
+        Returns the full public URL (e.g. 'https://host.com/share/aBcDeF') or direct web link fallback.
+        """
+        if not self.ensure_authenticated():
+            return None
+
+        clean_path = "/" + remote_path.strip("/")
+        encoded = self._encode_path(clean_path)
+
+        # 1. Check if public share link already exists
+        url_get = f"{self.base_url}/api/share{encoded}"
+        try:
+            resp = self.session.get(url_get, timeout=self.timeout)
+            if resp.status_code == 200:
+                shares = resp.json()
+                if isinstance(shares, list) and len(shares) > 0:
+                    first_share = shares[0]
+                    if isinstance(first_share, dict) and "hash" in first_share:
+                        return f"{self.base_url}/share/{first_share['hash']}"
+        except Exception as e:
+            print(f"[FileBrowserClient] Error checking share for {remote_path}: {e}")
+
+        # 2. Create new public share link
+        url_post = f"{self.base_url}/api/share{encoded}"
+        try:
+            resp = self.session.post(url_post, json={}, timeout=self.timeout)
+            if resp.status_code in (401, 403):
+                if self.login():
+                    resp = self.session.post(url_post, json={}, timeout=self.timeout)
+
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                if isinstance(data, dict) and "hash" in data:
+                    return f"{self.base_url}/share/{data['hash']}"
+        except Exception as e:
+            print(f"[FileBrowserClient] Error creating share for {remote_path}: {e}")
+
+        # 3. Graceful fallback: direct web link inside FileBrowser files viewer
+        return f"{self.base_url}/files{encoded}"

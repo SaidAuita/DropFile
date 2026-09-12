@@ -30,13 +30,16 @@ class SyncEngine:
         client: FileBrowserClient,
         on_status_change: Optional[Callable[[str, str], None]] = None,
         on_notify: Optional[Callable[[str, str], None]] = None,
+        on_share_ready: Optional[Callable[[Dict[str, str]], None]] = None,
     ):
         self.config = config
         self.state_db = state_db
         self.client = client
         self.on_status_change = on_status_change  # (status_text, state: "idle"|"syncing"|"error"|"paused")
         self.on_notify = on_notify  # (title, message)
+        self.on_share_ready = on_share_ready  # (last_item_dict)
 
+        self.last_uploaded_item: Optional[Dict[str, str]] = None
         self._running = False
         self._paused = False
         self._sync_lock = threading.Lock()
@@ -287,6 +290,7 @@ class SyncEngine:
                 )
                 self.state_db.upsert_record(new_rec)
                 self.state_db.log_sync(clean_rel, "upload", "local->remote", "success")
+                self._record_uploaded_item(local_file, clean_rel, remote_dest)
                 self.notify("DropFile: Загрузка завершена", f"Файл {local_file.name} отправлен на сервер.")
                 print(f"[SyncEngine] Successfully uploaded: {clean_rel}")
             else:
@@ -506,11 +510,32 @@ class SyncEngine:
             )
             self.state_db.upsert_record(rec)
             self.state_db.log_sync(rel, "upload", "local->remote", "success")
+            self._record_uploaded_item(local_file, rel, remote_dest)
             print(f"[SyncEngine] Successfully uploaded: {rel}")
             return True
         else:
             self.state_db.log_sync(rel, "upload", "local->remote", "error", "Upload failed")
             return False
+
+    def _record_uploaded_item(self, local_file: Path, rel_path: str, remote_dest: str) -> None:
+        """Stores details and share URL of the most recently uploaded file or folder."""
+        try:
+            share_url = self.client.get_or_create_share_link(remote_dest)
+        except Exception as e:
+            print(f"[SyncEngine] Error obtaining share link: {e}")
+            share_url = f"{self.config.server_url}/files{remote_dest}"
+
+        self.last_uploaded_item = {
+            "name": local_file.name,
+            "rel_path": rel_path,
+            "remote_path": remote_dest,
+            "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
+        }
+        if self.on_share_ready:
+            try:
+                self.on_share_ready(self.last_uploaded_item)
+            except Exception as e:
+                print(f"[SyncEngine] on_share_ready callback error: {e}")
 
     def _handle_conflict(self, rel: str, local_file: Path, r_item: RemoteItem) -> None:
         """Handles simultaneous local & remote edits by creating a conflicted copy."""

@@ -45,6 +45,13 @@
   - 🔄 **Syncing**: Transferring files to or from the server.
   - 🔴 **Error**: Network or authentication issue.
   - ⏸️ **Paused**: Synchronization temporarily paused.
+- 🔗 **Instant Public Share Links in System Tray**:
+  - Automatically creates a public share link (`/share/{hash}`) via FileBrowser API for the most recently uploaded file or folder.
+  - One-click copy actions right in the tray context menu: *"🔗 Copy link: «filename»"* and *"📋 Copy filename"*.
+  - Native toast notifications confirm when the link is copied to the clipboard, ready to send.
+- 💾 **Settings Backup & Restore**:
+  - One-click export of your full configuration to a JSON backup file and instant restoration.
+  - Great for updating the app, reinstalling, or syncing configuration across multiple PCs.
 - ⚙️ **Modern GUI Settings Dialog**:
   - Built-in connection tester button (*"⚡ Test Connection"*).
   - Configurable local directory and remote server path (default: `/DropFile`).
@@ -169,6 +176,12 @@ python -m unittest discover tests
 
 ### 🌟 Основные возможности
 - 🔄 **Двусторонняя автоматическая синхронизация**: локальный мониторинг через `watchdog` и фоновый периодический опрос сервера.
+- 🔗 **Мгновенные публичные ссылки для обмена в трее**:
+  - Автоматически создает публичную ссылку (`/share/{hash}`) через API FileBrowser для последнего выгруженного файла или папки.
+  - Копирование ссылки или имени файла в буфер обмена прямо из контекстного меню трея в один клик (*«🔗 Скопировать ссылку: «файл»»*).
+  - Уведомление о готовности ссылки для моментальной отправки в мессенджеры или почту.
+- 💾 **Резервная копия и восстановление настроек**:
+  - Экспорт и импорт всех настроек в файл `.json` в один клик. Удобно при обновлениях программы или переносе конфигурации на новый ПК.
 - 🛡️ **Защита от зацикливания и конфликтов**: дебаунсинг записи, подавление эхо и создание копий `(Конфликт PC YYYY-MM-DD)`.
 - 🕒 **Информативный трей**: цветовая индикация (зеленый / синий / красный / желтый) и контекстное меню.
 - ⚙️ **Графический интерфейс настроек**: проверка соединения в один клик, выбор папок, создание ярлыка, настройка исключений и журнал событий.

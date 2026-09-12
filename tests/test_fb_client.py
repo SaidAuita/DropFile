@@ -64,6 +64,34 @@ class TestFBClient(unittest.TestCase):
         self.assertIn("/Exchange/sub/doc.txt", paths)
         self.assertIn("/Exchange/photo.jpg", paths)
 
+    def test_get_existing_share_link(self):
+        from unittest.mock import Mock, patch
+        self.client.token = "mock_jwt"
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = [{"hash": "hash123", "path": "/Exchange/doc.pdf"}]
+
+        with patch.object(self.client.session, "get", return_value=mock_resp):
+            link = self.client.get_or_create_share_link("/Exchange/doc.pdf")
+            self.assertEqual(link, "https://example.com:8080/files/share/hash123")
+
+    def test_create_new_share_link(self):
+        from unittest.mock import Mock, patch
+        self.client.token = "mock_jwt"
+
+        mock_get = Mock()
+        mock_get.status_code = 200
+        mock_get.json.return_value = []
+
+        mock_post = Mock()
+        mock_post.status_code = 201
+        mock_post.json.return_value = {"hash": "createdHash456"}
+
+        with patch.object(self.client.session, "get", return_value=mock_get):
+            with patch.object(self.client.session, "post", return_value=mock_post):
+                link = self.client.get_or_create_share_link("/Exchange/new.png")
+                self.assertEqual(link, "https://example.com:8080/files/share/createdHash456")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -108,3 +108,38 @@ def open_folder_in_explorer(folder_path: Path | str) -> None:
         os.startfile(str(p))
     else:
         subprocess.run(["xdg-open", str(p)])
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Copies text to the Windows system clipboard."""
+    if not text:
+        return False
+
+    # Primary method: Tkinter
+    try:
+        import tkinter as tk
+        r = tk.Tk()
+        r.withdraw()
+        r.clipboard_clear()
+        r.clipboard_append(text)
+        r.update()
+        r.destroy()
+        return True
+    except Exception:
+        pass
+
+    # Fallback method: PowerShell Set-Clipboard
+    try:
+        ps_cmd = "$input | Set-Clipboard"
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            input=text,
+            text=True,
+            check=True,
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0,
+        )
+        return True
+    except Exception as e:
+        print(f"[win_utils] Error copying to clipboard: {e}")
+        return False

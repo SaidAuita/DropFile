@@ -44,8 +44,8 @@ class SettingsDialog:
 
         self.window = tk.Tk()
         self.window.title("DropFile — Настройки и состояние")
-        self.window.geometry("580x520")
-        self.window.minsize(520, 480)
+        self.window.geometry("600x560")
+        self.window.minsize(540, 500)
 
         # Use clean ttk styling
         style = ttk.Style()
@@ -261,7 +261,32 @@ class SettingsDialog:
         ttk.Label(parent, text="Игнорируемые файлы (шаблоны через запятую):").pack(anchor="w", pady=(4, 2))
         self.entry_ignore = ttk.Entry(parent)
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
-        self.entry_ignore.pack(fill="x", pady=(0, 4))
+        self.entry_ignore.pack(fill="x", pady=(0, 10))
+
+        # Backup / Restore settings section
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(8, 10))
+        ttk.Label(parent, text="Резервная копия настроек:", style="Header.TLabel").pack(
+            anchor="w", pady=(0, 4)
+        )
+        ttk.Label(
+            parent,
+            text="Сохранение настроек в файл и восстановление (удобно для обновлений и переноса на другой ПК):",
+            font=("Segoe UI", 8),
+            foreground="#5F6368",
+        ).pack(anchor="w", pady=(0, 8))
+
+        backup_row = ttk.Frame(parent)
+        backup_row.pack(fill="x", pady=(0, 4))
+
+        btn_export = ttk.Button(
+            backup_row, text="💾 Сохранить в файл...", command=self._export_settings
+        )
+        btn_export.pack(side="left", padx=(0, 8))
+
+        btn_import = ttk.Button(
+            backup_row, text="📥 Загрузить из файла...", command=self._import_settings
+        )
+        btn_import.pack(side="left")
 
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         header_row = ttk.Frame(parent)
@@ -312,8 +337,8 @@ class SettingsDialog:
             stat = "Успешно" if r["status"] == "success" else r["status"]
             self.tree_log.insert("", "end", values=(ts, act, r["direction"], r["rel_path"], stat))
 
-    def _save_and_close(self) -> None:
-        # Save to config object
+    def _read_form_into_config(self) -> None:
+        """Updates the in-memory config object with values from form fields."""
         self.config.server_url = self.entry_url.get().strip()
         self.config.username = self.entry_user.get().strip()
         self.config.password = self.entry_pwd.get()
@@ -328,11 +353,89 @@ class SettingsDialog:
         self.config.notify_on_sync = self.var_notify.get()
         self.config.start_with_windows = self.var_autostart.get()
 
-        # Update ignore patterns
         raw_patterns = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
         if raw_patterns:
             self.config.set("ignore_patterns", raw_patterns)
 
+    def _populate_form_fields(self) -> None:
+        """Populates UI fields from the current config object."""
+        self.entry_url.delete(0, tk.END)
+        self.entry_url.insert(0, self.config.server_url)
+
+        self.entry_user.delete(0, tk.END)
+        self.entry_user.insert(0, self.config.username)
+
+        self.entry_pwd.delete(0, tk.END)
+        self.entry_pwd.insert(0, self.config.password)
+
+        self.entry_local.delete(0, tk.END)
+        self.entry_local.insert(0, str(self.config.local_path))
+
+        self.entry_remote.delete(0, tk.END)
+        self.entry_remote.insert(0, self.config.remote_path)
+
+        self.spin_poll.set(self.config.poll_interval)
+        self.var_autostart.set(self.config.start_with_windows)
+        self.var_notify.set(self.config.notify_on_sync)
+
+        self.entry_ignore.delete(0, tk.END)
+        self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
+
+    def _export_settings(self) -> None:
+        """Exports current settings to a user-chosen backup JSON file."""
+        self._read_form_into_config()
+        chosen = filedialog.asksaveasfilename(
+            parent=self.window,
+            title="Сохранить настройки DropFile",
+            defaultextension=".json",
+            initialfile="dropfile_backup.json",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+        )
+        if not chosen:
+            return
+
+        ok = self.config.export_config(chosen)
+        if ok:
+            messagebox.showinfo(
+                "Экспорт завершен",
+                f"Настройки успешно сохранены в файл:\n{chosen}",
+                parent=self.window,
+            )
+        else:
+            messagebox.showerror("Ошибка", "Не удалось сохранить файл настроек.", parent=self.window)
+
+    def _import_settings(self) -> None:
+        """Imports settings from a backup JSON file and updates UI and client."""
+        chosen = filedialog.askopenfilename(
+            parent=self.window,
+            title="Выберите файл настроек DropFile для восстановления",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+        )
+        if not chosen:
+            return
+
+        ok = self.config.import_config(chosen)
+        if ok:
+            self._populate_form_fields()
+            self.client.base_url = self.config.server_url
+            self.client.username = self.config.username
+            self.client.password = self.config.password
+            self.client.token = None
+            set_windows_autostart(self.config.start_with_windows)
+            messagebox.showinfo(
+                "Импорт завершен",
+                "Настройки успешно загружены из файла и применены!",
+                parent=self.window,
+            )
+        else:
+            messagebox.showerror(
+                "Ошибка",
+                "Не удалось прочитать выбранный файл настроек. Проверьте правильность формата JSON.",
+                parent=self.window,
+            )
+
+    def _save_and_close(self) -> None:
+        self._read_form_into_config()
         self.config.save()
 
         # Update Windows autostart registry

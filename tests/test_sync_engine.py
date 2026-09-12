@@ -44,6 +44,32 @@ class TestSyncEngine(unittest.TestCase):
         self.assertTrue(self.engine._is_suppressed(r"folder\test.txt"))
         self.assertFalse(self.engine._is_suppressed("folder/other.txt"))
 
+    def test_config_export_and_import(self):
+        backup_file = self.temp_dir / "backup.json"
+        self.config.server_url = "https://backup-server.local"
+        self.config.username = "backup_user"
+        ok_export = self.config.export_config(backup_file)
+        self.assertTrue(ok_export)
+        self.assertTrue(backup_file.exists())
+
+        # Change in-memory
+        self.config.server_url = "https://other.local"
+        self.config.username = "other_user"
+
+        # Import from backup
+        ok_import = self.config.import_config(backup_file)
+        self.assertTrue(ok_import)
+        self.assertEqual(self.config.server_url, "https://backup-server.local")
+        self.assertEqual(self.config.username, "backup_user")
+
+    def test_record_uploaded_item(self):
+        test_file = self.temp_dir / "share_test.txt"
+        test_file.write_text("hello", encoding="utf-8")
+        self.engine._record_uploaded_item(test_file, "share_test.txt", "/DropFile/share_test.txt")
+        self.assertIsNotNone(self.engine.last_uploaded_item)
+        self.assertEqual(self.engine.last_uploaded_item["name"], "share_test.txt")
+        self.assertTrue("share" in self.engine.last_uploaded_item["share_url"] or "files" in self.engine.last_uploaded_item["share_url"])
+
 
 if __name__ == "__main__":
     unittest.main()

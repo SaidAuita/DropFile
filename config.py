@@ -79,6 +79,35 @@ class Config:
         except Exception as e:
             print(f"[Config] Error saving config: {e}")
 
+    def export_config(self, target_path: Path | str) -> bool:
+        """Exports current configuration to a backup JSON file."""
+        try:
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=4, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"[Config] Export error: {e}")
+            return False
+
+    def import_config(self, source_path: Path | str) -> bool:
+        """Imports configuration from a backup JSON file and saves to active config."""
+        try:
+            source = Path(source_path)
+            if not source.exists() or not source.is_file():
+                return False
+            with open(source, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                return False
+            self._data.update(loaded)
+            self.save()
+            return True
+        except Exception as e:
+            print(f"[Config] Import error: {e}")
+            return False
+
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
