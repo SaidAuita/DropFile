@@ -42,11 +42,13 @@ class SettingsDialog:
         state_db: StateDatabase,
         client: FileBrowserClient,
         on_save_callback: Optional[Callable[[], None]] = None,
+        engine: Optional[Any] = None,
     ):
         self.config = config
         self.state_db = state_db
         self.client = client
         self.on_save_callback = on_save_callback
+        self.engine = engine
         self.window: Optional[tk.Tk] = None
 
     def show(self) -> None:
@@ -332,25 +334,47 @@ class SettingsDialog:
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Параметры работы", style="Header.TLabel").pack(anchor="w", pady=(0, 10))
 
-        # Poll interval & Log retention row
-        times_frame = tk.Frame(parent, bg="#FFFFFF")
-        times_frame.pack(fill="x", pady=(0, 8))
-
-        ttk.Label(times_frame, text="Период проверки сервера (сек):", style="Card.TLabel").pack(
-            side="left", padx=(0, 6)
+        # 1. Poll interval
+        poll_row = tk.Frame(parent, bg="#FFFFFF")
+        poll_row.pack(fill="x", pady=(0, 6))
+        ttk.Label(poll_row, text="Период проверки сервера (сек):", style="Card.TLabel").pack(
+            side="left", padx=(0, 8)
         )
-        self.spin_poll = ttk.Spinbox(times_frame, from_=5, to=3600, width=6, font=("Segoe UI", 9))
+        self.spin_poll = ttk.Spinbox(poll_row, from_=5, to=3600, width=6, font=("Segoe UI", 9))
         self.spin_poll.set(self.config.poll_interval)
-        self.spin_poll.pack(side="left", padx=(0, 16))
+        self.spin_poll.pack(side="left")
 
-        ttk.Label(times_frame, text="Срок хранения журнала (дней):", style="Card.TLabel").pack(
-            side="left", padx=(0, 6)
+        # 2. File retention (Auto-cleanup of old files)
+        file_ret_row = tk.Frame(parent, bg="#FFFFFF")
+        file_ret_row.pack(fill="x", pady=(0, 6))
+        ttk.Label(file_ret_row, text="Автоочистка файлов старше (дней):", style="Card.TLabel").pack(
+            side="left", padx=(0, 8)
         )
-        self.spin_retention = ttk.Spinbox(times_frame, from_=0, to=365, width=6, font=("Segoe UI", 9))
+        self.spin_file_retention = ttk.Spinbox(
+            file_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9)
+        )
+        self.spin_file_retention.set(self.config.file_retention_days)
+        self.spin_file_retention.pack(side="left", padx=(0, 6))
+
+        ttk.Label(file_ret_row, text="(0 = отключено)", style="Subheader.TLabel").pack(
+            side="left", padx=(0, 10)
+        )
+
+        btn_clean_now = ttk.Button(
+            file_ret_row, text="🧹 Очистить старые файлы сейчас", command=self._trigger_file_cleanup_now
+        )
+        btn_clean_now.pack(side="left")
+
+        # 3. History log retention
+        log_ret_row = tk.Frame(parent, bg="#FFFFFF")
+        log_ret_row.pack(fill="x", pady=(0, 10))
+        ttk.Label(log_ret_row, text="Срок хранения журнала (дней):", style="Card.TLabel").pack(
+            side="left", padx=(0, 8)
+        )
+        self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9))
         self.spin_retention.set(self.config.log_retention_days)
         self.spin_retention.pack(side="left", padx=(0, 6))
-
-        ttk.Label(times_frame, text="(0 = бессрочно)", style="Subheader.TLabel").pack(side="left")
+        ttk.Label(log_ret_row, text="(0 = бессрочно)", style="Subheader.TLabel").pack(side="left")
 
         # Checkboxes
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart_enabled())
@@ -402,6 +426,40 @@ class SettingsDialog:
             backup_row, text="📥 Загрузить из файла...", command=self._import_settings
         )
         btn_import.pack(side="left")
+
+    def _trigger_file_cleanup_now(self) -> None:
+        try:
+            days = int(self.spin_file_retention.get())
+        except Exception:
+            days = self.config.file_retention_days
+
+        if days <= 0:
+            messagebox.showinfo(
+                "Автоочистка отключена",
+                "Указано значение 0 дней (очистка отключена).\nУкажите срок больше 0 для удаления старых файлов.",
+                parent=self.window,
+            )
+            return
+
+        ans = messagebox.askyesno(
+            "Очистка устаревших файлов",
+            f"Удалить из папки DropFile и с сервера все файлы старше {days} дней?\n\nВнимание: файлы будут удалены как локально, так и на сервере.",
+            parent=self.window,
+        )
+        if not ans:
+            return
+
+        def run_cleanup():
+            count = 0
+            if getattr(self, "engine", None):
+                count = self.engine.cleanup_old_files(retention_days=days)
+            messagebox.showinfo(
+                "Очистка завершена",
+                f"Успешно удалено устаревших файлов: {count}",
+                parent=self.window,
+            )
+
+        threading.Thread(target=run_cleanup, daemon=True).start()
 
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         header_row = tk.Frame(parent, bg="#FFFFFF")
@@ -481,6 +539,11 @@ class SettingsDialog:
             pass
 
         try:
+            self.config.file_retention_days = int(self.spin_file_retention.get())
+        except Exception:
+            pass
+
+        try:
             self.config.log_retention_days = int(self.spin_retention.get())
         except Exception:
             pass
@@ -510,6 +573,7 @@ class SettingsDialog:
         self.entry_remote.insert(0, self.config.remote_path)
 
         self.spin_poll.set(self.config.poll_interval)
+        self.spin_file_retention.set(self.config.file_retention_days)
         self.spin_retention.set(self.config.log_retention_days)
         self.var_autostart.set(self.config.start_with_windows)
         self.var_notify.set(self.config.notify_on_sync)

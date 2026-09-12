@@ -83,5 +83,35 @@ class TestSyncEngine(unittest.TestCase):
         self.assertEqual(item["rel_path"], "archive_test.zip")
 
 
+    def test_cleanup_old_files(self):
+        import time
+        from state_db import FileRecord
+
+        old_file = self.temp_dir / "old_doc.pdf"
+        old_file.write_text("old content", encoding="utf-8")
+
+        new_file = self.temp_dir / "new_doc.pdf"
+        new_file.write_text("new content", encoding="utf-8")
+
+        old_time = time.time() - (35 * 86400)
+        rec_old = FileRecord(rel_path="old_doc.pdf", last_sync_time=old_time, local_size=10)
+        self.db.upsert_record(rec_old)
+
+        rec_new = FileRecord(rel_path="new_doc.pdf", last_sync_time=time.time(), local_size=10)
+        self.db.upsert_record(rec_new)
+
+        self.config.local_path = self.temp_dir
+        self.engine._running = True
+
+        cleaned = self.engine.cleanup_old_files(retention_days=30)
+        self.assertEqual(cleaned, 1)
+
+        self.assertFalse(old_file.exists())
+        self.assertIsNone(self.db.get_record("old_doc.pdf"))
+
+        self.assertTrue(new_file.exists())
+        self.assertIsNotNone(self.db.get_record("new_doc.pdf"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -187,8 +187,9 @@ class SyncEngine:
             self._init_last_uploaded_from_history()
             try:
                 self.state_db.cleanup_old_history(self.config.log_retention_days)
+                self.cleanup_old_files(self.config.file_retention_days)
             except Exception as e:
-                print(f"[SyncEngine] Log cleanup error: {e}")
+                print(f"[SyncEngine] Startup cleanup error: {e}")
             last_cleanup = time.time()
             self.reconcile_all()
         else:
@@ -215,12 +216,13 @@ class SyncEngine:
                     self.reconcile_all()
                     last_poll = time.time()
 
-                # Periodic log cleanup every 6 hours
+                # Periodic cleanup of old sync history and files every 6 hours
                 if now - last_cleanup >= 21600:
                     try:
                         self.state_db.cleanup_old_history(self.config.log_retention_days)
+                        self.cleanup_old_files(self.config.file_retention_days)
                     except Exception as e:
-                        print(f"[SyncEngine] Log cleanup error: {e}")
+                        print(f"[SyncEngine] Periodic cleanup error: {e}")
                     last_cleanup = now
 
             except Exception as e:
@@ -597,6 +599,119 @@ class SyncEngine:
                     print(f"[SyncEngine] Restored last uploaded item: {name} -> {self.last_uploaded_item['share_url']}")
         except Exception as e:
             print(f"[SyncEngine] Error restoring last uploaded item from history: {e}")
+
+    def cleanup_old_files(self, retention_days: Optional[int] = None) -> int:
+        """Removes files older than retention_days both locally and remotely.
+
+        If retention_days is None, uses self.config.file_retention_days.
+        If retention_days <= 0, cleanup is disabled and returns 0.
+        """
+        if retention_days is None:
+            retention_days = self.config.file_retention_days
+
+        if retention_days <= 0:
+            return 0
+
+        cutoff = time.time() - (retention_days * 86400)
+        cleaned_count = 0
+
+        with self._sync_lock:
+            # 1. Gather all tracked files from state DB
+            state_records = self.state_db.get_all_records()
+            all_rel_paths = set(state_records.keys())
+
+            # 2. Gather all existing local files
+            if self.config.local_path.exists():
+                for root, _, files in os.walk(self.config.local_path):
+                    for file in files:
+                        full_path = Path(root) / file
+                        if self.is_ignored(full_path):
+                            continue
+                        rel = str(full_path.relative_to(self.config.local_path)).replace("\\", "/")
+                        all_rel_paths.add(rel)
+
+            for rel in all_rel_paths:
+                if self._paused or not self._running:
+                    break
+
+                if self.is_ignored(rel):
+                    continue
+
+                clean_rel = rel.replace("\\", "/").lstrip("/")
+                local_file = self.config.local_path / clean_rel
+                rec = state_records.get(clean_rel)
+
+                # Determine file age timestamp safely
+                age_ts = 0.0
+                if local_file.exists():
+                    try:
+                        st = local_file.stat()
+                        local_created = getattr(st, "st_ctime", st.st_mtime)
+                        age_ts = max(st.st_mtime, local_created)
+                    except Exception:
+                        pass
+
+                if rec and rec.last_sync_time > 0:
+                    age_ts = rec.last_sync_time if age_ts == 0.0 else min(age_ts, rec.last_sync_time)
+
+                if age_ts <= 0.0 or age_ts >= cutoff:
+                    continue
+
+                # File is older than retention period -> purge it
+                remote_dest = f"{self.config.remote_path}/{clean_rel}"
+
+                # 1. Delete local file
+                if local_file.exists():
+                    self._suppress(clean_rel, duration=5.0)
+                    try:
+                        local_file.unlink()
+                    except Exception as e:
+                        print(f"[SyncEngine] Auto-cleanup: could not delete local file {clean_rel}: {e}")
+                        continue
+
+                # 2. Delete remote file in FileBrowser
+                if self.config.server_url and self.config.username:
+                    try:
+                        self.client.delete_resource(remote_dest)
+                    except Exception as e:
+                        print(f"[SyncEngine] Auto-cleanup: remote delete error for {remote_dest}: {e}")
+
+                # 3. Remove record from state DB and log
+                self.state_db.delete_record(clean_rel)
+                self.state_db.log_sync(
+                    clean_rel,
+                    "delete",
+                    "cleanup",
+                    "success",
+                    f"Автоочистка (старше {retention_days} дн.)",
+                )
+                cleaned_count += 1
+
+                # If this was the last uploaded item in memory, reset it
+                if self.last_uploaded_item and self.last_uploaded_item.get("rel_path") == clean_rel:
+                    self.last_uploaded_item = None
+
+            # 3. Clean up any empty local subdirectories
+            if self.config.local_path.exists():
+                for root, dirs, files in os.walk(self.config.local_path, topdown=False):
+                    if Path(root) != self.config.local_path and not dirs and not files:
+                        try:
+                            os.rmdir(root)
+                        except Exception:
+                            pass
+
+        if cleaned_count > 0:
+            print(f"[SyncEngine] Auto-cleanup: removed {cleaned_count} file(s) older than {retention_days} days.")
+            self.notify(
+                "DropFile: Автоочистка файлов",
+                f"Удалено файлов старше {retention_days} дн.: {cleaned_count}",
+            )
+            # Update tray menu in case last item was removed
+            if self.on_share_ready:
+                item = self.get_last_uploaded_item()
+                self._notify_share_ready(item or {}, notify=False)
+
+        return cleaned_count
 
     def _handle_conflict(self, rel: str, local_file: Path, r_item: RemoteItem) -> None:
         """Handles simultaneous local & remote edits by creating a conflicted copy."""

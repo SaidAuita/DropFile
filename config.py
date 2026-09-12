@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
+    "file_retention_days": 30,  # File auto-cleanup in days (0 = disabled)
     "log_retention_days": 30,  # History log retention in days (0 = keep forever)
     "conflict_action": "keep_both",  # "keep_both" creates conflicted copies
     "ignore_patterns": [
@@ -184,6 +185,14 @@ class Config:
     @notify_on_sync.setter
     def notify_on_sync(self, value: bool) -> None:
         self._data["notify_on_sync"] = bool(value)
+
+    @property
+    def file_retention_days(self) -> int:
+        return int(self._data.get("file_retention_days", 30))
+
+    @file_retention_days.setter
+    def file_retention_days(self, value: int) -> None:
+        self._data["file_retention_days"] = max(0, int(value))
 
     @property
     def log_retention_days(self) -> int:

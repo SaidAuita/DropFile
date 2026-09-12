@@ -24,6 +24,8 @@ class DropFileTray:
         self.config = config
         self.engine = engine
         self.settings_dialog = settings_dialog
+        if not getattr(self.settings_dialog, "engine", None):
+            self.settings_dialog.engine = engine
 
         self.current_state = "idle"
         self.current_status_text = f"DropFile v{__version__}: Готов к работе"

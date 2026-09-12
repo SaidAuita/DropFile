@@ -80,6 +80,7 @@ def main():
         state_db=state_db,
         client=client,
         on_save_callback=on_settings_saved,
+        engine=engine,
     )
 
     # Prompt user with settings dialog if server URL or username is not configured

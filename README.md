@@ -59,6 +59,10 @@
   - One-click Desktop shortcut creation.
   - Configurable poll intervals and customizable ignore patterns (`~$*`, `*.tmp`, etc.).
   - Detailed synchronization activity log.
+- 🧹 **Automatic File & Log Cleanup**:
+  - Configurable auto-cleanup for files older than *N* days (default: 30 days, or 0 = keep forever) to keep storage clean.
+  - Manual one-click file cleanup on demand directly from settings.
+  - History log retention policy and one-click log clearing with confirmation.
 - 🚀 **Silent Windows Startup**:
   - Clean background execution via `DropFile.pyw` / `start_silent.vbs` without flashing console windows.
   - One-click autostart toggle with Windows registry integration.
@@ -188,6 +192,10 @@ python -m unittest discover tests
 - 🛡️ **Защита от зацикливания и конфликтов**: дебаунсинг записи, подавление эхо и создание копий `(Конфликт PC YYYY-MM-DD)`.
 - 🕒 **Информативный трей**: цветовая индикация (зеленый / синий / красный / желтый) и контекстное меню.
 - ⚙️ **Графический интерфейс настроек**: проверка соединения в один клик, выбор папок, создание ярлыка, настройка исключений и журнал событий.
+- 🧹 **Автоочистка старых файлов и журнала**:
+  - Автоматическое удаление файлов старше *N* дней (по умолчанию 30 дней, 0 = отключено), защищающее диск от переполнения.
+  - Кнопка ручной очистки устаревших файлов по требованию прямо из настроек.
+  - Настройка срока хранения истории и кнопка быстрой очистки журнала с подтверждением.
 - 🚀 **Бесшумный автозапуск**: скрытый запуск без мигающих черных окон и автозагрузка вместе с Windows.
 
 ---
