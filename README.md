@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 📂 DropFile
 
@@ -145,6 +145,13 @@ python -m unittest discover tests
 
 ---
 
+## 🛠️ Other Projects
+
+* **[RyzenQuiet PRO](https://github.com/SaidAuita/RyzenQuietPro)** — Sleek, lightweight hardware HUD & power-plan optimizer for Windows with AMD Ryzen CPB toggle and real-time GPU power telemetry.
+* **[Free Automation Tools & Utilities](https://ph-cu-s.com/tools)** — Free open-source scripts, extensions, and desktop utilities for Adobe Illustrator, InDesign, Photoshop, and Windows workflows.
+
+---
+
 <a name="russian"></a>
 ## 🇷🇺 Описание на русском
 
@@ -168,13 +175,13 @@ python -m unittest discover tests
 
 ---
 
-## 🛠️ Other Projects
+## 🛠️ Другие проекты
 
-* **[RyzenQuiet PRO](https://github.com/SaidAuita/RyzenQuietPro)** — Sleek, lightweight hardware HUD & power-plan optimizer for Windows with AMD Ryzen CPB toggle and real-time GPU power telemetry.
-* **[Free Automation Tools & Utilities](https://ph-cu-s.com/tools)** — Free open-source scripts, extensions, and desktop utilities for Adobe Illustrator, InDesign, Photoshop, and Windows workflows.
+* **[RyzenQuiet PRO](https://github.com/SaidAuita/RyzenQuietPro)** — Элегантный и легковесный аппаратный HUD и оптимизатор планов электропитания для Windows с переключением AMD Ryzen CPB и телеметрией энергопотребления GPU в реальном времени.
+* **[Free Automation Tools & Utilities](https://ph-cu-s.com/tools)** — Бесплатные открытые скрипты, расширения и утилиты для Adobe Illustrator, InDesign, Photoshop и рабочих процессов Windows.
 
 ---
 
-## 📄 License
+## 📄 License / Лицензия
 
 Distributed under the open-source [MIT License](LICENSE).
