@@ -44,6 +44,7 @@ def build():
         "--hidden-import=_sqlite3",
         "--hidden-import=sqlite3",
         "--collect-all=sqlite3",
+        "--collect-all=requests",
         "--collect-submodules=pystray",
     ]
 

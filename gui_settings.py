@@ -1089,20 +1089,31 @@ class SettingsDialog:
             )
             if not ok:
                 if self.window and self.window.winfo_exists():
-                    self.window.after(
-                        0,
-                        lambda: messagebox.showerror(
-                            t("update_error_title"),
-                            t("update_error_msg", msg=err),
-                            parent=self.window,
-                        ),
-                    )
-                    if hasattr(self, "btn_check_update"):
-                        self.window.after(
-                            0,
-                            lambda: self.btn_check_update.config(
+                    def show_update_failure():
+                        if not self.window or not self.window.winfo_exists():
+                            return
+                        err_text = t("update_error_msg", msg=err)
+                        html_url = info.get("html_url")
+                        if html_url:
+                            prompt_text = f"{err_text}\n\n{t('update_open_browser')}"
+                            if messagebox.askyesno(
+                                t("update_error_title"),
+                                prompt_text,
+                                parent=self.window,
+                            ):
+                                import webbrowser
+                                webbrowser.open(html_url)
+                        else:
+                            messagebox.showerror(
+                                t("update_error_title"),
+                                err_text,
+                                parent=self.window,
+                            )
+                        if hasattr(self, "btn_check_update"):
+                            self.btn_check_update.config(
                                 state="normal", text=f"🔍 {t('btn_check_updates')}"
-                            ),
-                        )
+                            )
+
+                    self.window.after(0, show_update_failure)
 
         threading.Thread(target=worker, daemon=True).start()

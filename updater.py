@@ -137,27 +137,85 @@ def apply_update(
         update_temp_exe = current_dir / "DropFile.update.exe"
         swap_bat = current_dir / "apply_update.bat"
 
-        try:
-            # Download new executable with progress
-            req = urllib.request.Request(
-                exe_url,
-                headers={"User-Agent": f"DropFile-Client/{__version__}"},
-            )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                total_size = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                chunk_size = 64 * 1024
+        # Candidates: direct URL first, then fast proxy mirrors for ISP / DPI circumvention (WinError 10054)
+        candidate_urls = [
+            exe_url,
+            f"https://ghfast.top/{exe_url}",
+            f"https://gh-proxy.com/{exe_url}",
+        ]
 
-                with open(update_temp_exe, "wb") as f_out:
-                    while True:
-                        chunk = resp.read(chunk_size)
-                        if not chunk:
-                            break
-                        f_out.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0 and progress_callback:
-                            percent = int(downloaded * 100 / total_size)
-                            progress_callback(percent)
+        browser_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+        }
+
+        download_success = False
+        last_error = ""
+
+        try:
+            for candidate in candidate_urls:
+                try:
+                    print(f"[Updater] Attempting download from: {candidate[:50]}...")
+                    try:
+                        import requests
+                        with requests.get(candidate, headers=browser_headers, stream=True, timeout=30) as resp:
+                            if resp.status_code != 200:
+                                last_error = f"HTTP {resp.status_code} from {candidate[:35]}"
+                                continue
+
+                            total_size = int(resp.headers.get("content-length", 0))
+                            downloaded = 0
+                            chunk_size = 64 * 1024
+
+                            with open(update_temp_exe, "wb") as f_out:
+                                for chunk in resp.iter_content(chunk_size=chunk_size):
+                                    if chunk:
+                                        f_out.write(chunk)
+                                        downloaded += len(chunk)
+                                        if total_size > 0 and progress_callback:
+                                            percent = int(downloaded * 100 / total_size)
+                                            progress_callback(min(99, percent))
+                    except ImportError:
+                        req = urllib.request.Request(candidate, headers=browser_headers)
+                        with urllib.request.urlopen(req, timeout=30) as resp:
+                            total_size = int(resp.headers.get("content-length", 0))
+                            downloaded = 0
+                            chunk_size = 64 * 1024
+
+                            with open(update_temp_exe, "wb") as f_out:
+                                while True:
+                                    chunk = resp.read(chunk_size)
+                                    if not chunk:
+                                        break
+                                    f_out.write(chunk)
+                                    downloaded += len(chunk)
+                                    if total_size > 0 and progress_callback:
+                                        percent = int(downloaded * 100 / total_size)
+                                        progress_callback(min(99, percent))
+
+                    # Verify downloaded file is a valid PE binary (starts with MZ and size > 1MB)
+                    if update_temp_exe.exists() and update_temp_exe.stat().st_size > 1000000:
+                        with open(update_temp_exe, "rb") as chk:
+                            if chk.read(2) == b"MZ":
+                                download_success = True
+                                print(f"[Updater] Successfully downloaded update ({downloaded} bytes)")
+                                break
+                            else:
+                                last_error = "Downloaded file is corrupted or not a valid Windows executable"
+                    else:
+                        last_error = "Downloaded file is incomplete"
+
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"[Updater] Candidate {candidate[:40]} failed: {e}")
+                    if update_temp_exe.exists():
+                        try:
+                            update_temp_exe.unlink()
+                        except Exception:
+                            pass
+
+            if not download_success:
+                return False, f"Failed to download update: {last_error}"
 
             if progress_callback:
                 progress_callback(100)
