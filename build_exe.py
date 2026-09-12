@@ -41,9 +41,19 @@ def build():
         "--hidden-import=PIL",
         "--hidden-import=PIL.Image",
         "--hidden-import=PIL.ImageDraw",
+        "--hidden-import=_sqlite3",
+        "--hidden-import=sqlite3",
+        "--collect-all=sqlite3",
         "--collect-submodules=pystray",
-        str(root / "DropFile.pyw"),
     ]
+
+    # Explicitly bundle sqlite3.dll if found in Python DLLs directory
+    dlls_dir = Path(sys.executable).parent / "DLLs"
+    sqlite_dll = dlls_dir / "sqlite3.dll"
+    if sqlite_dll.exists():
+        pyinstaller_cmd.append(f"--add-binary={sqlite_dll};.")
+
+    pyinstaller_cmd.append(str(root / "DropFile.pyw"))
 
     print("Running PyInstaller...")
     print("Command:", " ".join(pyinstaller_cmd))

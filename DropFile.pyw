@@ -16,6 +16,16 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# If running as frozen PyInstaller executable, clean _MEIPASS2 from os.environ
+# and register MEIPASS directory with Windows DLL search path for sqlite3 and other extensions
+if getattr(sys, "frozen", False):
+    os.environ.pop("_MEIPASS2", None)
+    if hasattr(sys, "_MEIPASS"):
+        try:
+            os.add_dll_directory(sys._MEIPASS)
+        except Exception:
+            pass
+
 from config import Config, get_app_dir
 from fb_client import FileBrowserClient
 from gui_settings import SettingsDialog

@@ -151,18 +151,33 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
     """
     Spawns a new independent instance of DropFile in the background.
     Supports both standalone .exe binary and pythonw script execution.
+    Sanitizes PyInstaller _MEIPASS environment variables and introduces
+    a detached 1-second delay so the exiting parent process releases
+    sockets and deletes temporary extraction folders cleanly without collision.
     """
     creation_flags = 0
     if sys.platform.startswith("win"):
         # CREATE_NO_WINDOW (0x08000000) | DETACHED_PROCESS (0x00000008)
         creation_flags = 0x08000000 | 0x00000008
 
+    # Clean PyInstaller environment so child process unpacks to a fresh directory
+    env = os.environ.copy()
+    mei_pass = env.pop("_MEIPASS2", None)
+    env.pop("_MEIPASS", None)
+    if mei_pass:
+        paths = env.get("PATH", "").split(os.pathsep)
+        cleaned = [p for p in paths if not p.lower().startswith(mei_pass.lower())]
+        env["PATH"] = os.pathsep.join(cleaned)
+
     try:
         if getattr(sys, "frozen", False):
             current_exe = Path(sys.executable).resolve()
+            # Launch via cmd with small delay so the exiting process releases socket and temp folder completely
+            cmd = f'timeout /t 1 /nobreak >nul & start "" "{current_exe}"'
             subprocess.Popen(
-                [str(current_exe)],
+                ["cmd.exe", "/c", cmd],
                 cwd=str(current_exe.parent),
+                env=env,
                 creationflags=creation_flags,
                 close_fds=True,
             )
@@ -178,9 +193,11 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
             target = Path(script_path).resolve()
             base_dir = target.parent
 
+            cmd = f'timeout /t 1 /nobreak >nul & start "" "{runner}" "{target}"'
             subprocess.Popen(
-                [str(runner), str(target)],
+                ["cmd.exe", "/c", cmd],
                 cwd=str(base_dir),
+                env=env,
                 creationflags=creation_flags,
                 close_fds=True,
             )
