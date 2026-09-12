@@ -143,3 +143,37 @@ def copy_to_clipboard(text: str) -> bool:
     except Exception as e:
         print(f"[win_utils] Error copying to clipboard: {e}")
         return False
+
+
+def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
+    """
+    Spawns a new independent instance of DropFile in the background.
+    """
+    if script_path is None:
+        script_dir = Path(__file__).resolve().parent
+        script_path = script_dir / "DropFile.pyw"
+
+    py_exe = Path(sys.executable)
+    pyw_exe = py_exe.parent / "pythonw.exe"
+    runner = pyw_exe if pyw_exe.exists() else py_exe
+
+    target = Path(script_path).resolve()
+    base_dir = target.parent
+
+    creation_flags = 0
+    if sys.platform.startswith("win"):
+        # CREATE_NO_WINDOW (0x08000000) | DETACHED_PROCESS (0x00000008)
+        creation_flags = 0x08000000 | 0x00000008
+
+    try:
+        subprocess.Popen(
+            [str(runner), str(target)],
+            cwd=str(base_dir),
+            creationflags=creation_flags,
+            close_fds=True,
+        )
+        return True
+    except Exception as e:
+        print(f"[win_utils] Error launching new DropFile process: {e}")
+        return False
+

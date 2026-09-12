@@ -1,10 +1,11 @@
 """
 Modern Tkinter Settings and Activity Log dialog for DropFile.
 Features native Windows 10/11 visual styles, high-DPI scaling,
-connection testing, backup/restore, autostart, multi-language support (10 languages),
-and live logs.
+connection testing, backup/restore, autostart, multi-language support (10 languages)
+with live dynamic language switching, instant reload and restart capability.
 """
 
+import os
 import sys
 import threading
 import tkinter as tk
@@ -22,6 +23,7 @@ from win_utils import (
     create_desktop_shortcut,
     is_windows_autostart_enabled,
     open_folder_in_explorer,
+    restart_dropfile,
     set_windows_autostart,
 )
 
@@ -44,12 +46,14 @@ class SettingsDialog:
         state_db: StateDatabase,
         client: FileBrowserClient,
         on_save_callback: Optional[Callable[[], None]] = None,
+        on_restart_callback: Optional[Callable[[], None]] = None,
         engine: Optional[Any] = None,
     ):
         self.config = config
         self.state_db = state_db
         self.client = client
         self.on_save_callback = on_save_callback
+        self.on_restart_callback = on_restart_callback
         self.engine = engine
         self.window: Optional[tk.Tk] = None
         self.lang_codes = list(SUPPORTED_LANGUAGES.keys())
@@ -65,8 +69,8 @@ class SettingsDialog:
 
         self.window = tk.Tk()
         self.window.title(f"{t('app_name')} v{__version__} — {t('tab_settings').strip()}")
-        self.window.geometry("640x600")
-        self.window.minsize(580, 520)
+        self.window.geometry("670x620")
+        self.window.minsize(600, 540)
 
         # Apply native Windows visual style
         style = ttk.Style()
@@ -111,17 +115,17 @@ class SettingsDialog:
         title_row = tk.Frame(header_bar, bg="#FFFFFF")
         title_row.pack(fill="x")
 
-        lbl_app_title = tk.Label(
+        self.lbl_app_title = tk.Label(
             title_row,
             text=t("app_name"),
             font=("Segoe UI", 14, "bold"),
             fg="#1A1A1A",
             bg="#FFFFFF",
         )
-        lbl_app_title.pack(side="left")
+        self.lbl_app_title.pack(side="left")
 
         # Version Pill Badge
-        lbl_version_badge = tk.Label(
+        self.lbl_version_badge = tk.Label(
             title_row,
             text=f"v{__version__}",
             font=("Segoe UI", 8, "bold"),
@@ -130,59 +134,69 @@ class SettingsDialog:
             padx=8,
             pady=2,
         )
-        lbl_version_badge.pack(side="left", padx=(10, 0))
+        self.lbl_version_badge.pack(side="left", padx=(10, 0))
 
-        lbl_app_subtitle = tk.Label(
+        self.lbl_app_subtitle = tk.Label(
             header_bar,
             text=t("app_subtitle"),
             font=("Segoe UI", 9),
             fg=fg_muted,
             bg="#FFFFFF",
         )
-        lbl_app_subtitle.pack(anchor="w", pady=(2, 0))
+        self.lbl_app_subtitle.pack(anchor="w", pady=(2, 0))
 
         # Divider under header
         tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="top")
 
         # --- Tab Notebook ---
-        notebook = ttk.Notebook(self.window)
-        notebook.pack(fill="both", expand=True, padx=14, pady=12)
+        self.notebook = ttk.Notebook(self.window)
+        self.notebook.pack(fill="both", expand=True, padx=14, pady=12)
 
         # Tab 1: Connection
-        tab_conn = ttk.Frame(notebook, padding=14, style="Card.TFrame")
-        notebook.add(tab_conn, text=t("tab_conn"))
-        self._build_connection_tab(tab_conn)
+        self.tab_conn = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
+        self.notebook.add(self.tab_conn, text=t("tab_conn"))
+        self._build_connection_tab(self.tab_conn)
 
         # Tab 2: Folders
-        tab_folders = ttk.Frame(notebook, padding=14, style="Card.TFrame")
-        notebook.add(tab_folders, text=t("tab_folders"))
-        self._build_folders_tab(tab_folders)
+        self.tab_folders = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
+        self.notebook.add(self.tab_folders, text=t("tab_folders"))
+        self._build_folders_tab(self.tab_folders)
 
         # Tab 3: Settings & Backup
-        tab_settings = ttk.Frame(notebook, padding=14, style="Card.TFrame")
-        notebook.add(tab_settings, text=t("tab_settings"))
-        self._build_settings_tab(tab_settings)
+        self.tab_settings = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
+        self.notebook.add(self.tab_settings, text=t("tab_settings"))
+        self._build_settings_tab(self.tab_settings)
 
         # Tab 4: History / Log
-        tab_log = ttk.Frame(notebook, padding=12, style="Card.TFrame")
-        notebook.add(tab_log, text=t("tab_log"))
-        self._build_log_tab(tab_log)
+        self.tab_log = ttk.Frame(self.notebook, padding=12, style="Card.TFrame")
+        self.notebook.add(self.tab_log, text=t("tab_log"))
+        self._build_log_tab(self.tab_log)
 
         # --- Bottom Action Bar ---
         tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="bottom")
         bottom_bar = tk.Frame(self.window, bg=bg_window, padx=16, pady=12)
         bottom_bar.pack(fill="x", side="bottom")
 
-        btn_save = ttk.Button(
+        # "Save and Restart" button (Prominent primary action)
+        self.btn_restart = ttk.Button(
+            bottom_bar,
+            text=f"🔄 {t('btn_save_restart')}",
+            style="Accent.TButton",
+            command=self._save_and_restart,
+        )
+        self.btn_restart.pack(side="right", padx=(8, 0))
+
+        # "Save and Apply" button
+        self.btn_save = ttk.Button(
             bottom_bar,
             text=t("btn_save_apply"),
-            style="Accent.TButton",
             command=self._save_and_close,
         )
-        btn_save.pack(side="right", padx=(8, 0))
+        self.btn_save.pack(side="right", padx=(8, 0))
 
-        btn_cancel = ttk.Button(bottom_bar, text=t("btn_close"), command=self.window.destroy)
-        btn_cancel.pack(side="right")
+        # "Close" button
+        self.btn_cancel = ttk.Button(bottom_bar, text=t("btn_close"), command=self.window.destroy)
+        self.btn_cancel.pack(side="right")
 
         # Center on screen
         self.window.update_idletasks()
@@ -194,30 +208,98 @@ class SettingsDialog:
 
         self.window.mainloop()
 
+    def _retranslate_ui(self) -> None:
+        """Dynamically retranslates all open window elements when language is changed."""
+        if not self.window or not self.window.winfo_exists():
+            return
+
+        self.window.title(f"{t('app_name')} v{__version__} — {t('tab_settings').strip()}")
+        self.lbl_app_title.config(text=t("app_name"))
+        self.lbl_app_subtitle.config(text=t("app_subtitle"))
+
+        self.notebook.tab(self.tab_conn, text=t("tab_conn"))
+        self.notebook.tab(self.tab_folders, text=t("tab_folders"))
+        self.notebook.tab(self.tab_settings, text=t("tab_settings"))
+        self.notebook.tab(self.tab_log, text=t("tab_log"))
+
+        self.btn_restart.config(text=f"🔄 {t('btn_save_restart')}")
+        self.btn_save.config(text=t("btn_save_apply"))
+        self.btn_cancel.config(text=t("btn_close"))
+
+        # Connection Tab
+        self.lbl_conn_hdr.config(text=t("conn_header"))
+        self.lbl_conn_sub.config(text=t("conn_sub"))
+        self.lbl_conn_url.config(text=t("conn_url_label"))
+        self.lbl_conn_user.config(text=t("conn_user_label"))
+        self.lbl_conn_pwd.config(text=t("conn_pwd_label"))
+        self.btn_test.config(text=t("conn_test_btn"))
+
+        # Folders Tab
+        self.lbl_folders_hdr.config(text=t("folders_header"))
+        self.lbl_folders_sub.config(text=t("folders_sub"))
+        self.lbl_folders_local.config(text=t("folders_local_label"))
+        self.btn_browse.config(text=t("folders_browse_btn"))
+        self.btn_open.config(text=t("folders_open_btn"))
+        self.btn_shortcut.config(text=t("folders_shortcut_btn"))
+        self.lbl_folders_remote.config(text=t("folders_remote_label"))
+        self.lbl_folders_hint.config(text=t("folders_remote_hint"))
+
+        # Settings Tab
+        self.lbl_settings_hdr.config(text=t("settings_header"))
+        self.lbl_poll.config(text=t("settings_poll_label"))
+        self.lbl_file_ret.config(text=t("settings_file_ret_label"))
+        self.lbl_file_ret_hint.config(text=t("settings_disabled_hint"))
+        self.btn_clean_now.config(text=t("settings_clean_now_btn"))
+        self.lbl_log_ret.config(text=t("settings_log_ret_label"))
+        self.lbl_log_ret_hint.config(text=t("settings_forever_hint"))
+        self.lbl_lang.config(text=t("settings_lang_label"))
+        self.chk_auto.config(text=t("settings_autostart"))
+        self.chk_notify.config(text=t("settings_notify"))
+        self.lbl_ignore.config(text=t("settings_ignore_label"))
+        self.lbl_backup_hdr.config(text=t("settings_backup_header"))
+        self.lbl_backup_sub.config(text=t("settings_backup_sub"))
+        self.btn_export.config(text=t("settings_export_btn"))
+        self.btn_import.config(text=t("settings_import_btn"))
+
+        # Log Tab
+        self.lbl_log_hdr.config(text=t("log_header"))
+        self.btn_clear_log.config(text=t("log_clear_btn"))
+        self.btn_refresh_log.config(text=t("log_refresh_btn"))
+        self.tree_log.heading("time", text=t("log_col_time"))
+        self.tree_log.heading("action", text=t("log_col_action"))
+        self.tree_log.heading("direction", text=t("log_col_direction"))
+        self.tree_log.heading("file", text=t("log_col_file"))
+        self.tree_log.heading("status", text=t("log_col_status"))
+        self._refresh_logs()
+
     def _build_connection_tab(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text=t("conn_header"), style="Header.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
-        ttk.Label(
+        self.lbl_conn_hdr = ttk.Label(parent, text=t("conn_header"), style="Header.TLabel")
+        self.lbl_conn_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_conn_sub = ttk.Label(
             parent,
             text=t("conn_sub"),
             style="Subheader.TLabel",
-        ).pack(anchor="w", pady=(0, 14))
+        )
+        self.lbl_conn_sub.pack(anchor="w", pady=(0, 14))
 
         # Server URL
-        ttk.Label(parent, text=t("conn_url_label"), style="Card.TLabel").pack(anchor="w", pady=(0, 2))
+        self.lbl_conn_url = ttk.Label(parent, text=t("conn_url_label"), style="Card.TLabel")
+        self.lbl_conn_url.pack(anchor="w", pady=(0, 2))
         self.entry_url = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_url.insert(0, self.config.server_url)
         self.entry_url.pack(fill="x", pady=(0, 10))
 
         # Username
-        ttk.Label(parent, text=t("conn_user_label"), style="Card.TLabel").pack(anchor="w", pady=(0, 2))
+        self.lbl_conn_user = ttk.Label(parent, text=t("conn_user_label"), style="Card.TLabel")
+        self.lbl_conn_user.pack(anchor="w", pady=(0, 2))
         self.entry_user = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_user.insert(0, self.config.username)
         self.entry_user.pack(fill="x", pady=(0, 10))
 
         # Password
-        ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel").pack(anchor="w", pady=(0, 2))
+        self.lbl_conn_pwd = ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel")
+        self.lbl_conn_pwd.pack(anchor="w", pady=(0, 2))
         self.entry_pwd = ttk.Entry(parent, font=("Segoe UI", 9), show="•")
         self.entry_pwd.insert(0, self.config.password)
         self.entry_pwd.pack(fill="x", pady=(0, 16))
@@ -262,19 +344,20 @@ class SettingsDialog:
             self.lbl_test_status.config(text=t("conn_fail", msg=msg), fg="#C42B1C")
 
     def _build_folders_tab(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text=t("folders_header"), style="Header.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
-        ttk.Label(
+        self.lbl_folders_hdr = ttk.Label(parent, text=t("folders_header"), style="Header.TLabel")
+        self.lbl_folders_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_folders_sub = ttk.Label(
             parent,
             text=t("folders_sub"),
             style="Subheader.TLabel",
-        ).pack(anchor="w", pady=(0, 14))
+        )
+        self.lbl_folders_sub.pack(anchor="w", pady=(0, 14))
 
         # Local folder
-        ttk.Label(parent, text=t("folders_local_label"), style="Card.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
+        self.lbl_folders_local = ttk.Label(parent, text=t("folders_local_label"), style="Card.TLabel")
+        self.lbl_folders_local.pack(anchor="w", pady=(0, 2))
+
         local_row = tk.Frame(parent, bg="#FFFFFF")
         local_row.pack(fill="x", pady=(0, 8))
 
@@ -282,39 +365,41 @@ class SettingsDialog:
         self.entry_local.insert(0, str(self.config.local_path))
         self.entry_local.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        btn_browse = ttk.Button(local_row, text=t("folders_browse_btn"), command=self._browse_local_folder)
-        btn_browse.pack(side="right")
+        self.btn_browse = ttk.Button(local_row, text=t("folders_browse_btn"), command=self._browse_local_folder)
+        self.btn_browse.pack(side="right")
 
         # Action helpers for local folder
         btns_row = tk.Frame(parent, bg="#FFFFFF")
         btns_row.pack(fill="x", pady=(0, 16))
 
-        btn_open = ttk.Button(
+        self.btn_open = ttk.Button(
             btns_row,
             text=t("folders_open_btn"),
             command=lambda: open_folder_in_explorer(self.entry_local.get()),
         )
-        btn_open.pack(side="left", padx=(0, 8))
+        self.btn_open.pack(side="left", padx=(0, 8))
 
-        btn_shortcut = ttk.Button(
+        self.btn_shortcut = ttk.Button(
             btns_row, text=t("folders_shortcut_btn"), command=self._create_shortcut
         )
-        btn_shortcut.pack(side="left")
+        self.btn_shortcut.pack(side="left")
 
         ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 14))
 
         # Remote folder
-        ttk.Label(parent, text=t("folders_remote_label"), style="Card.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
+        self.lbl_folders_remote = ttk.Label(parent, text=t("folders_remote_label"), style="Card.TLabel")
+        self.lbl_folders_remote.pack(anchor="w", pady=(0, 2))
+
         self.entry_remote = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_remote.insert(0, self.config.remote_path)
         self.entry_remote.pack(fill="x", pady=(0, 4))
-        ttk.Label(
+
+        self.lbl_folders_hint = ttk.Label(
             parent,
             text=t("folders_remote_hint"),
             style="Subheader.TLabel",
-        ).pack(anchor="w")
+        )
+        self.lbl_folders_hint.pack(anchor="w")
 
     def _browse_local_folder(self) -> None:
         chosen = filedialog.askdirectory(initialdir=self.entry_local.get())
@@ -338,14 +423,15 @@ class SettingsDialog:
             messagebox.showerror(t("shortcut_fail_title"), t("shortcut_fail_msg"), parent=self.window)
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text=t("settings_header"), style="Header.TLabel").pack(anchor="w", pady=(0, 10))
+        self.lbl_settings_hdr = ttk.Label(parent, text=t("settings_header"), style="Header.TLabel")
+        self.lbl_settings_hdr.pack(anchor="w", pady=(0, 10))
 
         # 1. Poll interval
         poll_row = tk.Frame(parent, bg="#FFFFFF")
         poll_row.pack(fill="x", pady=(0, 6))
-        ttk.Label(poll_row, text=t("settings_poll_label"), style="Card.TLabel").pack(
-            side="left", padx=(0, 8)
-        )
+        self.lbl_poll = ttk.Label(poll_row, text=t("settings_poll_label"), style="Card.TLabel")
+        self.lbl_poll.pack(side="left", padx=(0, 8))
+
         self.spin_poll = ttk.Spinbox(poll_row, from_=5, to=3600, width=6, font=("Segoe UI", 9))
         self.spin_poll.set(self.config.poll_interval)
         self.spin_poll.pack(side="left")
@@ -353,41 +439,42 @@ class SettingsDialog:
         # 2. File retention (Auto-cleanup of old files)
         file_ret_row = tk.Frame(parent, bg="#FFFFFF")
         file_ret_row.pack(fill="x", pady=(0, 6))
-        ttk.Label(file_ret_row, text=t("settings_file_ret_label"), style="Card.TLabel").pack(
-            side="left", padx=(0, 8)
-        )
+        self.lbl_file_ret = ttk.Label(file_ret_row, text=t("settings_file_ret_label"), style="Card.TLabel")
+        self.lbl_file_ret.pack(side="left", padx=(0, 8))
+
         self.spin_file_retention = ttk.Spinbox(
             file_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9)
         )
         self.spin_file_retention.set(self.config.file_retention_days)
         self.spin_file_retention.pack(side="left", padx=(0, 6))
 
-        ttk.Label(file_ret_row, text=t("settings_disabled_hint"), style="Subheader.TLabel").pack(
-            side="left", padx=(0, 10)
-        )
+        self.lbl_file_ret_hint = ttk.Label(file_ret_row, text=t("settings_disabled_hint"), style="Subheader.TLabel")
+        self.lbl_file_ret_hint.pack(side="left", padx=(0, 10))
 
-        btn_clean_now = ttk.Button(
+        self.btn_clean_now = ttk.Button(
             file_ret_row, text=t("settings_clean_now_btn"), command=self._trigger_file_cleanup_now
         )
-        btn_clean_now.pack(side="left")
+        self.btn_clean_now.pack(side="left")
 
         # 3. History log retention
         log_ret_row = tk.Frame(parent, bg="#FFFFFF")
         log_ret_row.pack(fill="x", pady=(0, 6))
-        ttk.Label(log_ret_row, text=t("settings_log_ret_label"), style="Card.TLabel").pack(
-            side="left", padx=(0, 8)
-        )
+        self.lbl_log_ret = ttk.Label(log_ret_row, text=t("settings_log_ret_label"), style="Card.TLabel")
+        self.lbl_log_ret.pack(side="left", padx=(0, 8))
+
         self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9))
         self.spin_retention.set(self.config.log_retention_days)
         self.spin_retention.pack(side="left", padx=(0, 6))
-        ttk.Label(log_ret_row, text=t("settings_forever_hint"), style="Subheader.TLabel").pack(side="left")
 
-        # 4. Interface Language selector
+        self.lbl_log_ret_hint = ttk.Label(log_ret_row, text=t("settings_forever_hint"), style="Subheader.TLabel")
+        self.lbl_log_ret_hint.pack(side="left")
+
+        # 4. Interface Language selector with live switching
         lang_row = tk.Frame(parent, bg="#FFFFFF")
-        lang_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(lang_row, text=t("settings_lang_label"), style="Card.TLabel").pack(
-            side="left", padx=(0, 8)
-        )
+        lang_row.pack(fill="x", pady=(0, 4))
+        self.lbl_lang = ttk.Label(lang_row, text=t("settings_lang_label"), style="Card.TLabel")
+        self.lbl_lang.pack(side="left", padx=(0, 8))
+
         self.lang_codes = list(SUPPORTED_LANGUAGES.keys())
         lang_display_names = [SUPPORTED_LANGUAGES[k] for k in self.lang_codes]
         self.combo_lang = ttk.Combobox(
@@ -402,58 +489,82 @@ class SettingsDialog:
             self.combo_lang.current(self.lang_codes.index(cur_lang))
         else:
             self.combo_lang.current(0)
-        self.combo_lang.pack(side="left")
+        self.combo_lang.pack(side="left", padx=(0, 8))
+        self.combo_lang.bind("<<ComboboxSelected>>", self._on_lang_selected)
+
+        # Live language hint label
+        self.lbl_lang_hint = tk.Label(
+            parent,
+            text="",
+            font=("Segoe UI", 8, "italic"),
+            fg="#0F7B0F",
+            bg="#FFFFFF",
+            anchor="w",
+        )
+        self.lbl_lang_hint.pack(fill="x", pady=(0, 8))
 
         # Checkboxes
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart_enabled())
-        chk_auto = ttk.Checkbutton(
+        self.chk_auto = ttk.Checkbutton(
             parent,
             text=t("settings_autostart"),
             variable=self.var_autostart,
             style="TCheckbutton",
         )
-        chk_auto.pack(anchor="w", pady=(2, 5))
+        self.chk_auto.pack(anchor="w", pady=(2, 5))
 
         self.var_notify = tk.BooleanVar(value=self.config.notify_on_sync)
-        chk_notify = ttk.Checkbutton(
+        self.chk_notify = ttk.Checkbutton(
             parent,
             text=t("settings_notify"),
             variable=self.var_notify,
             style="TCheckbutton",
         )
-        chk_notify.pack(anchor="w", pady=(2, 8))
+        self.chk_notify.pack(anchor="w", pady=(2, 8))
 
         # Ignore patterns
-        ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
+        self.lbl_ignore = ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel")
+        self.lbl_ignore.pack(anchor="w", pady=(0, 2))
+
         self.entry_ignore = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
         self.entry_ignore.pack(fill="x", pady=(0, 12))
 
         # Backup / Restore settings section
         ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(2, 10))
-        ttk.Label(parent, text=t("settings_backup_header"), style="Header.TLabel").pack(
-            anchor="w", pady=(0, 2)
-        )
-        ttk.Label(
+        self.lbl_backup_hdr = ttk.Label(parent, text=t("settings_backup_header"), style="Header.TLabel")
+        self.lbl_backup_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_backup_sub = ttk.Label(
             parent,
             text=t("settings_backup_sub"),
             style="Subheader.TLabel",
-        ).pack(anchor="w", pady=(0, 8))
+        )
+        self.lbl_backup_sub.pack(anchor="w", pady=(0, 8))
 
         backup_row = tk.Frame(parent, bg="#FFFFFF")
         backup_row.pack(fill="x")
 
-        btn_export = ttk.Button(
+        self.btn_export = ttk.Button(
             backup_row, text=t("settings_export_btn"), command=self._export_settings
         )
-        btn_export.pack(side="left", padx=(0, 8))
+        self.btn_export.pack(side="left", padx=(0, 8))
 
-        btn_import = ttk.Button(
+        self.btn_import = ttk.Button(
             backup_row, text=t("settings_import_btn"), command=self._import_settings
         )
-        btn_import.pack(side="left")
+        self.btn_import.pack(side="left")
+
+    def _on_lang_selected(self, event=None) -> None:
+        """Called immediately when user chooses a new language in combobox."""
+        idx = self.combo_lang.current()
+        if 0 <= idx < len(self.lang_codes):
+            selected_lang = self.lang_codes[idx]
+            self.config.language = selected_lang
+            set_current_language(selected_lang)
+            self._retranslate_ui()
+            if hasattr(self, "lbl_lang_hint"):
+                self.lbl_lang_hint.config(text=t("settings_restart_note"), fg="#0F7B0F")
 
     def _trigger_file_cleanup_now(self) -> None:
         try:
@@ -492,15 +603,14 @@ class SettingsDialog:
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         header_row = tk.Frame(parent, bg="#FFFFFF")
         header_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(header_row, text=t("log_header"), style="Header.TLabel").pack(
-            side="left"
-        )
+        self.lbl_log_hdr = ttk.Label(header_row, text=t("log_header"), style="Header.TLabel")
+        self.lbl_log_hdr.pack(side="left")
 
-        btn_clear = ttk.Button(header_row, text=t("log_clear_btn"), command=self._clear_logs)
-        btn_clear.pack(side="right", padx=(8, 0))
+        self.btn_clear_log = ttk.Button(header_row, text=t("log_clear_btn"), command=self._clear_logs)
+        self.btn_clear_log.pack(side="right", padx=(8, 0))
 
-        btn_refresh = ttk.Button(header_row, text=t("log_refresh_btn"), command=self._refresh_logs)
-        btn_refresh.pack(side="right")
+        self.btn_refresh_log = ttk.Button(header_row, text=t("log_refresh_btn"), command=self._refresh_logs)
+        self.btn_refresh_log.pack(side="right")
 
         # Treeview
         cols = ("time", "action", "direction", "file", "status")
@@ -532,13 +642,16 @@ class SettingsDialog:
             t("log_clear_msg"),
             parent=self.window,
         )
-        if ans:
+        if ans and self.state_db:
             self.state_db.clear_history()
             self._refresh_logs()
 
     def _refresh_logs(self) -> None:
         for row in self.tree_log.get_children():
             self.tree_log.delete(row)
+
+        if not self.state_db:
+            return
 
         records = self.state_db.get_recent_history(limit=50)
         action_names = {
@@ -659,11 +772,13 @@ class SettingsDialog:
         ok = self.config.import_config(chosen)
         if ok:
             set_current_language(self.config.language)
+            self._retranslate_ui()
             self._populate_form_fields()
-            self.client.base_url = self.config.server_url
-            self.client.username = self.config.username
-            self.client.password = self.config.password
-            self.client.token = None
+            if self.client:
+                self.client.base_url = self.config.server_url
+                self.client.username = self.config.username
+                self.client.password = self.config.password
+                self.client.token = None
             set_windows_autostart(self.config.start_with_windows)
             messagebox.showinfo(
                 t("import_success_title"),
@@ -678,6 +793,7 @@ class SettingsDialog:
             )
 
     def _save_and_close(self) -> None:
+        """Saves configuration and applies to active client/engine without restarting process."""
         self._read_form_into_config()
         self.config.save()
 
@@ -685,10 +801,11 @@ class SettingsDialog:
         set_windows_autostart(self.var_autostart.get())
 
         # Update client
-        self.client.base_url = self.config.server_url
-        self.client.username = self.config.username
-        self.client.password = self.config.password
-        self.client.token = None  # Force re-login with updated credentials
+        if self.client:
+            self.client.base_url = self.config.server_url
+            self.client.username = self.config.username
+            self.client.password = self.config.password
+            self.client.token = None  # Force re-login with updated credentials
 
         if self.on_save_callback:
             try:
@@ -699,3 +816,29 @@ class SettingsDialog:
         if self.window:
             self.window.destroy()
             self.window = None
+
+    def _save_and_restart(self) -> None:
+        """Saves configuration and triggers a clean full application restart."""
+        self._read_form_into_config()
+        self.config.save()
+
+        # Update Windows autostart registry
+        set_windows_autostart(self.var_autostart.get())
+
+        if self.window:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+            self.window = None
+
+        if self.on_restart_callback:
+            try:
+                self.on_restart_callback()
+                return
+            except Exception as e:
+                print(f"[SettingsDialog] Error calling on_restart_callback: {e}")
+
+        # Fallback direct restart if callback was not passed
+        restart_dropfile()
+        os._exit(0)

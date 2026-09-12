@@ -7,6 +7,7 @@ import os
 import socket
 import sys
 import threading
+import time
 from pathlib import Path
 
 # Add project directory to sys.path
@@ -21,21 +22,44 @@ from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
 from version import __version__
-from win_utils import create_desktop_shortcut
+from win_utils import create_desktop_shortcut, restart_dropfile
 
 SINGLE_INSTANCE_PORT = 49195
+INSTANCE_SOCKET: Optional[socket.socket] = None
+
+
+def release_instance_socket() -> None:
+    """Closes the single-instance lock socket immediately to allow restart handover."""
+    global INSTANCE_SOCKET
+    if INSTANCE_SOCKET:
+        try:
+            INSTANCE_SOCKET.close()
+        except Exception:
+            pass
+        INSTANCE_SOCKET = None
 
 
 def ensure_single_instance() -> socket.socket:
-    """Ensures only one instance of DropFile runs at a time."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
-        s.listen(1)
-        return s
-    except socket.error:
-        print("[DropFile] Another instance of DropFile is already running. Exiting.")
-        sys.exit(0)
+    """Ensures only one instance of DropFile runs at a time with retry for restart handover."""
+    global INSTANCE_SOCKET
+    for attempt in range(4):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+            s.listen(1)
+            INSTANCE_SOCKET = s
+            return s
+        except socket.error:
+            try:
+                s.close()
+            except Exception:
+                pass
+            if attempt < 3:
+                time.sleep(0.5)
+                continue
+            print("[DropFile] Another instance of DropFile is already running. Exiting.")
+            sys.exit(0)
 
 
 def main():
@@ -78,12 +102,26 @@ def main():
         except Exception:
             pass
 
+    # Callback when user clicks Save and Restart
+    def on_restart():
+        print("[DropFile] Restart requested. Stopping engine and spawning new process...")
+        release_instance_socket()
+        engine.stop()
+        try:
+            if 'tray' in locals() and tray._icon:
+                tray._icon.stop()
+        except Exception:
+            pass
+        restart_dropfile()
+        os._exit(0)
+
     # 7. Initialize Settings Dialog
     settings_dialog = SettingsDialog(
         config=config,
         state_db=state_db,
         client=client,
         on_save_callback=on_settings_saved,
+        on_restart_callback=on_restart,
         engine=engine,
     )
 
