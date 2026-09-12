@@ -12,6 +12,9 @@ import sys
 from pathlib import Path
 
 
+from version import __version__
+
+
 def create_mac_app(
     target_dir: Path = None,
     python_path: Path = None,
@@ -25,7 +28,9 @@ def create_mac_app(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if python_path is None:
-        python_path = Path(sys.executable).resolve()
+        # Keep current Python path WITHOUT resolving symlinks so virtualenv (.venv)
+        # paths and site-packages are preserved.
+        python_path = Path(sys.executable)
 
     app_dir = target_dir / "DropFile.app"
     if app_dir.exists():
@@ -45,9 +50,32 @@ def create_mac_app(
     launcher_content = f"""#!/bin/bash
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
-exec "{python_path}" "{entrypoint}" "$@"
+
+PROJECT_DIR="{source_dir.as_posix()}"
+LOG_DIR="$HOME/Library/Application Support/DropFile"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/dropfile.log"
+
+# Select Python executable with virtual environment priority
+if [ -f "$PROJECT_DIR/.venv/bin/activate" ]; then
+    source "$PROJECT_DIR/.venv/bin/activate"
+    PYTHON_EXEC="$PROJECT_DIR/.venv/bin/python3"
+elif [ -x "{python_path.as_posix()}" ]; then
+    PYTHON_EXEC="{python_path.as_posix()}"
+else
+    PYTHON_EXEC="python3"
+fi
+
+# In interactive terminal output directly; under LaunchServices redirect to log
+if [ -t 1 ]; then
+    exec "$PYTHON_EXEC" "$PROJECT_DIR/DropFile.pyw" "$@"
+else
+    exec "$PYTHON_EXEC" "$PROJECT_DIR/DropFile.pyw" "$@" >> "$LOG_FILE" 2>&1
+fi
 """
-    launcher_script.write_text(launcher_content, encoding="utf-8")
+    with open(launcher_script, "w", newline="\n", encoding="utf-8") as f:
+        f.write(launcher_content)
+
     try:
         os.chmod(launcher_script, 0o755)
     except Exception:
@@ -80,7 +108,7 @@ exec "{python_path}" "{entrypoint}" "$@"
     # 3. Info.plist
     # LSUIElement = 1 makes DropFile run as a status bar item without taking space in the Dock
     info_plist = contents_dir / "Info.plist"
-    plist_content = """<?xml version="1.0" encoding="UTF-8"?>
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -91,9 +119,9 @@ exec "{python_path}" "{entrypoint}" "$@"
     <key>CFBundleIdentifier</key>
     <string>com.saidauita.dropfile</string>
     <key>CFBundleVersion</key>
-    <string>1.07</string>
+    <string>{__version__}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.07</string>
+    <string>{__version__}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -111,7 +139,8 @@ exec "{python_path}" "{entrypoint}" "$@"
 </dict>
 </plist>
 """
-    info_plist.write_text(plist_content, encoding="utf-8")
+    with open(info_plist, "w", newline="\n", encoding="utf-8") as f:
+        f.write(plist_content)
     print(f"[mac_bundle] Successfully created macOS Application: {app_dir}")
     return app_dir
 

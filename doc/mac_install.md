@@ -195,3 +195,12 @@ rm -rf ~/Applications/DropFile.app
 rm -rf ~/Library/Application\ Support/DropFile
 rm -f ~/Library/LaunchAgents/com.saidauita.dropfile.plist
 ```
+
+### 5. Что делать, если при запуске возникает ошибка LaunchServices error -10810?
+Эта ошибка в macOS означает блокировку запуска со стороны Gatekeeper или отсутствие прав на исполняемый файл. Начиная с версии 1.08, инсталлятор `install_mac.command` устраняет это автоматически. Если вы собирали приложение вручную, выполните в Терминале:
+```bash
+chmod -R 755 ~/Applications/DropFile.app
+chmod +x ~/Applications/DropFile.app/Contents/MacOS/DropFile
+xattr -cr ~/Applications/DropFile.app
+```
+
