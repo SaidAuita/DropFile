@@ -135,11 +135,22 @@ class DropFileTray:
             self.engine.pause()
 
     def _open_settings(self, icon, item) -> None:
-        if sys.platform == "darwin":
-            # On macOS, AppKit event loop owns main thread; spawn settings on its own process
-            script = Path(__file__).resolve().parent / "DropFile.pyw"
-            subprocess.Popen([sys.executable, str(script), "--settings"])
-        else:
+        try:
+            if getattr(self, "_settings_proc", None) is not None:
+                if self._settings_proc.poll() is None:
+                    # Settings dialog is already open
+                    return
+                self._settings_proc = None
+
+            if getattr(sys, "frozen", False):
+                # Running as compiled PyInstaller binary (DropFile.exe)
+                self._settings_proc = subprocess.Popen([sys.executable, "--settings"])
+            else:
+                # Running as script in Python
+                script = Path(__file__).resolve().parent / "DropFile.pyw"
+                self._settings_proc = subprocess.Popen([sys.executable, str(script), "--settings"])
+        except Exception as e:
+            print(f"[Tray] Subprocess settings spawn error: {e}, falling back to thread...")
             threading.Thread(target=self.settings_dialog.show, daemon=True).start()
 
     def _check_updates_from_tray(self, icon, item) -> None:

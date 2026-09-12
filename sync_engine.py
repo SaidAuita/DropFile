@@ -60,6 +60,10 @@ class SyncEngine:
         self.last_sync_time: float = 0.0
         self.current_state = "idle"
         self.status_message = t("status_ready")
+        try:
+            self._last_cfg_mtime = self.config.config_file.stat().st_mtime if self.config.config_file.exists() else 0.0
+        except Exception:
+            self._last_cfg_mtime = 0.0
 
     def set_status(self, message: str, state: str) -> None:
         self.status_message = message
@@ -178,6 +182,25 @@ class SyncEngine:
         with self._pending_lock:
             self._pending_local_events[rel] = time.time()
 
+    def _check_config_reload(self) -> None:
+        """Checks if config.json was modified on disk and reloads configuration dynamically."""
+        try:
+            cfg_file = self.config.config_file
+            if cfg_file.exists():
+                mtime = cfg_file.stat().st_mtime
+                if mtime > getattr(self, "_last_cfg_mtime", 0.0):
+                    self._last_cfg_mtime = mtime
+                    print("[SyncEngine] config.json modification detected, reloading...")
+                    self.config.load()
+                    if self.client:
+                        self.client.base_url = self.config.server_url
+                        self.client.username = self.config.username
+                        self.client.password = self.config.password
+                        self.client.token = None
+                    self.trigger_sync_now()
+        except Exception as e:
+            print(f"[SyncEngine] Error checking config reload: {e}")
+
     def _worker_loop(self) -> None:
         """Main background loop handling debounced local events and periodic polling."""
         last_poll = 0.0
@@ -199,6 +222,7 @@ class SyncEngine:
 
         while self._running:
             try:
+                self._check_config_reload()
                 now = time.time()
 
                 # Process debounced local changes

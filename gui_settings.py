@@ -107,19 +107,68 @@ class SettingsDialog:
         self.on_cleanup_callback = on_cleanup_callback
         self.engine = engine
         self.window: Optional[tk.Tk] = None
+        self._show_lock = threading.Lock()
+        self._ui_thread: Optional[threading.Thread] = None
         self.lang_codes = list(SUPPORTED_LANGUAGES.keys())
 
+    def _is_window_alive(self) -> bool:
+        """Safely checks whether self.window exists without raising TclError."""
+        if self.window is None:
+            return False
+        try:
+            return bool(self.window.winfo_exists())
+        except Exception:
+            return False
+
+    def _safe_destroy(self) -> None:
+        """Destroys Tk window on the UI thread and resets references."""
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+            finally:
+                self.window = None
+                self._ui_thread = None
+
+    def _on_close(self) -> None:
+        """Safely destroys the window and ensures self.window is reset to None."""
+        if self.window is not None:
+            try:
+                if self._ui_thread and threading.current_thread() != self._ui_thread:
+                    self.window.after(0, self._safe_destroy)
+                else:
+                    self._safe_destroy()
+            except Exception:
+                pass
+
     def show(self) -> None:
-        if self.window is not None and self.window.winfo_exists():
-            self.window.lift()
-            self.window.focus_force()
-            return
+        with self._show_lock:
+            if self._is_window_alive():
+                try:
+                    self.window.lift()
+                    self.window.focus_force()
+                except Exception:
+                    pass
+                return
+
+            self.window = None
+            try:
+                self.window = tk.Tk()
+                self._ui_thread = threading.current_thread()
+            except Exception as e:
+                print(f"[SettingsDialog] Error initializing Tk: {e}")
+                self.window = None
+                self._ui_thread = None
+                return
 
         # Synchronize active i18n language with config
         set_current_language(self.config.language)
 
-        self.window = tk.Tk()
         self.window.title(f"{t('app_name')} v{__version__} — {t('tab_settings').strip()}")
+        # Set WM_DELETE_WINDOW protocol to cleanly close and reset self.window
+        self.window.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # Generous dimensions to fit all content cleanly across scaling factors
         self.window.geometry("740x660")
         self.window.minsize(640, 500)
@@ -252,7 +301,7 @@ class SettingsDialog:
         self.btn_save.pack(side="right", padx=(8, 0))
 
         # "Close" button
-        self.btn_cancel = ttk.Button(bottom_bar, text=t("btn_close"), command=self.window.destroy)
+        self.btn_cancel = ttk.Button(bottom_bar, text=t("btn_close"), command=self._on_close)
         self.btn_cancel.pack(side="right")
 
         # --- Tab Notebook (Expands in remaining space) ---
@@ -287,11 +336,18 @@ class SettingsDialog:
         y = max(0, (self.window.winfo_screenheight() // 2) - (h // 2))
         self.window.geometry(f"+{x}+{y}")
 
-        self.window.mainloop()
+        try:
+            self.window.mainloop()
+        except Exception as e:
+            print(f"[SettingsDialog] mainloop exception: {e}")
+        finally:
+            with self._show_lock:
+                self.window = None
+                self._ui_thread = None
 
     def _retranslate_ui(self) -> None:
         """Dynamically retranslates all open window elements when language is changed."""
-        if not self.window or not self.window.winfo_exists():
+        if not self._is_window_alive():
             return
 
         self.window.title(f"{t('app_name')} v{__version__} — {t('tab_settings').strip()}")
@@ -426,7 +482,7 @@ class SettingsDialog:
         def worker():
             test_client = FileBrowserClient(base_url=url, username=user, password=pwd, timeout=8)
             ok, msg = test_client.test_connection()
-            if self.window and self.window.winfo_exists():
+            if self._is_window_alive():
                 self.window.after(0, lambda: self._on_test_done(ok, msg))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -759,7 +815,7 @@ class SettingsDialog:
                     t("dedup_none_msg"),
                     parent=self.window,
                 )
-            if self.window and self.window.winfo_exists():
+            if self._is_window_alive():
                 self.window.after(0, self._refresh_logs)
 
         threading.Thread(target=run_dedup, daemon=True).start()
@@ -1042,14 +1098,14 @@ class SettingsDialog:
 
         def worker():
             has_update, info = check_for_updates()
-            if self.window and self.window.winfo_exists():
+            if self._is_window_alive():
                 self.window.after(0, lambda: self._on_check_update_result(has_update, info))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_check_update_result(self, has_update: bool, info: dict) -> None:
         """Processes GitHub release check results and prompts user on UI thread."""
-        if not self.window or not self.window.winfo_exists():
+        if not self._is_window_alive():
             return
 
         if hasattr(self, "btn_check_update"):
@@ -1099,7 +1155,7 @@ class SettingsDialog:
             self.btn_check_update.config(state="disabled", text=t("update_downloading"))
 
         def on_progress(percent: int):
-            if self.window and self.window.winfo_exists() and hasattr(self, "btn_check_update"):
+            if self._is_window_alive() and hasattr(self, "btn_check_update"):
                 self.window.after(
                     0, lambda: self.btn_check_update.config(text=f"⬇️ {percent}%...")
                 )
@@ -1118,9 +1174,9 @@ class SettingsDialog:
                 on_before_restart=cleanup,
             )
             if not ok:
-                if self.window and self.window.winfo_exists():
+                if self._is_window_alive():
                     def show_update_failure():
-                        if not self.window or not self.window.winfo_exists():
+                        if not self._is_window_alive():
                             return
                         err_text = t("update_error_msg", msg=err)
                         html_url = info.get("html_url")
