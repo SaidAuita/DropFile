@@ -160,13 +160,14 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
         # CREATE_NO_WINDOW (0x08000000) | DETACHED_PROCESS (0x00000008)
         creation_flags = 0x08000000 | 0x00000008
 
-    # Clean PyInstaller environment so child process unpacks to a fresh directory
+    # Clean PyInstaller environment so child process starts as a fresh root instance
     env = os.environ.copy()
-    mei_pass = env.pop("_MEIPASS2", None)
-    env.pop("_MEIPASS", None)
-    if mei_pass:
+    for k in list(env.keys()):
+        if k.startswith(("_PYI", "PYI", "_MEI")):
+            env.pop(k, None)
+    if hasattr(sys, "_MEIPASS"):
         paths = env.get("PATH", "").split(os.pathsep)
-        cleaned = [p for p in paths if not p.lower().startswith(mei_pass.lower())]
+        cleaned = [p for p in paths if not p.lower().startswith(sys._MEIPASS.lower())]
         env["PATH"] = os.pathsep.join(cleaned)
 
     try:

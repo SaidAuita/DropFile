@@ -165,6 +165,8 @@ def apply_update(
             # Create standalone swap batch script
             bat_script = f"""@echo off
 chcp 65001 >nul
+set _PYI_PARENT_PROCESS_LEVEL=
+set _MEIPASS2=
 timeout /t 1 /nobreak >nul
 :retry
 copy /y "{update_temp_exe.name}" "{current_exe.name}" >nul 2>&1
@@ -185,14 +187,24 @@ del /f /q "%~f0" >nul 2>&1
                 except Exception as e:
                     print(f"[Updater] on_before_restart error: {e}")
 
-            # Spawn swap batch detached and silent
+            # Spawn swap batch detached and silent with sanitized environment
             flags = 0
             if sys.platform.startswith("win"):
                 flags = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
 
+            env = os.environ.copy()
+            for k in list(env.keys()):
+                if k.startswith(("_PYI", "PYI", "_MEI")):
+                    env.pop(k, None)
+            if hasattr(sys, "_MEIPASS"):
+                paths = env.get("PATH", "").split(os.pathsep)
+                cleaned = [p for p in paths if not p.lower().startswith(sys._MEIPASS.lower())]
+                env["PATH"] = os.pathsep.join(cleaned)
+
             subprocess.Popen(
                 ["cmd.exe", "/c", str(swap_bat)],
                 cwd=str(current_dir),
+                env=env,
                 creationflags=flags,
                 close_fds=True,
             )
