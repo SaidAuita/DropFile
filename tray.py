@@ -35,15 +35,17 @@ class DropFileTray:
         self.engine.on_notify = self.send_notification
         self.engine.on_share_ready = self._on_share_ready
 
-    def _on_share_ready(self, item_info: dict) -> None:
+    def _on_share_ready(self, item_info: dict, notify: bool = True) -> None:
         """Called when a file has just uploaded and its share link is prepared."""
         if self._icon:
             try:
+                self._icon.menu = self._build_menu()
                 self._icon.update_menu()
-            except Exception:
-                pass
-        name = item_info.get("name", "Файл")
-        self.send_notification("Файл выгружен!", f"Ссылка для обмена готова: {name}")
+            except Exception as e:
+                print(f"[Tray] Error updating menu on share ready: {e}")
+        if notify:
+            name = item_info.get("name", "Файл")
+            self.send_notification("Файл выгружен!", f"Ссылка для обмена готова: {name}")
 
     def update_status(self, text: str, state: str) -> None:
         """Called by sync engine to update tray icon and menu status."""
@@ -54,6 +56,7 @@ class DropFileTray:
             try:
                 self._icon.title = f"DropFile — {text}"
                 self._icon.icon = create_tray_icon(state)
+                self._icon.menu = self._build_menu()
                 self._icon.update_menu()
             except Exception as e:
                 print(f"[Tray] Error updating icon: {e}")
@@ -66,11 +69,34 @@ class DropFileTray:
             except Exception as e:
                 print(f"[Tray] Notification error: {e}")
 
+    def _get_last_item(self) -> Optional[dict]:
+        return self.engine.get_last_uploaded_item()
+
+    def _is_share_enabled(self) -> bool:
+        item = self._get_last_item()
+        return bool(item and item.get("name"))
+
+    def _get_share_label(self) -> str:
+        item = self._get_last_item()
+        if item and item.get("name"):
+            raw_name = item["name"]
+            short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
+            return f"🔗 Скопировать ссылку: «{short_name}»"
+        return "🔗 Скопировать ссылку (нет файлов)"
+
+    def _get_name_label(self) -> str:
+        item = self._get_last_item()
+        if item and item.get("name"):
+            raw_name = item["name"]
+            short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
+            return f"📋 Скопировать имя: «{short_name}»"
+        return "📋 Скопировать имя файла"
+
     def _open_local_folder(self, icon, item) -> None:
         open_folder_in_explorer(self.config.local_path)
 
     def _copy_share_link(self, icon, item) -> None:
-        info = self.engine.last_uploaded_item
+        info = self._get_last_item()
         if not info or not info.get("share_url"):
             return
         url = info["share_url"]
@@ -79,7 +105,7 @@ class DropFileTray:
             self.send_notification("Ссылка скопирована в буфер!", f"{name}\n{url}")
 
     def _copy_file_name(self, icon, item) -> None:
-        info = self.engine.last_uploaded_item
+        info = self._get_last_item()
         if not info or not info.get("name"):
             return
         name = info["name"]
@@ -120,24 +146,20 @@ class DropFileTray:
             "▶ Возобновить синхронизацию" if self.engine.is_paused() else "⏸ Приостановить синхронизацию"
         )
 
-        info = self.engine.last_uploaded_item
-        if info and info.get("name"):
-            raw_name = info["name"]
-            short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
-            share_label = f"🔗 Скопировать ссылку: «{short_name}»"
-            name_label = f"📋 Скопировать имя: «{short_name}»"
-            has_item = True
-        else:
-            share_label = "🔗 Скопировать ссылку (нет файлов)"
-            name_label = "📋 Скопировать имя файла"
-            has_item = False
-
         return pystray.Menu(
             item(lambda text: self.current_status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
             item("📁 Открыть папку DropFile", self._open_local_folder, default=True),
-            item(lambda text: share_label, self._copy_share_link, enabled=has_item),
-            item(lambda text: name_label, self._copy_file_name, enabled=has_item),
+            item(
+                lambda text: self._get_share_label(),
+                self._copy_share_link,
+                enabled=lambda item: self._is_share_enabled(),
+            ),
+            item(
+                lambda text: self._get_name_label(),
+                self._copy_file_name,
+                enabled=lambda item: self._is_share_enabled(),
+            ),
             pystray.Menu.SEPARATOR,
             item("🔄 Синхронизировать сейчас", self._sync_now),
             item(lambda text: pause_label, self._toggle_pause),

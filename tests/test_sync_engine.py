@@ -70,6 +70,18 @@ class TestSyncEngine(unittest.TestCase):
         self.assertEqual(self.engine.last_uploaded_item["name"], "share_test.txt")
         self.assertTrue("share" in self.engine.last_uploaded_item["share_url"] or "files" in self.engine.last_uploaded_item["share_url"])
 
+    def test_get_last_uploaded_item_from_history(self):
+        self.config.server_url = "https://mock.local"
+        self.config.username = "mock_user"
+        self.db.log_sync("archive_test.zip", "upload", "local->remote", "success")
+        self.engine.last_uploaded_item = None
+        self.engine._history_loaded = False
+
+        item = self.engine.get_last_uploaded_item()
+        self.assertIsNotNone(item)
+        self.assertEqual(item["name"], "archive_test.zip")
+        self.assertEqual(item["rel_path"], "archive_test.zip")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Modern Tkinter Settings and Activity Log dialog for DropFile.
 Features native Windows 10/11 visual styles, high-DPI scaling,
 connection testing, backup/restore, autostart, and live logs.
@@ -332,15 +332,25 @@ class SettingsDialog:
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Параметры работы", style="Header.TLabel").pack(anchor="w", pady=(0, 10))
 
-        # Poll interval
-        poll_frame = tk.Frame(parent, bg="#FFFFFF")
-        poll_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(poll_frame, text="Период проверки удаленных изменений (секунды):", style="Card.TLabel").pack(
-            side="left", padx=(0, 10)
+        # Poll interval & Log retention row
+        times_frame = tk.Frame(parent, bg="#FFFFFF")
+        times_frame.pack(fill="x", pady=(0, 8))
+
+        ttk.Label(times_frame, text="Период проверки сервера (сек):", style="Card.TLabel").pack(
+            side="left", padx=(0, 6)
         )
-        self.spin_poll = ttk.Spinbox(poll_frame, from_=5, to=3600, width=8, font=("Segoe UI", 9))
+        self.spin_poll = ttk.Spinbox(times_frame, from_=5, to=3600, width=6, font=("Segoe UI", 9))
         self.spin_poll.set(self.config.poll_interval)
-        self.spin_poll.pack(side="left")
+        self.spin_poll.pack(side="left", padx=(0, 16))
+
+        ttk.Label(times_frame, text="Срок хранения журнала (дней):", style="Card.TLabel").pack(
+            side="left", padx=(0, 6)
+        )
+        self.spin_retention = ttk.Spinbox(times_frame, from_=0, to=365, width=6, font=("Segoe UI", 9))
+        self.spin_retention.set(self.config.log_retention_days)
+        self.spin_retention.pack(side="left", padx=(0, 6))
+
+        ttk.Label(times_frame, text="(0 = бессрочно)", style="Subheader.TLabel").pack(side="left")
 
         # Checkboxes
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart_enabled())
@@ -400,6 +410,9 @@ class SettingsDialog:
             side="left"
         )
 
+        btn_clear = ttk.Button(header_row, text="🗑 Очистить журнал", command=self._clear_logs)
+        btn_clear.pack(side="right", padx=(8, 0))
+
         btn_refresh = ttk.Button(header_row, text="🔄 Обновить", command=self._refresh_logs)
         btn_refresh.pack(side="right")
 
@@ -426,6 +439,16 @@ class SettingsDialog:
         scroll.pack(side="right", fill="y")
 
         self._refresh_logs()
+
+    def _clear_logs(self) -> None:
+        ans = messagebox.askyesno(
+            "Очистить журнал",
+            "Вы уверены, что хотите полностью очистить журнал синхронизации?",
+            parent=self.window,
+        )
+        if ans:
+            self.state_db.clear_history()
+            self._refresh_logs()
 
     def _refresh_logs(self) -> None:
         for row in self.tree_log.get_children():
@@ -457,6 +480,11 @@ class SettingsDialog:
         except Exception:
             pass
 
+        try:
+            self.config.log_retention_days = int(self.spin_retention.get())
+        except Exception:
+            pass
+
         self.config.notify_on_sync = self.var_notify.get()
         self.config.start_with_windows = self.var_autostart.get()
 
@@ -482,6 +510,7 @@ class SettingsDialog:
         self.entry_remote.insert(0, self.config.remote_path)
 
         self.spin_poll.set(self.config.poll_interval)
+        self.spin_retention.set(self.config.log_retention_days)
         self.var_autostart.set(self.config.start_with_windows)
         self.var_notify.set(self.config.notify_on_sync)
 

@@ -66,6 +66,28 @@ class TestStateDB(unittest.TestCase):
         self.assertEqual(history[0]["rel_path"], "file2.txt")
         self.assertEqual(history[1]["rel_path"], "file1.txt")
 
+    def test_clear_and_cleanup_history(self):
+        self.db.log_sync("file1.txt", "upload", "local->remote", "success")
+        self.db.log_sync("file2.txt", "download", "remote->local", "success")
+        self.assertEqual(len(self.db.get_recent_history()), 2)
+
+        # Manually backdate one entry in sqlite to test cleanup_old_history
+        old_time = time.time() - (35 * 86400)
+        with self.db._get_connection() as conn:
+            conn.execute("UPDATE sync_history SET timestamp = ? WHERE rel_path = 'file1.txt'", (old_time,))
+            conn.commit()
+
+        # Retention 30 days should delete file1.txt (35 days old) and keep file2.txt
+        deleted = self.db.cleanup_old_history(retention_days=30)
+        self.assertEqual(deleted, 1)
+        history = self.db.get_recent_history()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["rel_path"], "file2.txt")
+
+        # Clear history should delete all remaining
+        self.db.clear_history()
+        self.assertEqual(len(self.db.get_recent_history()), 0)
+
     def test_compute_file_hash(self):
         sample_file = self.test_dir / "sample.txt"
         sample_file.write_text("Hello DropFile World!", encoding="utf-8")

@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
+    "log_retention_days": 30,  # History log retention in days (0 = keep forever)
     "conflict_action": "keep_both",  # "keep_both" creates conflicted copies
     "ignore_patterns": [
         "~$*",
@@ -185,5 +186,14 @@ class Config:
         self._data["notify_on_sync"] = bool(value)
 
     @property
+    def log_retention_days(self) -> int:
+        return int(self._data.get("log_retention_days", 30))
+
+    @log_retention_days.setter
+    def log_retention_days(self, value: int) -> None:
+        self._data["log_retention_days"] = max(0, int(value))
+
+    @property
     def ignore_patterns(self) -> list:
         return self._data.get("ignore_patterns", DEFAULT_CONFIG["ignore_patterns"])
+

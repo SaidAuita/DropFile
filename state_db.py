@@ -8,6 +8,7 @@ import hashlib
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -206,6 +207,22 @@ class StateDatabase:
                 "SELECT * FROM sync_history ORDER BY id DESC LIMIT ?", (limit,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def clear_history(self) -> None:
+        """Clears all entries from the sync history table."""
+        with self._lock, self._get_connection() as conn:
+            conn.execute("DELETE FROM sync_history")
+            conn.commit()
+
+    def cleanup_old_history(self, retention_days: int = 30) -> int:
+        """Deletes sync history older than retention_days. If retention_days <= 0, preserves all."""
+        if retention_days <= 0:
+            return 0
+        cutoff = time.time() - (retention_days * 86400)
+        with self._lock, self._get_connection() as conn:
+            cur = conn.execute("DELETE FROM sync_history WHERE timestamp < ?", (cutoff,))
+            conn.commit()
+            return cur.rowcount
 
     def clear_all(self) -> None:
         with self._lock, self._get_connection() as conn:

@@ -179,11 +179,17 @@ class SyncEngine:
     def _worker_loop(self) -> None:
         """Main background loop handling debounced local events and periodic polling."""
         last_poll = 0.0
+        last_cleanup = 0.0
 
         # Perform initial sync on startup
         time.sleep(1.0)
         if self.config.server_url and self.config.username:
             self._init_last_uploaded_from_history()
+            try:
+                self.state_db.cleanup_old_history(self.config.log_retention_days)
+            except Exception as e:
+                print(f"[SyncEngine] Log cleanup error: {e}")
+            last_cleanup = time.time()
             self.reconcile_all()
         else:
             self.set_status("Требуется настройка подключения", "paused")
@@ -208,6 +214,14 @@ class SyncEngine:
                 if not self._paused and (now - last_poll >= self.config.poll_interval):
                     self.reconcile_all()
                     last_poll = time.time()
+
+                # Periodic log cleanup every 6 hours
+                if now - last_cleanup >= 21600:
+                    try:
+                        self.state_db.cleanup_old_history(self.config.log_retention_days)
+                    except Exception as e:
+                        print(f"[SyncEngine] Log cleanup error: {e}")
+                    last_cleanup = now
 
             except Exception as e:
                 print(f"[SyncEngine] Worker loop exception: {e}")
@@ -518,6 +532,27 @@ class SyncEngine:
             self.state_db.log_sync(rel, "upload", "local->remote", "error", "Upload failed")
             return False
 
+    def get_last_uploaded_item(self) -> Optional[Dict[str, str]]:
+        """Returns the last uploaded item dict, restoring from history if needed."""
+        if self.last_uploaded_item is not None:
+            return self.last_uploaded_item
+        if not getattr(self, "_history_loaded", False):
+            self._init_last_uploaded_from_history()
+        return self.last_uploaded_item
+
+    def _notify_share_ready(self, item_info: Dict[str, str], notify: bool = True) -> None:
+        if not self.on_share_ready:
+            return
+        try:
+            import inspect
+            sig = inspect.signature(self.on_share_ready)
+            if len(sig.parameters) >= 2:
+                self.on_share_ready(item_info, notify)
+            else:
+                self.on_share_ready(item_info)
+        except Exception as e:
+            print(f"[SyncEngine] on_share_ready callback error: {e}")
+
     def _record_uploaded_item(self, local_file: Path, rel_path: str, remote_dest: str) -> None:
         """Stores details and share URL of the most recently uploaded file or folder."""
         try:
@@ -532,14 +567,11 @@ class SyncEngine:
             "remote_path": remote_dest,
             "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
         }
-        if self.on_share_ready:
-            try:
-                self.on_share_ready(self.last_uploaded_item)
-            except Exception as e:
-                print(f"[SyncEngine] on_share_ready callback error: {e}")
+        self._notify_share_ready(self.last_uploaded_item, notify=True)
 
     def _init_last_uploaded_from_history(self) -> None:
         """Restores last_uploaded_item from the most recent upload in sync_history."""
+        self._history_loaded = True
         if not self.config.server_url or not self.config.username:
             return
 
@@ -561,11 +593,7 @@ class SyncEngine:
                         "remote_path": remote_dest,
                         "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
                     }
-                    if self.on_share_ready:
-                        try:
-                            self.on_share_ready(self.last_uploaded_item)
-                        except Exception:
-                            pass
+                    self._notify_share_ready(self.last_uploaded_item, notify=False)
                     print(f"[SyncEngine] Restored last uploaded item: {name} -> {self.last_uploaded_item['share_url']}")
         except Exception as e:
             print(f"[SyncEngine] Error restoring last uploaded item from history: {e}")
