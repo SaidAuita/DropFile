@@ -158,26 +158,41 @@ def apply_update(
                     print(f"[Updater] Attempting download from: {candidate[:50]}...")
                     try:
                         import requests
-                        with requests.get(candidate, headers=browser_headers, stream=True, timeout=30) as resp:
-                            if resp.status_code != 200:
-                                last_error = f"HTTP {resp.status_code} from {candidate[:35]}"
-                                continue
+                        session = requests.Session()
+                        resp = None
+                        try:
+                            resp = session.get(candidate, headers=browser_headers, stream=True, timeout=15)
+                        except Exception:
+                            # Fallback without environment proxy in case of proxy tunnel failures
+                            session.trust_env = False
+                            resp = session.get(candidate, headers=browser_headers, stream=True, timeout=25)
 
-                            total_size = int(resp.headers.get("content-length", 0))
-                            downloaded = 0
-                            chunk_size = 64 * 1024
+                        if resp.status_code != 200:
+                            last_error = f"HTTP {resp.status_code} from {candidate[:35]}"
+                            continue
 
-                            with open(update_temp_exe, "wb") as f_out:
-                                for chunk in resp.iter_content(chunk_size=chunk_size):
-                                    if chunk:
-                                        f_out.write(chunk)
-                                        downloaded += len(chunk)
-                                        if total_size > 0 and progress_callback:
-                                            percent = int(downloaded * 100 / total_size)
-                                            progress_callback(min(99, percent))
+                        total_size = int(resp.headers.get("content-length", 0))
+                        downloaded = 0
+                        chunk_size = 64 * 1024
+
+                        with open(update_temp_exe, "wb") as f_out:
+                            for chunk in resp.iter_content(chunk_size=chunk_size):
+                                if chunk:
+                                    f_out.write(chunk)
+                                    downloaded += len(chunk)
+                                    if total_size > 0 and progress_callback:
+                                        percent = int(downloaded * 100 / total_size)
+                                        progress_callback(min(99, percent))
                     except ImportError:
                         req = urllib.request.Request(candidate, headers=browser_headers)
-                        with urllib.request.urlopen(req, timeout=30) as resp:
+                        resp = None
+                        try:
+                            resp = urllib.request.urlopen(req, timeout=15)
+                        except Exception:
+                            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                            resp = opener.open(req, timeout=25)
+
+                        with resp:
                             total_size = int(resp.headers.get("content-length", 0))
                             downloaded = 0
                             chunk_size = 64 * 1024
