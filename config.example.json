@@ -1,0 +1,21 @@
+{
+    "server_url": "https://your-filebrowser.example.com",
+    "username": "your_username",
+    "password": "your_password",
+    "remote_path": "/DropFile",
+    "local_path": "",
+    "poll_interval": 30,
+    "start_with_windows": false,
+    "notify_on_sync": true,
+    "conflict_action": "keep_both",
+    "ignore_patterns": [
+        "~$*",
+        "*.tmp",
+        "*.crdownload",
+        "desktop.ini",
+        "Thumbs.db",
+        ".dropfile*",
+        ".DS_Store",
+        "*.swp"
+    ]
+}
