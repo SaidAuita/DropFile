@@ -332,6 +332,14 @@ class SettingsDialog:
         self.btn_clean_now.config(text=t("settings_clean_now_btn"))
         self.lbl_log_ret.config(text=t("settings_log_ret_label"))
         self.lbl_log_ret_hint.config(text=t("settings_forever_hint"))
+        if hasattr(self, "lbl_conflict"):
+            self.lbl_conflict.config(text=t("settings_conflict_label"))
+        if hasattr(self, "combo_conflict"):
+            cur_idx = self.combo_conflict.current()
+            self.combo_conflict.config(values=[t("settings_conflict_keep_both"), t("settings_conflict_newer_wins")])
+            self.combo_conflict.current(cur_idx if cur_idx >= 0 else 0)
+        if hasattr(self, "btn_dedup_now"):
+            self.btn_dedup_now.config(text=t("settings_dedup_btn"))
         self.lbl_lang.config(text=t("settings_lang_label"))
         self.chk_auto.config(text=t("settings_autostart"))
         self.chk_notify.config(text=t("settings_notify"))
@@ -549,7 +557,28 @@ class SettingsDialog:
         self.lbl_log_ret_hint = ttk.Label(log_ret_row, text=t("settings_forever_hint"), style="Subheader.TLabel")
         self.lbl_log_ret_hint.pack(side="left")
 
-        # 4. Interface Language selector with live switching
+        # 4. Conflict resolution & Deduplication
+        conflict_row = tk.Frame(parent, bg="#FFFFFF")
+        conflict_row.pack(fill="x", pady=(0, 5))
+        self.lbl_conflict = ttk.Label(conflict_row, text=t("settings_conflict_label"), style="Card.TLabel")
+        self.lbl_conflict.pack(side="left", padx=(0, 8))
+
+        self.combo_conflict = ttk.Combobox(
+            conflict_row,
+            values=[t("settings_conflict_keep_both"), t("settings_conflict_newer_wins")],
+            state="readonly",
+            font=("Segoe UI", 9),
+            width=36,
+        )
+        self.combo_conflict.current(1 if self.config.conflict_action == "newer_wins" else 0)
+        self.combo_conflict.pack(side="left", padx=(0, 10))
+
+        self.btn_dedup_now = ttk.Button(
+            conflict_row, text=t("settings_dedup_btn"), command=self._trigger_dedup_now
+        )
+        self.btn_dedup_now.pack(side="left")
+
+        # 5. Interface Language selector with live switching
         lang_row = tk.Frame(parent, bg="#FFFFFF")
         lang_row.pack(fill="x", pady=(0, 2))
         self.lbl_lang = ttk.Label(lang_row, text=t("settings_lang_label"), style="Card.TLabel")
@@ -680,6 +709,38 @@ class SettingsDialog:
 
         threading.Thread(target=run_cleanup, daemon=True).start()
 
+    def _trigger_dedup_now(self) -> None:
+        if not getattr(self, "engine", None):
+            return
+
+        ans = messagebox.askyesno(
+            t("dedup_confirm_title"),
+            t("dedup_confirm_msg"),
+            parent=self.window,
+        )
+        if not ans:
+            return
+
+        def run_dedup():
+            count, freed_bytes = self.engine.deduplicate_conflict_copies()
+            mb = freed_bytes / (1024 * 1024)
+            if count > 0:
+                messagebox.showinfo(
+                    t("dedup_done_title"),
+                    t("dedup_done_msg", count=count, mb=mb),
+                    parent=self.window,
+                )
+            else:
+                messagebox.showinfo(
+                    t("dedup_none_title"),
+                    t("dedup_none_msg"),
+                    parent=self.window,
+                )
+            if self.window and self.window.winfo_exists():
+                self.window.after(0, self._refresh_logs)
+
+        threading.Thread(target=run_dedup, daemon=True).start()
+
     def _build_log_tab(self, parent: ttk.Frame) -> None:
         header_row = tk.Frame(parent, bg="#FFFFFF")
         header_row.pack(fill="x", pady=(0, 8))
@@ -777,6 +838,10 @@ class SettingsDialog:
                 self.config.language = selected_lang
                 set_current_language(selected_lang)
 
+        if hasattr(self, "combo_conflict"):
+            idx = self.combo_conflict.current()
+            self.config.conflict_action = "newer_wins" if idx == 1 else "keep_both"
+
         self.config.notify_on_sync = self.var_notify.get()
         self.config.start_with_windows = self.var_autostart.get()
 
@@ -804,6 +869,9 @@ class SettingsDialog:
         self.spin_poll.set(self.config.poll_interval)
         self.spin_file_retention.set(self.config.file_retention_days)
         self.spin_retention.set(self.config.log_retention_days)
+
+        if hasattr(self, "combo_conflict"):
+            self.combo_conflict.current(1 if self.config.conflict_action == "newer_wins" else 0)
 
         if hasattr(self, "combo_lang") and hasattr(self, "lang_codes"):
             cur_lang = self.config.language

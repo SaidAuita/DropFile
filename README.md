@@ -110,9 +110,10 @@ DropFile easily scales from a single user to an entire department or company. De
    - Set **Remote directory in FileBrowser** to `/Exchange` (or the department path).
    - Point **Local folder** to their local workspace (e.g., `C:\Work\DropFile` or Desktop shortcut).
 3. **Collaboration Workflow**:
-   - Any file dropped into the local folder on one PC is instantly uploaded to the server and automatically downloaded to all team members' PCs.
-   - **Simultaneous Edit Protection**: If two team members modify the same file at the same time, DropFile automatically protects both versions by keeping one and creating a conflict copy: `filename (Conflict ComputerName YYYY-MM-DD_HH-MM-SS).ext`.
-   - **Disk Space Management**: Set **Auto-cleanup files older than 30 days** in Settings across team PCs so temporary exchange files do not consume infinite disk space.
+    - **Intelligent Conflict Prevention**: DropFile compares SHA-256 hashes of file contents before declaring conflicts. Files with identical content (even with different timestamps or pre-existing copies) never spawn duplicates.
+    - **Simultaneous Edit Protection**: If two team members genuinely modify a file with different content, DropFile protects both versions: `filename (Conflict ComputerName YYYY-MM-DD_HH-MM-SS).ext` (or choose *Newer file wins* in Settings).
+    - **One-Click Deduplication**: The built-in *🔍 Deduplicate Copies* tool scans the sync folder and removes redundant conflict files whose SHA-256 matches the original file.
+    - **Disk Space Management**: Set **Auto-cleanup files older than 30 days** in Settings across team PCs so temporary exchange files do not consume infinite disk space.
 
 ---
 
@@ -301,8 +302,9 @@ DropFile отлично подходит как для личного испол
    - В DropFile в поле **«Удаленный каталог в FileBrowser»** все указывают одинаковый путь: `/Exchange`.
    - Локальная папка настраивается в удобное место на диске (например, ярлык на Рабочем столе).
 3. **Сценарий обмена**:
-   - Любой файл или папка, помещенные в локальный каталог одним сотрудником, мгновенно загружаются на сервер и автоматически скачиваются на компьютеры всех остальных участников команды.
-   - **Защита от конфликтов**: если двое сотрудников одновременно отредактируют один и тот же файл, DropFile автоматически сохранит обе версии, создав помеченную копию: `Имя (Conflict ИмяПК ГГГГ-ММ-ДД_ЧЧ-ММ-СС).расширение`.
+   - **Умное предотвращение конфликтов (проверка SHA-256 хэша)**: DropFile сравнивает хэши содержимого файлов перед фиксацией конфликта. Файлы с одинаковым содержимым (даже при разнице в датах или первичном подключении) никогда не дублируются.
+   - **Защита от реальных конфликтов**: если двое сотрудников внесли разные изменения в один и тот же файл, DropFile сохранит обе версии: `Имя (Conflict ИмяПК ГГГГ-ММ-ДД_ЧЧ-ММ-СС).расширение` (или можно выбрать *«Побеждает более новый»* в Настройках).
+   - **Встроенная дедупликация в 1 клик**: кнопка *«🔍 Очистить дубликаты»* в Настройках сканирует папку и удаляет избыточные файлы конфликтов, чей хэш на 100% совпадает с оригиналом.
    - **Автоматическая гигиена диска**: включите на компьютерах опцию **«Автоочистка файлов старше 30 дней»**, чтобы завершенные рабочие обмены не забивали диск до бесконечности.
 
 ### 🚀 Быстрый старт

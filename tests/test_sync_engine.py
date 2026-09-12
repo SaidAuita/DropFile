@@ -112,6 +112,152 @@ class TestSyncEngine(unittest.TestCase):
         self.assertTrue(new_file.exists())
         self.assertIsNotNone(self.db.get_record("new_doc.pdf"))
 
+    def test_handle_conflict_identical_hash_no_copy(self):
+        from fb_client import RemoteItem
+        from state_db import compute_file_hash
+
+        sync_folder = self.temp_dir / "sync_identical"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+
+        local_file = sync_folder / "report.pdf"
+        local_file.write_bytes(b"Exact same content on local and remote")
+
+        r_item = RemoteItem(
+            path="/DropFile/report.pdf",
+            name="report.pdf",
+            size=len(b"Exact same content on local and remote"),
+            modified="2026-09-12T10:00:00Z",
+            is_dir=False,
+        )
+
+        # Mock download_file to simulate remote returning identical content
+        def mock_download(remote_path, target_dest):
+            Path(target_dest).write_bytes(b"Exact same content on local and remote")
+            return True
+
+        self.client.download_file = mock_download
+
+        res = self.engine._handle_conflict("report.pdf", local_file, r_item)
+        self.assertEqual(res, "identical")
+
+        # Verify NO conflict copies were created in directory
+        all_files = list(sync_folder.glob("*"))
+        self.assertEqual(len(all_files), 1)
+        self.assertEqual(all_files[0].name, "report.pdf")
+
+        # Verify state_db was updated
+        rec = self.db.get_record("report.pdf")
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec.content_hash, compute_file_hash(local_file))
+
+    def test_handle_conflict_different_hash_creates_copy(self):
+        from fb_client import RemoteItem
+
+        sync_folder = self.temp_dir / "sync_diff"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.conflict_action = "keep_both"
+
+        local_file = sync_folder / "report.pdf"
+        local_file.write_bytes(b"Local unique edits by user A")
+
+        r_item = RemoteItem(
+            path="/DropFile/report.pdf",
+            name="report.pdf",
+            size=len(b"Remote unique edits by user B"),
+            modified="2026-09-12T10:00:00Z",
+            is_dir=False,
+        )
+
+        # Mock download_file to simulate remote returning different content
+        def mock_download(remote_path, target_dest):
+            Path(target_dest).write_bytes(b"Remote unique edits by user B")
+            return True
+
+        self.client.download_file = mock_download
+
+        res = self.engine._handle_conflict("report.pdf", local_file, r_item)
+        self.assertEqual(res, "conflict")
+
+        # Verify conflict copy was created
+        all_names = [f.name for f in sync_folder.glob("*")]
+        self.assertTrue(any("Conflict" in name for name in all_names))
+        # Primary file now has remote content
+        self.assertEqual(local_file.read_bytes(), b"Remote unique edits by user B")
+
+    def test_handle_conflict_newer_wins(self):
+        import time
+        from fb_client import RemoteItem
+
+        sync_folder = self.temp_dir / "sync_newer"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.conflict_action = "newer_wins"
+
+        local_file = sync_folder / "notes.txt"
+        local_file.write_bytes(b"Old local content")
+
+        # Remote is timestamped in the future (newer)
+        r_item = RemoteItem(
+            path="/DropFile/notes.txt",
+            name="notes.txt",
+            size=len(b"Newer remote content"),
+            modified="2030-01-01T00:00:00Z",
+            is_dir=False,
+        )
+
+        def mock_download(remote_path, target_dest):
+            Path(target_dest).write_bytes(b"Newer remote content")
+            return True
+
+        self.client.download_file = mock_download
+
+        res = self.engine._handle_conflict("notes.txt", local_file, r_item)
+        self.assertEqual(res, "downloaded")
+
+        # No conflict copies
+        all_names = [f.name for f in sync_folder.glob("*")]
+        self.assertEqual(len(all_names), 1)
+        self.assertEqual(local_file.read_bytes(), b"Newer remote content")
+
+    def test_deduplicate_conflict_copies(self):
+        sync_folder = self.temp_dir / "sync_dedup"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+
+        base_file = sync_folder / "presentation.pptx"
+        base_file.write_bytes(b"Presentation slide content 1234567890")
+
+        # Create duplicate conflict copy with same hash
+        dup_file1 = sync_folder / "presentation (Conflict PC 2026-09-12_10-00-00).pptx"
+        dup_file1.write_bytes(b"Presentation slide content 1234567890")
+
+        dup_file2 = sync_folder / "presentation (Conflict Redmi 2026-09-12_11-00-00) (Conflict said-PC 2026-09-12_12-00-00).pptx"
+        dup_file2.write_bytes(b"Presentation slide content 1234567890")
+
+        # Another file with DIFFERENT content in conflict copy (real conflict, should NOT be deleted)
+        doc = sync_folder / "doc.txt"
+        doc.write_bytes(b"Base document")
+        real_conflict = sync_folder / "doc (Conflict PC 2026-09-12_10-00-00).txt"
+        real_conflict.write_bytes(b"Different conflict document")
+
+        # Mock remote delete
+        self.client.delete_resource = lambda path: True
+
+        removed, freed = self.engine.deduplicate_conflict_copies()
+        self.assertEqual(removed, 2)
+        self.assertEqual(freed, len(b"Presentation slide content 1234567890") * 2)
+
+        # Duplicates deleted
+        self.assertFalse(dup_file1.exists())
+        self.assertFalse(dup_file2.exists())
+
+        # Base and real conflict preserved
+        self.assertTrue(base_file.exists())
+        self.assertTrue(doc.exists())
+        self.assertTrue(real_conflict.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

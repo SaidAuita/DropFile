@@ -226,3 +226,15 @@ class Config:
     def ignore_patterns(self) -> list:
         return self._data.get("ignore_patterns", DEFAULT_CONFIG["ignore_patterns"])
 
+    @property
+    def conflict_action(self) -> str:
+        return self._data.get("conflict_action", "keep_both")
+
+    @conflict_action.setter
+    def conflict_action(self, value: str) -> None:
+        val = str(value).strip().lower()
+        if val in ("keep_both", "newer_wins"):
+            self._data["conflict_action"] = val
+        else:
+            self._data["conflict_action"] = "keep_both"
+

@@ -7,12 +7,13 @@ Implements bidirectional sync, loop prevention, debouncing, and conflict handlin
 import fnmatch
 import os
 import platform
+import re
 import shutil
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional, Set
+from typing import Callable, Dict, Optional, Set, Tuple
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -222,6 +223,7 @@ class SyncEngine:
                     try:
                         self.state_db.cleanup_old_history(self.config.log_retention_days)
                         self.cleanup_old_files(self.config.file_retention_days)
+                        self.deduplicate_conflict_copies()
                     except Exception as e:
                         print(f"[SyncEngine] Periodic cleanup error: {e}")
                     last_cleanup = now
@@ -407,6 +409,15 @@ class SyncEngine:
                         or rec.local_size != l_size
                     )
 
+                    # Smart verification: if rec exists and local timestamp/size changed, verify content hash
+                    if rec and local_changed:
+                        l_hash = compute_file_hash(l_file)
+                        if rec.content_hash and l_hash == rec.content_hash:
+                            # False alarm: local content did NOT change (timestamp was merely touched)
+                            local_changed = False
+                            rec.local_mtime = l_mtime
+                            self.state_db.upsert_record(rec)
+
                     if remote_changed and not local_changed:
                         # Safe to download remote update
                         self._download_remote_file(rel, r_item, l_file)
@@ -416,15 +427,13 @@ class SyncEngine:
                         self._upload_local_file(rel, l_file, r_item.path)
                         uploads_count += 1
                     elif remote_changed and local_changed:
-                        # Conflict! Check hash first
-                        l_hash = compute_file_hash(l_file)
-                        if rec and rec.content_hash == l_hash and rec.remote_size == r_item.size:
-                            # False alarm: local was identical
-                            self._download_remote_file(rel, r_item, l_file)
-                        else:
-                            # Real conflict: create conflicted copy of local file, download remote
-                            self._handle_conflict(rel, l_file, r_item)
+                        # Potential conflict or initial sync for pre-existing files!
+                        # Check actual content hashes before creating any duplicate!
+                        res = self._handle_conflict(rel, l_file, r_item)
+                        if res in ("downloaded", "conflict"):
                             downloads_count += 1
+                        elif res == "uploaded":
+                            uploads_count += 1
 
                 # Case B: File is on remote, but NOT on local disk
                 elif in_remote and not in_local:
@@ -714,8 +723,132 @@ class SyncEngine:
 
         return cleaned_count
 
-    def _handle_conflict(self, rel: str, local_file: Path, r_item: RemoteItem) -> None:
-        """Handles simultaneous local & remote edits by creating a conflicted copy."""
+    def _handle_conflict(self, rel: str, local_file: Path, r_item: RemoteItem) -> str:
+        """Handles potential conflict between local and remote file versions.
+
+        1. Compares file sizes and content hashes (using temporary download).
+        2. If hashes match: NO conflict, files are identical. Updates state_db without creating duplicate.
+        3. If hashes differ: Genuine conflict.
+           - If conflict_action == 'newer_wins': keeps the newer file.
+           - If conflict_action == 'keep_both': creates a conflict copy of the local file and keeps remote.
+
+        Returns:
+            "identical": if contents matched and no duplicate was needed.
+            "downloaded": if remote was kept/downloaded over local.
+            "uploaded": if local was uploaded over remote.
+            "conflict": if a conflicted copy was created.
+            "error": if an error occurred.
+        """
+        if not local_file.exists():
+            return "error"
+
+        try:
+            l_stat = local_file.stat()
+            l_mtime = l_stat.st_mtime
+            l_size = l_stat.st_size
+        except Exception:
+            return "error"
+
+        l_hash = compute_file_hash(local_file)
+
+        # 1. Download remote file to an isolated temporary file to inspect its content
+        temp_conflict = local_file.parent / f".df_conflict_{os.getpid()}_{local_file.name}.tmp"
+        clean_temp_rel = str(temp_conflict.relative_to(self.config.local_path)).replace("\\", "/")
+        self._suppress(clean_temp_rel, duration=10.0)
+
+        ok = self.client.download_file(r_item.path, temp_conflict)
+        if not ok or not temp_conflict.exists():
+            print(f"[SyncEngine] Conflict check: could not fetch remote {rel}")
+            return "error"
+
+        r_hash = compute_file_hash(temp_conflict)
+
+        # 2. Check if content is 100% identical
+        if l_hash == r_hash and l_hash != "":
+            # Both files have the EXACT SAME content! No conflict, no duplicate needed.
+            try:
+                temp_conflict.unlink()
+            except Exception:
+                pass
+
+            rec = FileRecord(
+                rel_path=rel,
+                local_mtime=l_mtime,
+                local_size=l_size,
+                remote_mtime=r_item.modified,
+                remote_size=r_item.size,
+                content_hash=l_hash,
+                is_dir=False,
+                last_sync_time=time.time(),
+            )
+            self.state_db.upsert_record(rec)
+            print(f"[SyncEngine] Conflict avoided for {rel}: contents are identical (hash {l_hash[:8]}).")
+            return "identical"
+
+        # 3. Content is different: Genuine conflict!
+        conflict_mode = getattr(self.config, "conflict_action", "keep_both")
+
+        if conflict_mode == "newer_wins":
+            # Determine which is newer: remote or local
+            r_ts = 0.0
+            try:
+                dt = datetime.fromisoformat(r_item.modified.replace("Z", "+00:00"))
+                r_ts = dt.timestamp()
+            except Exception:
+                pass
+
+            if r_ts > l_mtime:
+                # Remote is newer: replace local with remote
+                self._suppress(rel, duration=5.0)
+                shutil.move(str(temp_conflict), str(local_file))
+                rec = FileRecord(
+                    rel_path=rel,
+                    local_mtime=local_file.stat().st_mtime,
+                    local_size=local_file.stat().st_size,
+                    remote_mtime=r_item.modified,
+                    remote_size=r_item.size,
+                    content_hash=r_hash,
+                    is_dir=False,
+                    last_sync_time=time.time(),
+                )
+                self.state_db.upsert_record(rec)
+                self.state_db.log_sync(rel, "conflict_resolve", "remote->local", "success", "Remote newer, replaced local")
+                print(f"[SyncEngine] Conflict resolved (newer wins): {rel} updated from remote.")
+                return "downloaded"
+            else:
+                # Local is newer: upload local to remote
+                try:
+                    temp_conflict.unlink()
+                except Exception:
+                    pass
+                self._upload_local_file(rel, local_file, r_item.path)
+                self.state_db.log_sync(rel, "conflict_resolve", "local->remote", "success", "Local newer, overwritten remote")
+                print(f"[SyncEngine] Conflict resolved (newer wins): {rel} uploaded to remote.")
+                return "uploaded"
+
+        # Default: "keep_both" (Create conflict copy of local file and keep remote)
+        # Avoid creating nested conflict copies if file is ALREADY a conflict copy!
+        if re.search(r"\(Conflict\s", local_file.name, flags=re.IGNORECASE):
+            # Already a conflict file: do not nest! Just replace local with remote
+            self._suppress(rel, duration=5.0)
+            try:
+                shutil.move(str(temp_conflict), str(local_file))
+            except Exception as e:
+                print(f"[SyncEngine] Error replacing nested conflict file: {e}")
+            stat = local_file.stat()
+            rec = FileRecord(
+                rel_path=rel,
+                local_mtime=stat.st_mtime,
+                local_size=stat.st_size,
+                remote_mtime=r_item.modified,
+                remote_size=r_item.size,
+                content_hash=r_hash,
+                is_dir=False,
+                last_sync_time=time.time(),
+            )
+            self.state_db.upsert_record(rec)
+            return "downloaded"
+
         computer_name = platform.node() or "PC"
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         stem = local_file.stem
@@ -739,8 +872,95 @@ class SyncEngine:
         except Exception as e:
             print(f"[SyncEngine] Error creating conflict copy: {e}")
 
-        # Now download remote file over current local file
-        self._download_remote_file(rel, r_item, local_file)
+        # Replace local file with downloaded remote file
+        self._suppress(rel, duration=5.0)
+        try:
+            shutil.move(str(temp_conflict), str(local_file))
+        except Exception as e:
+            print(f"[SyncEngine] Error replacing local file with remote: {e}")
+
+        stat = local_file.stat()
+        rec = FileRecord(
+            rel_path=rel,
+            local_mtime=stat.st_mtime,
+            local_size=stat.st_size,
+            remote_mtime=r_item.modified,
+            remote_size=r_item.size,
+            content_hash=r_hash,
+            is_dir=False,
+            last_sync_time=time.time(),
+        )
+        self.state_db.upsert_record(rec)
+        print(f"[SyncEngine] Created conflicted copy: {conflict_name} (local and remote hashes differed).")
+        return "conflict"
+
+    def deduplicate_conflict_copies(self) -> Tuple[int, int]:
+        """Scans local folder for conflict copies (e.g. '* (Conflict *)*')
+        whose content hash matches the base file. Safely deletes them locally and remotely.
+        Returns: (removed_count, freed_bytes)
+        """
+        pattern = r"\s+\((?:Conflict|копия|.*?PC|\?)[^)]*\)"
+        removed_count = 0
+        freed_bytes = 0
+
+        with self._sync_lock:
+            if not self.config.local_path.exists():
+                return 0, 0
+
+            for root, _, files in os.walk(self.config.local_path):
+                for file in files:
+                    clean_file = file
+                    base_name = re.sub(pattern, "", clean_file, flags=re.IGNORECASE).strip()
+                    if base_name == clean_file:
+                        continue
+
+                    full_dup = Path(root) / clean_file
+                    full_base = Path(root) / base_name
+
+                    if not full_base.exists() or not full_dup.exists():
+                        continue
+
+                    try:
+                        dup_size = full_dup.stat().st_size
+                        base_size = full_base.stat().st_size
+                        if dup_size != base_size:
+                            continue
+
+                        h_dup = compute_file_hash(full_dup)
+                        h_base = compute_file_hash(full_base)
+
+                        if h_dup and h_dup == h_base:
+                            # 100% duplicate! Remove it locally
+                            rel_dup = str(full_dup.relative_to(self.config.local_path)).replace("\\", "/")
+                            self._suppress(rel_dup, duration=5.0)
+                            full_dup.unlink()
+                            freed_bytes += dup_size
+                            removed_count += 1
+
+                            # Remove remotely
+                            if self.config.server_url and self.config.username:
+                                remote_dest = f"{self.config.remote_path}/{rel_dup}"
+                                try:
+                                    self.client.delete_resource(remote_dest)
+                                except Exception as e:
+                                    print(f"[SyncEngine] Dedup remote delete error: {e}")
+
+                            # Remove from DB
+                            self.state_db.delete_record(rel_dup)
+                            self.state_db.log_sync(
+                                rel_dup,
+                                "delete",
+                                "dedup",
+                                "success",
+                                f"Удален дубликат (хэш совпадает с {base_name})",
+                            )
+                            print(f"[SyncEngine] Deduplicated: {clean_file} -> {base_name} ({dup_size} bytes)")
+                    except Exception as e:
+                        print(f"[SyncEngine] Error deduplicating {file}: {e}")
+
+        if removed_count > 0:
+            print(f"[SyncEngine] Deduplication: removed {removed_count} redundant duplicate(s), freed {freed_bytes} bytes.")
+        return removed_count, freed_bytes
 
 
 class LocalFolderHandler(FileSystemEventHandler):
