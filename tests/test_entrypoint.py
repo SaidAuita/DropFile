@@ -111,6 +111,12 @@ class TestEntrypoint(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_spawn_settings_process_signature(self):
+        from platform_utils import spawn_settings_process
+        from win_utils import spawn_settings_process as win_spawn
+        self.assertTrue(callable(spawn_settings_process))
+        self.assertTrue(callable(win_spawn))
+
 
 if __name__ == "__main__":
     unittest.main()

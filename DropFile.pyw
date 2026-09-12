@@ -35,7 +35,7 @@ from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
 from version import __version__
-from platform_utils import create_desktop_shortcut, restart_dropfile
+from platform_utils import create_desktop_shortcut, restart_dropfile, spawn_settings_process
 
 SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None
@@ -170,7 +170,7 @@ def main():
 
     # Prompt user with settings dialog if server URL or username is not configured
     if not config.server_url or not config.username:
-        threading.Thread(target=settings_dialog.show, daemon=True).start()
+        spawn_settings_process()
 
     # 8. Start System Tray
     tray = DropFileTray(

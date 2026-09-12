@@ -336,6 +336,15 @@ class SettingsDialog:
         y = max(0, (self.window.winfo_screenheight() // 2) - (h // 2))
         self.window.geometry(f"+{x}+{y}")
 
+        # Bring window to front
+        try:
+            self.window.lift()
+            self.window.attributes("-topmost", True)
+            self.window.after_idle(self.window.attributes, "-topmost", False)
+            self.window.focus_force()
+        except Exception:
+            pass
+
         try:
             self.window.mainloop()
         except Exception as e:

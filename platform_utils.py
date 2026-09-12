@@ -219,19 +219,7 @@ def copy_to_clipboard(text: str) -> bool:
             return p.returncode == 0
         except Exception as e:
             print(f"[platform_utils] pbcopy error: {e}")
-
-    # Cross-platform fallback: Tkinter
-    try:
-        import tkinter as tk
-        r = tk.Tk()
-        r.withdraw()
-        r.clipboard_clear()
-        r.clipboard_append(text)
-        r.update()
-        r.destroy()
-        return True
-    except Exception:
-        pass
+            return False
 
     # Windows fallback: PowerShell
     if sys.platform.startswith("win"):
@@ -248,7 +236,44 @@ def copy_to_clipboard(text: str) -> bool:
         except Exception:
             pass
 
+    # Cross-platform fallback: Tkinter (non-macOS only)
+    try:
+        import tkinter as tk
+        r = tk.Tk()
+        r.withdraw()
+        r.clipboard_clear()
+        r.clipboard_append(text)
+        r.update()
+        r.destroy()
+        return True
+    except Exception:
+        pass
+
     return False
+
+
+def spawn_settings_process(script_path: Optional[Path | str] = None) -> Optional[subprocess.Popen]:
+    """Spawns the Settings dialog in an independent process running on the main thread."""
+    try:
+        kwargs = {}
+        if sys.platform.startswith("win"):
+            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+
+        if getattr(sys, "frozen", False):
+            current_exe = Path(sys.executable).resolve()
+            return subprocess.Popen([str(current_exe), "--settings"], **kwargs)
+        else:
+            if script_path is None:
+                script_path = Path(__file__).resolve().parent / "DropFile.pyw"
+            target = Path(script_path).resolve()
+            return subprocess.Popen(
+                [sys.executable, str(target), "--settings"],
+                cwd=str(target.parent),
+                **kwargs,
+            )
+    except Exception as e:
+        print(f"[platform_utils] Error spawning settings process: {e}")
+        return None
 
 
 def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:

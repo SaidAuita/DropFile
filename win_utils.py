@@ -15,6 +15,7 @@ from platform_utils import (
     restart_dropfile,
     set_autostart,
     set_windows_autostart,
+    spawn_settings_process,
 )
 
 

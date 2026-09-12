@@ -18,7 +18,11 @@ from config import Config
 from gui_settings import SettingsDialog
 from i18n import t
 from icons import create_tray_icon
-from platform_utils import copy_to_clipboard, open_folder_in_file_manager as open_folder_in_explorer
+from platform_utils import (
+    copy_to_clipboard,
+    open_folder_in_file_manager as open_folder_in_explorer,
+    spawn_settings_process,
+)
 from sync_engine import SyncEngine
 from version import __version__
 
@@ -134,7 +138,7 @@ class DropFileTray:
         else:
             self.engine.pause()
 
-    def _open_settings(self, icon, item) -> None:
+    def _open_settings(self, icon=None, item=None) -> None:
         try:
             if getattr(self, "_settings_proc", None) is not None:
                 if self._settings_proc.poll() is None:
@@ -142,16 +146,9 @@ class DropFileTray:
                     return
                 self._settings_proc = None
 
-            if getattr(sys, "frozen", False):
-                # Running as compiled PyInstaller binary (DropFile.exe)
-                self._settings_proc = subprocess.Popen([sys.executable, "--settings"])
-            else:
-                # Running as script in Python
-                script = Path(__file__).resolve().parent / "DropFile.pyw"
-                self._settings_proc = subprocess.Popen([sys.executable, str(script), "--settings"])
+            self._settings_proc = spawn_settings_process()
         except Exception as e:
-            print(f"[Tray] Subprocess settings spawn error: {e}, falling back to thread...")
-            threading.Thread(target=self.settings_dialog.show, daemon=True).start()
+            print(f"[Tray] Error opening settings: {e}")
 
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""
@@ -186,13 +183,7 @@ class DropFileTray:
                 t("update_avail_title"),
                 f"DropFile v{remote_ver} is available! Opening update dialog...",
             )
-
-            def show_dialog():
-                self.settings_dialog.show()
-                if hasattr(self.settings_dialog, "_on_check_update_result"):
-                    self.settings_dialog._on_check_update_result(has_update, info)
-
-            threading.Thread(target=show_dialog, daemon=True).start()
+            self._open_settings()
 
         threading.Thread(target=worker, daemon=True).start()
 
