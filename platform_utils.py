@@ -29,7 +29,7 @@ def ensure_macos_tk_compatibility() -> None:
     if sys.platform != "darwin":
         return
 
-    global _GLOBAL_MAC_IMP
+    global _GLOBAL_MAC_IMP, _GLOBAL_SETUP_IMP
 
     # 1. PyObjC Category injection
     try:
@@ -52,6 +52,18 @@ def ensure_macos_tk_compatibility() -> None:
                 @objc.typedSelector(b"i@:")
                 def macOSVersion(self):
                     return ver
+
+                @objc.typedSelector(b"v@:@")
+                def _setup_(self, interp):
+                    pass
+
+                @objc.typedSelector(b"v@:@")
+                def _setupMenus_(self, interp):
+                    pass
+
+                @objc.typedSelector(b"v@:@")
+                def _setupWindow_(self, win):
+                    pass
         except Exception:
             pass
     except Exception:
@@ -117,6 +129,24 @@ def ensure_macos_tk_compatibility() -> None:
         if meta_cls and sel:
             if not objc_lib.class_addMethod(meta_cls, sel, imp_ptr, b"i@:"):
                 objc_lib.class_replaceMethod(meta_cls, sel, imp_ptr, b"i@:")
+
+        # Inject Tk setup methods (_setup:, _setupMenus:, _setupWindow:)
+        SETUP_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+
+        def _setup_noop(self_ptr, cmd_ptr, arg_ptr):
+            return
+
+        _GLOBAL_SETUP_IMP = SETUP_FUNC(_setup_noop)
+        setup_imp_ptr = ctypes.cast(_GLOBAL_SETUP_IMP, ctypes.c_void_p)
+
+        for sel_name in [b"_setup:", b"_setupMenus:", b"_setupWindow:"]:
+            s_name = objc_lib.sel_registerName(sel_name)
+            if cls and s_name:
+                if not objc_lib.class_addMethod(cls, s_name, setup_imp_ptr, b"v@:@"):
+                    objc_lib.class_replaceMethod(cls, s_name, setup_imp_ptr, b"v@:@")
+            if meta_cls and s_name:
+                if not objc_lib.class_addMethod(meta_cls, s_name, setup_imp_ptr, b"v@:@"):
+                    objc_lib.class_replaceMethod(meta_cls, s_name, setup_imp_ptr, b"v@:@")
 
     except Exception as e:
         print(f"[platform_utils] Note on macOS Tkinter compatibility: {e}")

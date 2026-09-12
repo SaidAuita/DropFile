@@ -154,6 +154,9 @@ class SettingsDialog:
                 try:
                     self.window.lift()
                     self.window.focus_force()
+                    if sys.platform == "darwin":
+                        from AppKit import NSApplication
+                        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
                 except Exception:
                     pass
                 return
@@ -167,6 +170,16 @@ class SettingsDialog:
                 self.window = None
                 self._ui_thread = None
                 return
+
+        # On macOS, ensure regular activation policy and activate window now that Tkinter has initialized
+        if sys.platform == "darwin":
+            try:
+                from AppKit import NSApplication, NSApplicationActivationPolicyRegular
+                ns_app = NSApplication.sharedApplication()
+                ns_app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+                ns_app.activateIgnoringOtherApps_(True)
+            except Exception:
+                pass
 
         # Synchronize active i18n language with config
         set_current_language(self.config.language)

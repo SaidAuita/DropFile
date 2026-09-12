@@ -38,15 +38,13 @@ from platform_utils import (
 # Ensure macOS Tkinter [NSApp macOSVersion] selector compatibility
 ensure_macos_tk_compatibility()
 
-# Configure macOS Cocoa activation policy: hide Dock icon for background agent
-if sys.platform == "darwin":
+# Configure macOS Cocoa activation policy: hide Dock icon for background tray agent.
+# In --settings mode, do NOT touch NSApplication here so Tkinter can initialize TKApplication naturally.
+if sys.platform == "darwin" and "--settings" not in sys.argv:
     try:
-        from AppKit import NSApplication, NSApplicationActivationPolicyAccessory, NSApplicationActivationPolicyRegular
+        from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
         ns_app = NSApplication.sharedApplication()
-        if "--settings" in sys.argv:
-            ns_app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
-        else:
-            ns_app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+        ns_app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     except Exception:
         pass
 
