@@ -7,6 +7,7 @@ from platform_utils import (
     APP_NAME,
     copy_to_clipboard,
     create_desktop_shortcut,
+    ensure_macos_tk_compatibility,
     is_autostart_enabled,
     is_windows_autostart_enabled,
     open_folder_in_explorer,

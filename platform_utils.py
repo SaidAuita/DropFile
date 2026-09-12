@@ -14,6 +14,113 @@ from typing import Optional
 
 APP_NAME = "DropFile"
 MACOS_BUNDLE_ID = "com.saidauita.dropfile"
+_GLOBAL_MAC_IMP = None
+
+
+def ensure_macos_tk_compatibility() -> None:
+    """
+    Ensures Tkinter compatibility on macOS by providing [NSApp macOSVersion].
+    On macOS 10.15+, libtk8.6 invokes [NSApp macOSVersion] inside GetRGBA.
+    When packaged with PyInstaller or when PyObjC initializes NSApplication,
+    the method may not be found, triggering -[NSApplication macOSVersion]: unrecognized selector.
+    This function dynamically injects the method into NSApplication both via PyObjC
+    and directly into the Objective-C runtime via ctypes.
+    """
+    if sys.platform != "darwin":
+        return
+
+    global _GLOBAL_MAC_IMP
+
+    # 1. PyObjC Category injection
+    try:
+        import platform
+        import objc
+        from AppKit import NSApplication
+
+        def _get_ver():
+            try:
+                parts = [int(p) for p in platform.mac_ver()[0].split(".") if p.isdigit()]
+                while len(parts) < 3:
+                    parts.append(0)
+                return parts[0] * 10000 + parts[1] * 100 + parts[2]
+            except Exception:
+                return 101508
+
+        ver = _get_ver()
+        try:
+            class NSApplication_TKFix(objc.Category(NSApplication)):
+                @objc.typedSelector(b"i@:")
+                def macOSVersion(self):
+                    return ver
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # 2. Direct Objective-C runtime injection via ctypes (bulletproof fallback)
+    try:
+        import ctypes
+        import ctypes.util
+        import platform
+
+        # Ensure AppKit framework is loaded in the process address space
+        try:
+            appkit_path = ctypes.util.find_library("AppKit") or "/System/Library/Frameworks/AppKit.framework/AppKit"
+            ctypes.cdll.LoadLibrary(appkit_path)
+        except Exception:
+            pass
+
+        objc_lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc") or "/usr/lib/libobjc.dylib")
+        objc_lib.objc_getClass.restype = ctypes.c_void_p
+        objc_lib.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc_lib.objc_getMetaClass.restype = ctypes.c_void_p
+        objc_lib.objc_getMetaClass.argtypes = [ctypes.c_char_p]
+        objc_lib.sel_registerName.restype = ctypes.c_void_p
+        objc_lib.sel_registerName.argtypes = [ctypes.c_char_p]
+        objc_lib.class_addMethod.restype = ctypes.c_bool
+        objc_lib.class_addMethod.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+        ]
+        objc_lib.class_replaceMethod.restype = ctypes.c_void_p
+        objc_lib.class_replaceMethod.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+        ]
+
+        parts = [int(p) for p in platform.mac_ver()[0].split(".") if p.isdigit()]
+        while len(parts) < 3:
+            parts.append(0)
+        ver = parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+        IMP_FUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+
+        def _macos_version_imp(self_ptr, cmd_ptr):
+            return ver
+
+        _GLOBAL_MAC_IMP = IMP_FUNC(_macos_version_imp)
+        imp_ptr = ctypes.cast(_GLOBAL_MAC_IMP, ctypes.c_void_p)
+        sel = objc_lib.sel_registerName(b"macOSVersion")
+
+        # Add to instance methods on NSApplication
+        cls = objc_lib.objc_getClass(b"NSApplication")
+        if cls and sel:
+            if not objc_lib.class_addMethod(cls, sel, imp_ptr, b"i@:"):
+                objc_lib.class_replaceMethod(cls, sel, imp_ptr, b"i@:")
+
+        # Add to class methods on NSApplication metaclass
+        meta_cls = objc_lib.objc_getMetaClass(b"NSApplication")
+        if meta_cls and sel:
+            if not objc_lib.class_addMethod(meta_cls, sel, imp_ptr, b"i@:"):
+                objc_lib.class_replaceMethod(meta_cls, sel, imp_ptr, b"i@:")
+
+    except Exception as e:
+        print(f"[platform_utils] Note on macOS Tkinter compatibility: {e}")
+
 
 # Windows-specific import
 try:

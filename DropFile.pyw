@@ -28,6 +28,16 @@ if getattr(sys, "frozen", False):
         except Exception:
             pass
 
+from platform_utils import (
+    create_desktop_shortcut,
+    ensure_macos_tk_compatibility,
+    restart_dropfile,
+    spawn_settings_process,
+)
+
+# Ensure macOS Tkinter [NSApp macOSVersion] selector compatibility
+ensure_macos_tk_compatibility()
+
 # Configure macOS Cocoa activation policy: hide Dock icon for background agent
 if sys.platform == "darwin":
     try:
@@ -47,7 +57,6 @@ from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
 from version import __version__
-from platform_utils import create_desktop_shortcut, restart_dropfile, spawn_settings_process
 
 SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None

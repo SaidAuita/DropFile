@@ -9,6 +9,12 @@ and guaranteed visible bottom action bar.
 import os
 import sys
 import threading
+
+# Ensure macOS Tkinter [NSApp macOSVersion] selector compatibility before importing tkinter
+from platform_utils import ensure_macos_tk_compatibility
+
+ensure_macos_tk_compatibility()
+
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
