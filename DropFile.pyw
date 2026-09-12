@@ -73,6 +73,10 @@ def main():
         print("[DropFile] Settings updated. Re-authenticating and triggering sync...")
         client.login()
         engine.trigger_sync_now()
+        try:
+            tray.refresh_menu()
+        except Exception:
+            pass
 
     # 7. Initialize Settings Dialog
     settings_dialog = SettingsDialog(

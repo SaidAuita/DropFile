@@ -19,6 +19,7 @@ from watchdog.observers import Observer
 
 from config import Config
 from fb_client import FileBrowserClient, RemoteItem
+from i18n import t
 from state_db import FileRecord, StateDatabase, compute_file_hash
 
 
@@ -57,7 +58,7 @@ class SyncEngine:
 
         self.last_sync_time: float = 0.0
         self.current_state = "idle"
-        self.status_message = "Готов к работе"
+        self.status_message = t("status_ready")
 
     def set_status(self, message: str, state: str) -> None:
         self.status_message = message
@@ -126,7 +127,7 @@ class SyncEngine:
         self._poll_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self._poll_thread.start()
 
-        self.set_status("Синхронизация запущена", "idle")
+        self.set_status(t("status_started"), "idle")
         print("[SyncEngine] Started.")
 
     def stop(self) -> None:
@@ -138,16 +139,16 @@ class SyncEngine:
                 self._observer.join(timeout=3)
             except Exception:
                 pass
-        self.set_status("Остановлено", "paused")
+        self.set_status(t("status_stopped"), "paused")
         print("[SyncEngine] Stopped.")
 
     def pause(self) -> None:
         self._paused = True
-        self.set_status("Синхронизация приостановлена", "paused")
+        self.set_status(t("status_paused"), "paused")
 
     def resume(self) -> None:
         self._paused = False
-        self.set_status("Синхронизация возобновлена", "idle")
+        self.set_status(t("status_resumed"), "idle")
         self.trigger_sync_now()
 
     def is_paused(self) -> bool:
@@ -193,7 +194,7 @@ class SyncEngine:
             last_cleanup = time.time()
             self.reconcile_all()
         else:
-            self.set_status("Требуется настройка подключения", "paused")
+            self.set_status(t("status_need_config"), "paused")
 
         while self._running:
             try:
@@ -243,7 +244,7 @@ class SyncEngine:
                 # File was deleted locally
                 rec = self.state_db.get_record(clean_rel)
                 if rec:
-                    self.set_status(f"Удаление: {clean_rel}", "syncing")
+                    self.set_status(t("status_deleting_remote", file=clean_rel), "syncing")
                     remote_file_path = f"{self.config.remote_path}/{clean_rel}"
                     ok = self.client.delete_resource(remote_file_path)
                     if ok:
@@ -252,7 +253,7 @@ class SyncEngine:
                         print(f"[SyncEngine] Deleted remotely: {clean_rel}")
                     else:
                         self.state_db.log_sync(clean_rel, "delete", "local->remote", "error", "Remote delete failed")
-                    self.set_status("Синхронизировано", "idle")
+                    self.set_status(t("status_synced"), "idle")
                 return
 
             if local_file.is_dir():
@@ -286,7 +287,7 @@ class SyncEngine:
                 self.state_db.upsert_record(rec)
                 return
 
-            self.set_status(f"Выгрузка: {clean_rel}", "syncing")
+            self.set_status(t("status_uploading", file=clean_rel), "syncing")
             remote_dest = f"{self.config.remote_path}/{clean_rel}"
             ok = self.client.upload_file(local_file, remote_dest)
 
@@ -308,14 +309,14 @@ class SyncEngine:
                 self.state_db.upsert_record(new_rec)
                 self.state_db.log_sync(clean_rel, "upload", "local->remote", "success")
                 self._record_uploaded_item(local_file, clean_rel, remote_dest)
-                self.notify("DropFile: Загрузка завершена", f"Файл {local_file.name} отправлен на сервер.")
+                self.notify(t("notify_upload_done_title"), t("notify_upload_done_msg", name=local_file.name))
                 print(f"[SyncEngine] Successfully uploaded: {clean_rel}")
             else:
                 self.state_db.log_sync(clean_rel, "upload", "local->remote", "error", "Upload failed")
-                self.set_status("Ошибка выгрузки файла", "error")
+                self.set_status(t("status_upload_error"), "error")
                 return
 
-            self.set_status("Синхронизировано", "idle")
+            self.set_status(t("status_synced"), "idle")
 
     def reconcile_all(self) -> None:
         """Performs a full bidirectional comparison between local folder and remote FileBrowser."""
@@ -323,16 +324,16 @@ class SyncEngine:
             return
 
         if not self.config.server_url or not self.config.username:
-            self.set_status("Требуется настройка подключения", "paused")
+            self.set_status(t("status_need_config"), "paused")
             return
 
         with self._sync_lock:
-            self.set_status("Проверка удаленных изменений...", "syncing")
+            self.set_status(t("status_checking"), "syncing")
 
             # 1. Test / ensure connection
             ok, msg = self.client.test_connection()
             if not ok:
-                self.set_status(f"Нет связи с сервером ({msg[:40]})", "error")
+                self.set_status(t("status_conn_error", msg=msg[:40]), "error")
                 return
 
             # Ensure remote root exists
@@ -432,7 +433,7 @@ class SyncEngine:
 
                     if in_state:
                         # File was previously synced, but user deleted it locally -> Delete remotely
-                        self.set_status(f"Удаление на сервере: {rel}", "syncing")
+                        self.set_status(t("status_deleting_remote", file=rel), "syncing")
                         ok = self.client.delete_resource(r_item.path)
                         if ok:
                             self.state_db.delete_record(rel)
@@ -450,7 +451,7 @@ class SyncEngine:
 
                     if in_state:
                         # File was deleted remotely on the server -> Delete locally
-                        self.set_status(f"Удаление локально: {rel}", "syncing")
+                        self.set_status(t("status_deleting_local", file=rel), "syncing")
                         self._suppress(rel, duration=3.0)
                         try:
                             l_file.unlink()
@@ -471,14 +472,14 @@ class SyncEngine:
             self.last_sync_time = time.time()
             if downloads_count > 0 or uploads_count > 0:
                 self.notify(
-                    "DropFile: Синхронизировано",
-                    f"Загружено: {downloads_count}, Отправлено: {uploads_count}",
+                    t("notify_sync_title"),
+                    t("notify_sync_msg", down=downloads_count, up=uploads_count),
                 )
 
-            self.set_status("Синхронизировано", "idle")
+            self.set_status(t("status_synced"), "idle")
 
     def _download_remote_file(self, rel: str, r_item: RemoteItem, target: Path) -> bool:
-        self.set_status(f"Загрузка: {rel}", "syncing")
+        self.set_status(t("status_downloading", file=rel), "syncing")
         self._suppress(rel, duration=5.0)
 
         ok = self.client.download_file(r_item.path, target)
@@ -507,7 +508,7 @@ class SyncEngine:
         if not self.is_file_ready(local_file):
             return False
 
-        self.set_status(f"Выгрузка: {rel}", "syncing")
+        self.set_status(t("status_uploading", file=rel), "syncing")
         ok = self.client.upload_file(local_file, remote_dest)
         if ok:
             stat = local_file.stat()
@@ -703,8 +704,8 @@ class SyncEngine:
         if cleaned_count > 0:
             print(f"[SyncEngine] Auto-cleanup: removed {cleaned_count} file(s) older than {retention_days} days.")
             self.notify(
-                "DropFile: Автоочистка файлов",
-                f"Удалено файлов старше {retention_days} дн.: {cleaned_count}",
+                t("notify_cleanup_title"),
+                t("notify_cleanup_msg", days=retention_days, count=cleaned_count),
             )
             # Update tray menu in case last item was removed
             if self.on_share_ready:
@@ -719,14 +720,14 @@ class SyncEngine:
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         stem = local_file.stem
         suffix = local_file.suffix
-        conflict_name = f"{stem} (Конфликт {computer_name} {timestamp_str}){suffix}"
+        conflict_name = f"{stem} (Conflict {computer_name} {timestamp_str}){suffix}"
         conflict_path = local_file.parent / conflict_name
 
         try:
             shutil.copy2(local_file, conflict_path)
             self.notify(
-                "DropFile: Обнаружен конфликт",
-                f"Создана копия: {conflict_name}",
+                t("notify_conflict_title"),
+                t("notify_conflict_msg", name=conflict_name),
             )
             self.state_db.log_sync(
                 rel,

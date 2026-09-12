@@ -7,6 +7,7 @@
     "poll_interval": 30,
     "start_with_windows": false,
     "notify_on_sync": true,
+    "language": "en",
     "file_retention_days": 30,
     "log_retention_days": 30,
     "conflict_action": "keep_both",

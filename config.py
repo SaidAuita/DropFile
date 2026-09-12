@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
+    "language": "en",  # Default interface language (10 languages supported)
     "file_retention_days": 30,  # File auto-cleanup in days (0 = disabled)
     "log_retention_days": 30,  # History log retention in days (0 = keep forever)
     "conflict_action": "keep_both",  # "keep_both" creates conflicted copies
@@ -71,6 +72,11 @@ class Config:
             except Exception as e:
                 print(f"[Config] Error loading config, using defaults: {e}")
         self._data = data
+        try:
+            from i18n import set_current_language
+            set_current_language(self.language)
+        except Exception:
+            pass
 
     def save(self) -> None:
         """Saves current configuration to file."""
@@ -201,6 +207,20 @@ class Config:
     @log_retention_days.setter
     def log_retention_days(self, value: int) -> None:
         self._data["log_retention_days"] = max(0, int(value))
+
+    @property
+    def language(self) -> str:
+        return self._data.get("language", "en")
+
+    @language.setter
+    def language(self, value: str) -> None:
+        val = str(value).strip().lower()
+        self._data["language"] = val
+        try:
+            from i18n import set_current_language
+            set_current_language(val)
+        except Exception:
+            pass
 
     @property
     def ignore_patterns(self) -> list:

@@ -13,6 +13,7 @@ from pystray import MenuItem as item
 
 from config import Config
 from gui_settings import SettingsDialog
+from i18n import t
 from icons import create_tray_icon
 from sync_engine import SyncEngine
 from version import __version__
@@ -28,7 +29,7 @@ class DropFileTray:
             self.settings_dialog.engine = engine
 
         self.current_state = "idle"
-        self.current_status_text = f"DropFile v{__version__}: Готов к работе"
+        self.current_status_text = f"DropFile v{__version__}: {t('status_ready')}"
         self._icon: Optional[pystray.Icon] = None
         self._lock = threading.Lock()
 
@@ -46,12 +47,12 @@ class DropFileTray:
             except Exception as e:
                 print(f"[Tray] Error updating menu on share ready: {e}")
         if notify:
-            name = item_info.get("name", "Файл")
-            self.send_notification("Файл выгружен!", f"Ссылка для обмена готова: {name}")
+            name = item_info.get("name", "File")
+            self.send_notification(t("notify_file_uploaded"), t("notify_share_ready", name=name))
 
     def update_status(self, text: str, state: str) -> None:
         """Called by sync engine to update tray icon and menu status."""
-        self.current_status_text = f"Статус: {text}"
+        self.current_status_text = t("tray_status_prefix", text=text)
         self.current_state = state
 
         if self._icon:
@@ -83,16 +84,16 @@ class DropFileTray:
         if item and item.get("name"):
             raw_name = item["name"]
             short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
-            return f"🔗 Скопировать ссылку: «{short_name}»"
-        return "🔗 Скопировать ссылку (нет файлов)"
+            return t("tray_copy_link", name=short_name)
+        return t("tray_copy_link_empty")
 
     def _get_name_label(self) -> str:
         item = self._get_last_item()
         if item and item.get("name"):
             raw_name = item["name"]
             short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
-            return f"📋 Скопировать имя: «{short_name}»"
-        return "📋 Скопировать имя файла"
+            return t("tray_copy_name", name=short_name)
+        return t("tray_copy_name_empty")
 
     def _open_local_folder(self, icon, item) -> None:
         open_folder_in_explorer(self.config.local_path)
@@ -102,9 +103,9 @@ class DropFileTray:
         if not info or not info.get("share_url"):
             return
         url = info["share_url"]
-        name = info.get("name", "файл")
+        name = info.get("name", "file")
         if copy_to_clipboard(url):
-            self.send_notification("Ссылка скопирована в буфер!", f"{name}\n{url}")
+            self.send_notification(t("notify_link_copied_title"), f"{name}\n{url}")
 
     def _copy_file_name(self, icon, item) -> None:
         info = self._get_last_item()
@@ -112,7 +113,7 @@ class DropFileTray:
             return
         name = info["name"]
         if copy_to_clipboard(name):
-            self.send_notification("Имя скопировано!", name)
+            self.send_notification(t("notify_name_copied_title"), name)
 
     def _sync_now(self, icon, item) -> None:
         self.engine.trigger_sync_now()
@@ -143,15 +144,20 @@ class DropFileTray:
         self.engine.stop()
         icon.stop()
 
-    def _build_menu(self) -> pystray.Menu:
-        pause_label = (
-            "▶ Возобновить синхронизацию" if self.engine.is_paused() else "⏸ Приостановить синхронизацию"
-        )
+    def refresh_menu(self) -> None:
+        """Forces tray menu rebuild and update."""
+        if self._icon:
+            try:
+                self._icon.menu = self._build_menu()
+                self._icon.update_menu()
+            except Exception as e:
+                print(f"[Tray] Error refreshing menu: {e}")
 
+    def _build_menu(self) -> pystray.Menu:
         return pystray.Menu(
             item(lambda text: self.current_status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
-            item("📁 Открыть папку DropFile", self._open_local_folder, default=True),
+            item(lambda text: t("tray_open_folder"), self._open_local_folder, default=True),
             item(
                 lambda text: self._get_share_label(),
                 self._copy_share_link,
@@ -163,13 +169,16 @@ class DropFileTray:
                 enabled=lambda item: self._is_share_enabled(),
             ),
             pystray.Menu.SEPARATOR,
-            item("🔄 Синхронизировать сейчас", self._sync_now),
-            item(lambda text: pause_label, self._toggle_pause),
+            item(lambda text: t("tray_sync_now"), self._sync_now),
+            item(
+                lambda text: t("tray_resume") if self.engine.is_paused() else t("tray_pause"),
+                self._toggle_pause,
+            ),
             pystray.Menu.SEPARATOR,
-            item("⚙ Настройки...", self._open_settings),
-            item("🌐 Открыть в браузере (FileBrowser)", self._open_web),
+            item(lambda text: t("tray_settings"), self._open_settings),
+            item(lambda text: t("tray_open_web"), self._open_web),
             pystray.Menu.SEPARATOR,
-            item("❌ Выход", self._exit_app),
+            item(lambda text: t("tray_exit"), self._exit_app),
         )
 
     def run(self) -> None:
@@ -178,7 +187,7 @@ class DropFileTray:
         self._icon = pystray.Icon(
             name="DropFile",
             icon=initial_img,
-            title=f"DropFile v{__version__} — Синхронизация файлов",
+            title=f"DropFile v{__version__}",
             menu=self._build_menu(),
         )
 
