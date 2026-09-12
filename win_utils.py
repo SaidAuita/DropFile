@@ -172,10 +172,8 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
     try:
         if getattr(sys, "frozen", False):
             current_exe = Path(sys.executable).resolve()
-            # Launch via cmd with small delay so the exiting process releases socket and temp folder completely
-            cmd = f'timeout /t 1 /nobreak >nul & start "" "{current_exe}"'
             subprocess.Popen(
-                ["cmd.exe", "/c", cmd],
+                [str(current_exe)],
                 cwd=str(current_exe.parent),
                 env=env,
                 creationflags=creation_flags,
@@ -193,9 +191,8 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
             target = Path(script_path).resolve()
             base_dir = target.parent
 
-            cmd = f'timeout /t 1 /nobreak >nul & start "" "{runner}" "{target}"'
             subprocess.Popen(
-                ["cmd.exe", "/c", cmd],
+                [str(runner), str(target)],
                 cwd=str(base_dir),
                 env=env,
                 creationflags=creation_flags,
