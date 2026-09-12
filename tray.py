@@ -15,6 +15,7 @@ from config import Config
 from gui_settings import SettingsDialog
 from icons import create_tray_icon
 from sync_engine import SyncEngine
+from version import __version__
 from win_utils import copy_to_clipboard, open_folder_in_explorer
 
 
@@ -25,7 +26,7 @@ class DropFileTray:
         self.settings_dialog = settings_dialog
 
         self.current_state = "idle"
-        self.current_status_text = "DropFile: Готов к работе"
+        self.current_status_text = f"DropFile v{__version__}: Готов к работе"
         self._icon: Optional[pystray.Icon] = None
         self._lock = threading.Lock()
 
@@ -153,7 +154,7 @@ class DropFileTray:
         self._icon = pystray.Icon(
             name="DropFile",
             icon=initial_img,
-            title="DropFile — Синхронизация файлов",
+            title=f"DropFile v{__version__} — Синхронизация файлов",
             menu=self._build_menu(),
         )
 

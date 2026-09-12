@@ -20,6 +20,7 @@ from gui_settings import SettingsDialog
 from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
+from version import __version__
 from win_utils import create_desktop_shortcut
 
 SINGLE_INSTANCE_PORT = 49195

@@ -7,6 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
+[![Release](https://img.shields.io/badge/Release-v1.01-orange.svg)](https://github.com/SaidAuita/DropFile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 <br/>
@@ -131,7 +132,9 @@ DropFile/
 ├── tray.py              # Windows system tray integration (pystray)
 ├── icons.py             # Dynamic tray status icon renderer (Pillow)
 ├── win_utils.py         # Windows integration (registry autostart, desktop shortcuts)
+├── version.py           # Application version definition
 ├── run.bat              # Quick launch batch script
+├── update.bat           # Self-updater from GitHub repository
 ├── start_silent.vbs     # Silent background VBS launcher
 ├── requirements.txt     # Python dependencies
 ├── LICENSE              # MIT License
