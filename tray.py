@@ -4,8 +4,11 @@ Provides tray icons with real-time status indication, context menu,
 notifications, and settings invocation.
 """
 
+import subprocess
+import sys
 import threading
 import webbrowser
+from pathlib import Path
 from typing import Callable, Optional
 
 import pystray
@@ -15,9 +18,9 @@ from config import Config
 from gui_settings import SettingsDialog
 from i18n import t
 from icons import create_tray_icon
+from platform_utils import copy_to_clipboard, open_folder_in_file_manager as open_folder_in_explorer
 from sync_engine import SyncEngine
 from version import __version__
-from win_utils import copy_to_clipboard, open_folder_in_explorer
 
 
 class DropFileTray:
@@ -132,8 +135,12 @@ class DropFileTray:
             self.engine.pause()
 
     def _open_settings(self, icon, item) -> None:
-        # Launch Tkinter window in a separate thread if not already open
-        threading.Thread(target=self.settings_dialog.show, daemon=True).start()
+        if sys.platform == "darwin":
+            # On macOS, AppKit event loop owns main thread; spawn settings on its own process
+            script = Path(__file__).resolve().parent / "DropFile.pyw"
+            subprocess.Popen([sys.executable, str(script), "--settings"])
+        else:
+            threading.Thread(target=self.settings_dialog.show, daemon=True).start()
 
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""

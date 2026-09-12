@@ -35,7 +35,7 @@ from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
 from version import __version__
-from win_utils import create_desktop_shortcut, restart_dropfile
+from platform_utils import create_desktop_shortcut, restart_dropfile
 
 SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None
@@ -76,6 +76,26 @@ def ensure_single_instance() -> socket.socket:
 
 
 def main():
+    # If invoked with --settings, open Settings UI directly on the main thread
+    if "--settings" in sys.argv:
+        config = Config()
+        db_path = config.config_dir / "state.db"
+        state_db = StateDatabase(db_path)
+        client = FileBrowserClient(
+            base_url=config.server_url,
+            username=config.username,
+            password=config.password,
+        )
+        engine = SyncEngine(config=config, state_db=state_db, client=client)
+        settings_dialog = SettingsDialog(
+            config=config,
+            state_db=state_db,
+            client=client,
+            engine=engine,
+        )
+        settings_dialog.show()
+        sys.exit(0)
+
     # 1. Single instance lock
     _instance_sock = ensure_single_instance()
 

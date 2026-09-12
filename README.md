@@ -132,11 +132,24 @@ DropFile easily scales from a single user to an entire department or company. De
 4. Click **"⚡ Test Connection"**, then click **"Save and Apply"**.
 5. DropFile will run silently in your System Tray and begin syncing!
 
-### Option 2: Run from Source / Build from Source
+### Option 2: Run from Source / Build from Source (Windows)
 #### Prerequisites
 * Windows 10 or 11 (64-bit)
 * Python 3.10 or newer
 * A running [FileBrowser](https://github.com/filebrowser/filebrowser) server
+
+### Option 3: macOS Installation (Catalina 10.15 ... Sequoia / Tahoe)
+*Quick 1-click installer for macOS:*
+1. Clone or download the repository on branch `macos`:
+   ```bash
+   git clone -b macos https://github.com/SaidAuita/DropFile.git
+   cd DropFile
+   ```
+2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
+   - Automatically configures a clean virtual environment (`.venv`) and installs dependencies (including native PyObjC Cocoa menu bar support).
+   - Packages a native `DropFile.app` into `~/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
+   - Creates a Desktop sync shortcut.
+3. DropFile icon appears in your top macOS menu bar and begins synchronizing!
 
 #### Setup
 ```bash

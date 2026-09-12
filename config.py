@@ -43,8 +43,10 @@ def get_app_dir() -> Path:
     if (script_dir / "config.json").exists():
         return script_dir
 
-    # Use %APPDATA%/DropFile on Windows or ~/.dropfile on Linux/macOS
-    if sys.platform.startswith("win"):
+    # Use %APPDATA%/DropFile on Windows, ~/Library/Application Support/DropFile on macOS, or ~/.dropfile on Linux
+    if sys.platform == "darwin":
+        target = Path.home() / "Library" / "Application Support" / "DropFile"
+    elif sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
         target = base / "DropFile"

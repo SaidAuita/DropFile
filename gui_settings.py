@@ -134,15 +134,16 @@ class SettingsDialog:
                 candidate = Path(sys._MEIPASS) / "icon.ico"
                 if candidate.exists():
                     ico_path = candidate
-        if ico_path.exists():
+        if ico_path.exists() and sys.platform.startswith("win"):
             try:
                 self.window.iconbitmap(str(ico_path))
             except Exception:
                 pass
 
-        # Apply native Windows visual style
+        # Apply native visual style (aqua on macOS, vista/winnative on Windows)
         style = ttk.Style()
-        for theme_name in ("vista", "winnative", "clam"):
+        theme_candidates = ("aqua", "clam") if sys.platform == "darwin" else ("vista", "winnative", "clam")
+        for theme_name in theme_candidates:
             if theme_name in style.theme_names():
                 try:
                     style.theme_use(theme_name)
@@ -150,7 +151,7 @@ class SettingsDialog:
                 except Exception:
                     pass
 
-        # Windows 11 Fluent UI color scheme
+        # Color scheme
         bg_window = "#F3F3F3"
         bg_card = "#FFFFFF"
         fg_text = "#1C1C1C"
@@ -160,21 +161,22 @@ class SettingsDialog:
         self.window.configure(bg=bg_window)
 
         # Typography configuration
+        font_family = "Helvetica Neue" if sys.platform == "darwin" else "Segoe UI"
         style.configure("TNotebook", background=bg_window)
-        style.configure("TNotebook.Tab", padding=[16, 7], font=("Segoe UI", 9))
+        style.configure("TNotebook.Tab", padding=[16, 7], font=(font_family, 9))
         style.configure("TFrame", background=bg_window)
         style.configure("Card.TFrame", background=bg_card)
-        style.configure("TLabel", background=bg_window, font=("Segoe UI", 9), foreground=fg_text)
-        style.configure("Card.TLabel", background=bg_card, font=("Segoe UI", 9), foreground=fg_text)
+        style.configure("TLabel", background=bg_window, font=(font_family, 9), foreground=fg_text)
+        style.configure("Card.TLabel", background=bg_card, font=(font_family, 9), foreground=fg_text)
         style.configure(
-            "Header.TLabel", background=bg_card, font=("Segoe UI", 10, "bold"), foreground="#202124"
+            "Header.TLabel", background=bg_card, font=(font_family, 10, "bold"), foreground="#202124"
         )
         style.configure(
-            "Subheader.TLabel", background=bg_card, font=("Segoe UI", 8), foreground=fg_muted
+            "Subheader.TLabel", background=bg_card, font=(font_family, 8), foreground=fg_muted
         )
-        style.configure("TButton", font=("Segoe UI", 9))
-        style.configure("Accent.TButton", font=("Segoe UI", 9, "bold"))
-        style.configure("TCheckbutton", background=bg_card, font=("Segoe UI", 9), foreground=fg_text)
+        style.configure("TButton", font=(font_family, 9))
+        style.configure("Accent.TButton", font=(font_family, 9, "bold"))
+        style.configure("TCheckbutton", background=bg_card, font=(font_family, 9), foreground=fg_text)
 
         # --- Top Header Bar ---
         header_bar = tk.Frame(self.window, bg="#FFFFFF", padx=20, pady=10)
@@ -1145,3 +1147,16 @@ class SettingsDialog:
                     self.window.after(0, show_update_failure)
 
         threading.Thread(target=worker, daemon=True).start()
+
+
+if __name__ == "__main__":
+    from config import Config
+    from fb_client import FileBrowserClient
+    from state_db import StateDatabase
+
+    cfg = Config()
+    db = StateDatabase(cfg.config_dir / "state.db")
+    cl = FileBrowserClient(cfg.server_url, cfg.username, cfg.password)
+    dlg = SettingsDialog(cfg, db, cl)
+    dlg.show()
+
