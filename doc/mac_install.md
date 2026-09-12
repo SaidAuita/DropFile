@@ -92,21 +92,22 @@ brew install python python-tk
 
 ---
 
-## Шаг 2. Загрузка исходных файлов (ветка `macos`)
+## Шаг 2. Загрузка исходных файлов
 
-Для macOS создана специальная ветка репозитория — `macos`.
+Файлы для macOS доступны как в основной ветке репозитория, так и в отдельной ветке `macos`.
 
 ### Вариант 1. Через Терминал с помощью Git (Рекомендуется)
 ```bash
 cd ~
-git clone -b macos https://github.com/SaidAuita/DropFile.git
+git clone https://github.com/SaidAuita/DropFile.git
 cd DropFile
 ```
+*(Также можно явно указать ветку `macos`: `git clone -b macos https://github.com/SaidAuita/DropFile.git`)*
 
 ### Вариант 2. Через браузер в виде ZIP-архива
-1. Перейдите по ссылке: [https://github.com/SaidAuita/DropFile/tree/macos](https://github.com/SaidAuita/DropFile/tree/macos)
+1. Перейдите по ссылке на репозиторий: [https://github.com/SaidAuita/DropFile](https://github.com/SaidAuita/DropFile) (или [ветка macos](https://github.com/SaidAuita/DropFile/tree/macos)).
 2. Нажмите зеленую кнопку **Code** ➔ **Download ZIP**.
-3. Распакуйте скачанный архив `DropFile-macos.zip` в вашу домашнюю папку (например, `~/DropFile`).
+3. Распакуйте скачанный архив в вашу домашнюю папку (например, `~/DropFile`).
 
 ---
 

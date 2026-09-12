@@ -2,12 +2,12 @@
 
 # 📂 DropFile
 
-**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows.**
+**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows & macOS.**
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS%2010.15%2B-blue.svg)](#)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.05-orange.svg)](https://github.com/SaidAuita/DropFile)
+[![Release](https://img.shields.io/badge/Release-v1.08-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -138,19 +138,6 @@ DropFile easily scales from a single user to an entire department or company. De
 * Python 3.10 or newer
 * A running [FileBrowser](https://github.com/filebrowser/filebrowser) server
 
-### Option 3: macOS Installation (Catalina 10.15 ... Sequoia / Tahoe)
-*Quick 1-click installer for macOS:*
-1. Clone or download the repository on branch `macos`:
-   ```bash
-   git clone -b macos https://github.com/SaidAuita/DropFile.git
-   cd DropFile
-   ```
-2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
-   - Automatically configures a clean virtual environment (`.venv`) and installs dependencies (including native PyObjC Cocoa menu bar support).
-   - Packages a native `DropFile.app` into `~/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
-   - Creates a Desktop sync shortcut.
-3. DropFile icon appears in your top macOS menu bar and begins synchronizing!
-
 #### Setup
 ```bash
 git clone https://github.com/SaidAuita/DropFile.git
@@ -165,6 +152,27 @@ Double-click `build_exe.bat` or execute:
 python build_exe.py
 ```
 The compiled single-file binary will be placed at `dist\DropFile.exe`.
+
+---
+
+### Option 3: macOS Installation (Catalina 10.15 ... Sequoia / Tahoe)
+*Quick 1-click installer for macOS:*
+1. Clone the repository:
+   ```bash
+   cd ~
+   git clone https://github.com/SaidAuita/DropFile.git
+   cd DropFile
+   ```
+   *(Or download the ZIP archive from [github.com/SaidAuita/DropFile](https://github.com/SaidAuita/DropFile) and unzip it into your home directory)*
+2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
+   - Automatically configures a clean virtual environment (`.venv`) and installs dependencies (including native PyObjC Cocoa menu bar support).
+   - Packages a native `DropFile.app` into `~/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
+   - Creates a Desktop sync shortcut (`~/Desktop/DropFile`).
+3. DropFile icon appears in your top macOS menu bar and begins synchronizing!
+
+> 📖 **Full macOS Installation Guide**: See [`doc/mac_install.md`](doc/mac_install.md) for terminal commands to verify/install Python 3 (via curl or Homebrew), LaunchAgent autostart setup, and troubleshooting.
+
+---
 
 ### 🔄 In-App Auto-Updates
 - Click **"🔍 Check for Updates"** in the Settings dialog header, or right-click the System Tray icon and select **"🔄 Check for updates..."**.
@@ -328,7 +336,7 @@ DropFile отлично подходит как для личного испол
 3. В появившемся окне настроек укажите адрес сервера FileBrowser, логин и пароль, затем нажмите **«Сохранить и применить»**.
 4. Программа свернется в системный трей и начнет синхронизацию.
 
-#### Вариант 2: Запуск из исходников и самостоятельная сборка `.exe`
+#### Вариант 2: Запуск из исходников и самостоятельная сборка `.exe` (Windows)
 ```bash
 git clone https://github.com/SaidAuita/DropFile.git
 cd DropFile
@@ -341,6 +349,23 @@ pip install -r requirements.txt
 python build_exe.py
 ```
 Готовый автономный файл появится в каталоге `dist\DropFile.exe`.
+
+#### Вариант 3: Установка на macOS (Catalina 10.15 ... Sequoia / Tahoe)
+*Быстрая автоматическая установка в 1 клик:*
+1. Склонируйте репозиторий в Терминале:
+   ```bash
+   cd ~
+   git clone https://github.com/SaidAuita/DropFile.git
+   cd DropFile
+   ```
+   *(Либо скачайте ZIP-архив с GitHub и распакуйте в домашнюю папку)*
+2. Дважды кликните по файлу **`install_mac.command`** в Finder (или выполните `./install_mac.command` в Терминале):
+   - Установщик автоматически создаст изолированное виртуальное окружение (`.venv`) и установит зависимости (включая нативный Cocoa / PyObjC).
+   - Соберёт и установит приложение **`~/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает как агент в верхнем статус-баре около часов, без лишней иконки в Dock).
+   - Создаст удобный ярлык рабочей папки на Рабочем столе (`~/Desktop/DropFile`).
+3. В строке меню macOS (вверху экрана около часов) появится иконка облака DropFile. Нажмите её, выберите **«Параметры»**, введите адрес сервера FileBrowser, логин и пароль.
+
+> 📖 **Полное пошаговое руководство по macOS**: см. файл [`doc/mac_install.md`](doc/mac_install.md) (быстрые команды установки Python 3 через `curl` или Homebrew, проверка работы Tkinter, автозапуск через LaunchAgent и решение возможных проблем).
 
 #### 🔄 Обновление
 - Нажмите **«🔍 Проверить обновления»** в окне настроек или выберите **«🔄 Проверить обновления...»** в трее.
