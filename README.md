@@ -59,7 +59,7 @@
 
 Клонируйте репозиторий или скачайте архив:
 ```bash
-git clone https://github.com/your-username/DropFile.git
+git clone https://github.com/SaidAuita/DropFile.git
 cd DropFile
 ```
 
