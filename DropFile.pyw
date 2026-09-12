@@ -103,16 +103,24 @@ def main():
         except Exception:
             pass
 
-    # Callback when user clicks Save and Restart
-    def on_restart():
-        print("[DropFile] Restart requested. Stopping engine and spawning new process...")
+    # Clean up sockets, engine, and tray before restart or self-update
+    def on_cleanup():
+        print("[DropFile] Stopping engine and releasing instance socket...")
         release_instance_socket()
-        engine.stop()
+        try:
+            engine.stop()
+        except Exception:
+            pass
         try:
             if 'tray' in locals() and tray._icon:
                 tray._icon.stop()
         except Exception:
             pass
+
+    # Callback when user clicks Save and Restart
+    def on_restart():
+        print("[DropFile] Restart requested. Spawning new process...")
+        on_cleanup()
         restart_dropfile()
         os._exit(0)
 
@@ -123,6 +131,7 @@ def main():
         client=client,
         on_save_callback=on_settings_saved,
         on_restart_callback=on_restart,
+        on_cleanup_callback=on_cleanup,
         engine=engine,
     )
 
@@ -135,6 +144,7 @@ def main():
         config=config,
         engine=engine,
         settings_dialog=settings_dialog,
+        on_cleanup_callback=on_cleanup,
     )
 
     try:

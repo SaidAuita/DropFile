@@ -65,12 +65,18 @@
   - One-click Desktop shortcut creation.
   - Configurable poll intervals and customizable ignore patterns (`~$*`, `*.tmp`, etc.).
   - Detailed synchronization activity log with filterable actions.
+- 📦 **Standalone Windows Executable (`DropFile.exe`)**:
+  - Single self-contained `.exe` binary: zero setup, no Python or Git required for end users.
+  - Built-in multi-resolution icon and silent windowless execution.
+- 🔄 **In-App Auto-Update & Update Checker**:
+  - Check for updates anytime with one click in Settings (`[🔍 Check for Updates]`) or via the System Tray context menu.
+  - Automated binary hot-swap and seamless background restart for `.exe` builds, or `git pull` for source installs.
 - 🧹 **Automatic File & Log Cleanup**:
   - Configurable auto-cleanup for files older than *N* days (default: 30 days, or 0 = keep forever) to keep storage clean.
   - Manual one-click file cleanup on demand directly from settings.
   - History log retention policy and one-click log clearing with confirmation.
 - 🚀 **Silent Windows Startup**:
-  - Clean background execution via `DropFile.pyw` / `start_silent.vbs` without flashing console windows.
+  - Clean background execution via `DropFile.exe` or `DropFile.pyw` without flashing console windows.
   - One-click autostart toggle with Windows registry integration.
 
 ---
@@ -112,36 +118,44 @@ DropFile easily scales from a single user to an entire department or company. De
 
 ## 🚀 Quick Start
 
-### Prerequisites
-* Windows 10 or 11 (64-bit)
-* Python 3.10 or newer
-* A running [FileBrowser](https://github.com/filebrowser/filebrowser) server with HTTP or HTTPS access
-
-### Installation
-
-Clone the repository:
-```bash
-git clone https://github.com/SaidAuita/DropFile.git
-cd DropFile
-```
-
-Install the dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-### Launch & Setup
-
-1. Launch `DropFile.pyw` (or double-click `run.bat`).
-2. On first run, the Settings dialog will open automatically:
+### Option 1: Standalone Executable (Recommended for Clients & Team Members)
+*Zero installation — no Python or Git required!*
+1. Download `DropFile.exe` from the latest [GitHub Release](https://github.com/SaidAuita/DropFile/releases).
+2. Run `DropFile.exe`.
+3. On first run, the Settings dialog opens automatically:
    - **Server URL**: Your FileBrowser address (e.g., `https://files.yourdomain.com` or `http://10.0.0.10:8080`).
    - **Username** & **Password**: Your FileBrowser login credentials.
    - **Local Folder**: Folder on your PC (defaults to `Desktop\DropFile`).
-   - **Remote Folder**: Target folder in FileBrowser (defaults to `/DropFile`, created automatically).
-   - **Interface Language**: Select your preferred language (English, Russian, German, French, etc.).
-3. Click **"⚡ Test Connection"** to verify connectivity.
-4. Click **"Save and Apply"**.
-5. You're set! The tray icon will appear and syncing begins immediately.
+   - **Remote Folder**: Target folder in FileBrowser (defaults to `/DropFile`).
+   - **Interface Language**: Select your language (10 locales available).
+4. Click **"⚡ Test Connection"**, then click **"Save and Apply"**.
+5. DropFile will run silently in your System Tray and begin syncing!
+
+### Option 2: Run from Source / Build from Source
+#### Prerequisites
+* Windows 10 or 11 (64-bit)
+* Python 3.10 or newer
+* A running [FileBrowser](https://github.com/filebrowser/filebrowser) server
+
+#### Setup
+```bash
+git clone https://github.com/SaidAuita/DropFile.git
+cd DropFile
+pip install -r requirements.txt
+```
+Launch with `python DropFile.pyw` or double-click `run.bat`.
+
+#### Compiling Standalone `.exe`
+Double-click `build_exe.bat` or execute:
+```bash
+python build_exe.py
+```
+The compiled single-file binary will be placed at `dist\DropFile.exe`.
+
+### 🔄 In-App Auto-Updates
+- Click **"🔍 Check for Updates"** in the Settings dialog header, or right-click the System Tray icon and select **"🔄 Check for updates..."**.
+- If an update is found on GitHub Releases, DropFile prompts you to update.
+- When confirmed, it downloads the new release, performs a clean binary swap (or `git pull`), and seamlessly restarts the app in the background.
 
 ---
 
@@ -173,23 +187,29 @@ DropFile/
 ├── config.example.json  # Configuration template
 ├── fb_client.py         # FileBrowser REST API client (JWT auth, listings, upload/download)
 ├── sync_engine.py       # Bidirectional sync engine, debounce & echo suppression
+├── updater.py           # Auto-updater (GitHub Releases API, semver, hot-swap & restart)
 ├── i18n.py              # Internationalization module (10 languages)
 ├── state_db.py          # SQLite database (state.db) tracking hashes & history
 ├── gui_settings.py      # Modern Tkinter settings & log viewer
 ├── tray.py              # Windows system tray integration (pystray)
-├── icons.py             # Dynamic tray status icon renderer (Pillow)
-├── win_utils.py         # Windows integration (registry autostart, desktop shortcuts)
+├── icons.py             # Dynamic tray status icon & multi-res .ico generator
+├── win_utils.py         # Windows integration (registry autostart, desktop shortcuts, hot restart)
 ├── version.py           # Application version definition
+├── build_exe.py         # PyInstaller standalone .exe builder
+├── build_exe.bat        # One-click Windows .exe compilation script
+├── icon.ico             # Embedded multi-resolution application icon (16-256px)
 ├── run.bat              # Quick launch batch script
-├── update.bat           # Self-updater from GitHub repository
+├── update.bat           # Self-updater batch script
 ├── start_silent.vbs     # Silent background VBS launcher
 ├── requirements.txt     # Python dependencies
 ├── LICENSE              # MIT License
-└── tests/               # Unit test suite
+└── tests/               # Unit test suite (27 tests)
+    ├── test_entrypoint.py
     ├── test_fb_client.py
     ├── test_i18n.py
     ├── test_state_db.py
-    └── test_sync_engine.py
+    ├── test_sync_engine.py
+    └── test_updater.py
 ```
 
 ---
@@ -238,6 +258,12 @@ python -m unittest discover tests
 - 🛡️ **Защита от зацикливания и конфликтов**: дебаунсинг записи, подавление эхо и создание копий `(Conflict PC YYYY-MM-DD)`.
 - 🕒 **Информативный трей**: цветовая индикация (зеленый / синий / красный / желтый) и контекстное меню.
 - ⚙️ **Графический интерфейс настроек**: проверка соединения в один клик, выбор папок, создание ярлыка, настройка исключений и журнал событий.
+- 📦 **Автономная сборка Windows (`DropFile.exe`)**:
+  - Единый исполняемый `.exe` файл без необходимости ставить Python или Git на рабочих местах пользователей.
+  - Встроенная мультииконка высокого разрешения и работа в фоне без консольных окон.
+- 🔄 **Встроенное автообновление и проверка новых версий**:
+  - Кнопка **«🔍 Проверить обновления»** в шапке окна настроек и пункт в контекстном меню системного трея.
+  - Автоматическая загрузка нового релиза с GitHub, безопасная горячая замена бинарника и бесшовный перезапуск в фоне.
 - 🧹 **Автоочистка старых файлов и журнала**:
   - Автоматическое удаление файлов старше *N* дней (по умолчанию 30 дней, 0 = отключено), защищающее диск от переполнения.
   - Кнопка ручной очистки устаревших файлов по требованию прямо из настроек.
@@ -278,6 +304,32 @@ DropFile отлично подходит как для личного испол
    - Любой файл или папка, помещенные в локальный каталог одним сотрудником, мгновенно загружаются на сервер и автоматически скачиваются на компьютеры всех остальных участников команды.
    - **Защита от конфликтов**: если двое сотрудников одновременно отредактируют один и тот же файл, DropFile автоматически сохранит обе версии, создав помеченную копию: `Имя (Conflict ИмяПК ГГГГ-ММ-ДД_ЧЧ-ММ-СС).расширение`.
    - **Автоматическая гигиена диска**: включите на компьютерах опцию **«Автоочистка файлов старше 30 дней»**, чтобы завершенные рабочие обмены не забивали диск до бесконечности.
+
+### 🚀 Быстрый старт
+
+#### Вариант 1: Готовый `.exe` (Рекомендуется для пользователей)
+1. Скачайте файл `DropFile.exe` из раздела [GitHub Releases](https://github.com/SaidAuita/DropFile/releases).
+2. Запустите `DropFile.exe` (установка Python или Git не требуется).
+3. В появившемся окне настроек укажите адрес сервера FileBrowser, логин и пароль, затем нажмите **«Сохранить и применить»**.
+4. Программа свернется в системный трей и начнет синхронизацию.
+
+#### Вариант 2: Запуск из исходников и самостоятельная сборка `.exe`
+```bash
+git clone https://github.com/SaidAuita/DropFile.git
+cd DropFile
+pip install -r requirements.txt
+```
+Запуск: `python DropFile.pyw` (или скрипт `run.bat`).
+
+Для сборки автономного исполняемого файла дважды кликните `build_exe.bat` или выполните:
+```bash
+python build_exe.py
+```
+Готовый автономный файл появится в каталоге `dist\DropFile.exe`.
+
+#### 🔄 Обновление
+- Нажмите **«🔍 Проверить обновления»** в окне настроек или выберите **«🔄 Проверить обновления...»** в трее.
+- При наличии новой версии на GitHub DropFile скачает обновление, выполнит безопасную замену бинарника и автоматически перезапустится в фоне.
 
 ---
 

@@ -51,21 +51,23 @@ def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "Dro
 def set_windows_autostart(enable: bool, script_path: Optional[Path | str] = None) -> bool:
     """
     Adds or removes DropFile from Windows startup (HKCU\\Run).
-    Uses pythonw.exe to run without a command prompt window.
+    Handles both standalone .exe and pythonw.exe scripts.
     """
     if not sys.platform.startswith("win"):
         return False
 
-    if script_path is None:
-        script_dir = Path(__file__).resolve().parent
-        script_path = script_dir / "DropFile.pyw"
+    if getattr(sys, "frozen", False):
+        cmd_line = f'"{Path(sys.executable).resolve()}"'
+    else:
+        if script_path is None:
+            script_dir = Path(__file__).resolve().parent
+            script_path = script_dir / "DropFile.pyw"
 
-    py_exe = Path(sys.executable)
-    # Prefer pythonw.exe if available for silent startup
-    pyw_exe = py_exe.parent / "pythonw.exe"
-    runner = pyw_exe if pyw_exe.exists() else py_exe
-
-    cmd_line = f'"{runner}" "{Path(script_path).resolve()}"'
+        py_exe = Path(sys.executable)
+        # Prefer pythonw.exe if available for silent startup
+        pyw_exe = py_exe.parent / "pythonw.exe"
+        runner = pyw_exe if pyw_exe.exists() else py_exe
+        cmd_line = f'"{runner}" "{Path(script_path).resolve()}"'
 
     try:
         with winreg.OpenKey(
@@ -148,30 +150,40 @@ def copy_to_clipboard(text: str) -> bool:
 def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
     """
     Spawns a new independent instance of DropFile in the background.
+    Supports both standalone .exe binary and pythonw script execution.
     """
-    if script_path is None:
-        script_dir = Path(__file__).resolve().parent
-        script_path = script_dir / "DropFile.pyw"
-
-    py_exe = Path(sys.executable)
-    pyw_exe = py_exe.parent / "pythonw.exe"
-    runner = pyw_exe if pyw_exe.exists() else py_exe
-
-    target = Path(script_path).resolve()
-    base_dir = target.parent
-
     creation_flags = 0
     if sys.platform.startswith("win"):
         # CREATE_NO_WINDOW (0x08000000) | DETACHED_PROCESS (0x00000008)
         creation_flags = 0x08000000 | 0x00000008
 
     try:
-        subprocess.Popen(
-            [str(runner), str(target)],
-            cwd=str(base_dir),
-            creationflags=creation_flags,
-            close_fds=True,
-        )
+        if getattr(sys, "frozen", False):
+            current_exe = Path(sys.executable).resolve()
+            subprocess.Popen(
+                [str(current_exe)],
+                cwd=str(current_exe.parent),
+                creationflags=creation_flags,
+                close_fds=True,
+            )
+        else:
+            if script_path is None:
+                script_dir = Path(__file__).resolve().parent
+                script_path = script_dir / "DropFile.pyw"
+
+            py_exe = Path(sys.executable)
+            pyw_exe = py_exe.parent / "pythonw.exe"
+            runner = pyw_exe if pyw_exe.exists() else py_exe
+
+            target = Path(script_path).resolve()
+            base_dir = target.parent
+
+            subprocess.Popen(
+                [str(runner), str(target)],
+                cwd=str(base_dir),
+                creationflags=creation_flags,
+                close_fds=True,
+            )
         return True
     except Exception as e:
         print(f"[win_utils] Error launching new DropFile process: {e}")

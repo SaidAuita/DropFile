@@ -21,10 +21,17 @@ from win_utils import copy_to_clipboard, open_folder_in_explorer
 
 
 class DropFileTray:
-    def __init__(self, config: Config, engine: SyncEngine, settings_dialog: SettingsDialog):
+    def __init__(
+        self,
+        config: Config,
+        engine: SyncEngine,
+        settings_dialog: SettingsDialog,
+        on_cleanup_callback: Optional[Callable[[], None]] = None,
+    ):
         self.config = config
         self.engine = engine
         self.settings_dialog = settings_dialog
+        self.on_cleanup_callback = on_cleanup_callback
         if not getattr(self.settings_dialog, "engine", None):
             self.settings_dialog.engine = engine
 
@@ -128,6 +135,49 @@ class DropFileTray:
         # Launch Tkinter window in a separate thread if not already open
         threading.Thread(target=self.settings_dialog.show, daemon=True).start()
 
+    def _check_updates_from_tray(self, icon, item) -> None:
+        """Checks for updates from the tray and notifies user or opens update prompt."""
+        self.send_notification("DropFile", t("update_checking"))
+
+        def worker():
+            from updater import check_for_updates
+            has_update, info = check_for_updates()
+            if info.get("error"):
+                if info.get("not_found"):
+                    self.send_notification(
+                        t("update_latest_title"),
+                        t("update_latest_msg", version=__version__),
+                    )
+                else:
+                    self.send_notification(
+                        t("update_error_title"),
+                        str(info.get("error")),
+                    )
+                return
+
+            if not has_update:
+                self.send_notification(
+                    t("update_latest_title"),
+                    t("update_latest_msg", version=__version__),
+                )
+                return
+
+            # Update available: open settings dialog with update prompt
+            remote_ver = info.get("version", "")
+            self.send_notification(
+                t("update_avail_title"),
+                f"DropFile v{remote_ver} is available! Opening update dialog...",
+            )
+
+            def show_dialog():
+                self.settings_dialog.show()
+                if hasattr(self.settings_dialog, "_on_check_update_result"):
+                    self.settings_dialog._on_check_update_result(has_update, info)
+
+            threading.Thread(target=show_dialog, daemon=True).start()
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _open_web(self, icon, item) -> None:
         url = self.config.server_url
         if not url:
@@ -176,6 +226,7 @@ class DropFileTray:
             ),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_settings"), self._open_settings),
+            item(lambda text: t("tray_check_updates"), self._check_updates_from_tray),
             item(lambda text: t("tray_open_web"), self._open_web),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_exit"), self._exit_app),

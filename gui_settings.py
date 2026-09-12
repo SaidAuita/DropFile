@@ -19,6 +19,7 @@ from config import Config
 from fb_client import FileBrowserClient
 from i18n import SUPPORTED_LANGUAGES, get_current_language, set_current_language, t
 from state_db import StateDatabase
+from updater import apply_update, check_for_updates
 from version import __version__
 from win_utils import (
     create_desktop_shortcut,
@@ -94,6 +95,7 @@ class SettingsDialog:
         client: FileBrowserClient,
         on_save_callback: Optional[Callable[[], None]] = None,
         on_restart_callback: Optional[Callable[[], None]] = None,
+        on_cleanup_callback: Optional[Callable[[], None]] = None,
         engine: Optional[Any] = None,
     ):
         self.config = config
@@ -101,6 +103,7 @@ class SettingsDialog:
         self.client = client
         self.on_save_callback = on_save_callback
         self.on_restart_callback = on_restart_callback
+        self.on_cleanup_callback = on_cleanup_callback
         self.engine = engine
         self.window: Optional[tk.Tk] = None
         self.lang_codes = list(SUPPORTED_LANGUAGES.keys())
@@ -119,6 +122,22 @@ class SettingsDialog:
         # Generous dimensions to fit all content cleanly across scaling factors
         self.window.geometry("740x660")
         self.window.minsize(640, 500)
+
+        # Set window icon if icon.ico is available
+        ico_path = Path(__file__).resolve().parent / "icon.ico"
+        if getattr(sys, "frozen", False):
+            candidate = Path(sys.executable).parent / "icon.ico"
+            if candidate.exists():
+                ico_path = candidate
+            elif hasattr(sys, "_MEIPASS"):
+                candidate = Path(sys._MEIPASS) / "icon.ico"
+                if candidate.exists():
+                    ico_path = candidate
+        if ico_path.exists():
+            try:
+                self.window.iconbitmap(str(ico_path))
+            except Exception:
+                pass
 
         # Apply native Windows visual style
         style = ttk.Style()
@@ -183,6 +202,14 @@ class SettingsDialog:
             pady=2,
         )
         self.lbl_version_badge.pack(side="left", padx=(10, 0))
+
+        # Check for Updates Button
+        self.btn_check_update = ttk.Button(
+            title_row,
+            text=f"🔍 {t('btn_check_updates')}",
+            command=self._check_for_updates_ui,
+        )
+        self.btn_check_update.pack(side="right")
 
         self.lbl_app_subtitle = tk.Label(
             header_bar,
@@ -276,6 +303,8 @@ class SettingsDialog:
         self.btn_restart.config(text=f"🔄 {t('btn_save_restart')}")
         self.btn_save.config(text=t("btn_save_apply"))
         self.btn_cancel.config(text=t("btn_close"))
+        if hasattr(self, "btn_check_update"):
+            self.btn_check_update.config(text=f"🔍 {t('btn_check_updates')}")
 
         # Connection Tab
         self.lbl_conn_hdr.config(text=t("conn_header"))
@@ -891,5 +920,112 @@ class SettingsDialog:
                 print(f"[SettingsDialog] Error calling on_restart_callback: {e}")
 
         # Fallback direct restart if callback was not passed
+        if self.on_cleanup_callback:
+            try:
+                self.on_cleanup_callback()
+            except Exception:
+                pass
         restart_dropfile()
         os._exit(0)
+
+    def _check_for_updates_ui(self) -> None:
+        """Triggers asynchronous update check against GitHub Releases."""
+        if hasattr(self, "btn_check_update"):
+            self.btn_check_update.config(state="disabled", text=t("update_checking"))
+
+        def worker():
+            has_update, info = check_for_updates()
+            if self.window and self.window.winfo_exists():
+                self.window.after(0, lambda: self._on_check_update_result(has_update, info))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_check_update_result(self, has_update: bool, info: dict) -> None:
+        """Processes GitHub release check results and prompts user on UI thread."""
+        if not self.window or not self.window.winfo_exists():
+            return
+
+        if hasattr(self, "btn_check_update"):
+            self.btn_check_update.config(state="normal", text=f"🔍 {t('btn_check_updates')}")
+
+        if info.get("error"):
+            if info.get("not_found"):
+                messagebox.showinfo(
+                    t("update_latest_title"),
+                    t("update_latest_msg", version=__version__),
+                    parent=self.window,
+                )
+            else:
+                messagebox.showerror(
+                    t("update_error_title"),
+                    t("update_error_msg", msg=info.get("error")),
+                    parent=self.window,
+                )
+            return
+
+        if not has_update:
+            messagebox.showinfo(
+                t("update_latest_title"),
+                t("update_latest_msg", version=__version__),
+                parent=self.window,
+            )
+            return
+
+        remote_ver = info.get("version", "")
+        body = (info.get("notes") or "").strip()
+        msg = t("update_avail_msg", version=remote_ver)
+        if body:
+            preview = body[:300] + ("..." if len(body) > 300 else "")
+            msg += f"\n\nRelease notes:\n{preview}"
+
+        do_update = messagebox.askyesno(
+            t("update_avail_title"),
+            msg,
+            parent=self.window,
+        )
+        if do_update:
+            self._start_download_and_apply(info)
+
+    def _start_download_and_apply(self, info: dict) -> None:
+        """Downloads release binary or runs git pull and triggers self-update restart."""
+        if hasattr(self, "btn_check_update"):
+            self.btn_check_update.config(state="disabled", text=t("update_downloading"))
+
+        def on_progress(percent: int):
+            if self.window and self.window.winfo_exists() and hasattr(self, "btn_check_update"):
+                self.window.after(
+                    0, lambda: self.btn_check_update.config(text=f"⬇️ {percent}%...")
+                )
+
+        def worker():
+            def cleanup():
+                if hasattr(self, "on_cleanup_callback") and self.on_cleanup_callback:
+                    try:
+                        self.on_cleanup_callback()
+                    except Exception as e:
+                        print(f"[SettingsDialog] cleanup error: {e}")
+
+            ok, err = apply_update(
+                info,
+                progress_callback=on_progress,
+                on_before_restart=cleanup,
+            )
+            if not ok:
+                if self.window and self.window.winfo_exists():
+                    self.window.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            t("update_error_title"),
+                            t("update_error_msg", msg=err),
+                            parent=self.window,
+                        ),
+                    )
+                    if hasattr(self, "btn_check_update"):
+                        self.window.after(
+                            0,
+                            lambda: self.btn_check_update.config(
+                                state="normal", text=f"🔍 {t('btn_check_updates')}"
+                            ),
+                        )
+
+        threading.Thread(target=worker, daemon=True).start()
