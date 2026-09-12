@@ -25,6 +25,7 @@ from win_utils import (
     create_desktop_shortcut,
     is_windows_autostart_enabled,
     open_folder_in_explorer,
+    remove_desktop_shortcut,
     restart_dropfile,
     set_windows_autostart,
 )
@@ -345,6 +346,8 @@ class SettingsDialog:
         self.lbl_lang.config(text=t("settings_lang_label"))
         self.chk_auto.config(text=t("settings_autostart"))
         self.chk_notify.config(text=t("settings_notify"))
+        if hasattr(self, "chk_shortcut"):
+            self.chk_shortcut.config(text=t("settings_desktop_shortcut"))
         self.lbl_ignore.config(text=t("settings_ignore_label"))
         self.lbl_backup_hdr.config(text=t("settings_backup_header"))
         self.lbl_backup_sub.config(text=t("settings_backup_sub"))
@@ -638,7 +641,16 @@ class SettingsDialog:
             variable=self.var_notify,
             style="TCheckbutton",
         )
-        self.chk_notify.pack(anchor="w", pady=(1, 6))
+        self.chk_notify.pack(anchor="w", pady=(1, 4))
+
+        self.var_shortcut = tk.BooleanVar(value=self.config.desktop_shortcut)
+        self.chk_shortcut = ttk.Checkbutton(
+            parent,
+            text=t("settings_desktop_shortcut"),
+            variable=self.var_shortcut,
+            style="TCheckbutton",
+        )
+        self.chk_shortcut.pack(anchor="w", pady=(1, 6))
 
         # Ignore patterns
         self.lbl_ignore = ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel")
@@ -853,6 +865,8 @@ class SettingsDialog:
 
         self.config.notify_on_sync = self.var_notify.get()
         self.config.start_with_windows = self.var_autostart.get()
+        if hasattr(self, "var_shortcut"):
+            self.config.desktop_shortcut = self.var_shortcut.get()
 
         raw_patterns = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
         if raw_patterns:
@@ -889,6 +903,8 @@ class SettingsDialog:
 
         self.var_autostart.set(self.config.start_with_windows)
         self.var_notify.set(self.config.notify_on_sync)
+        if hasattr(self, "var_shortcut"):
+            self.var_shortcut.set(self.config.desktop_shortcut)
 
         self.entry_ignore.delete(0, tk.END)
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
@@ -957,6 +973,12 @@ class SettingsDialog:
         # Update Windows autostart registry
         set_windows_autostart(self.var_autostart.get())
 
+        # Update desktop shortcut
+        if self.config.desktop_shortcut:
+            create_desktop_shortcut(self.config.local_path)
+        else:
+            remove_desktop_shortcut()
+
         # Update client
         if self.client:
             self.client.base_url = self.config.server_url
@@ -981,6 +1003,12 @@ class SettingsDialog:
 
         # Update Windows autostart registry
         set_windows_autostart(self.var_autostart.get())
+
+        # Update desktop shortcut
+        if self.config.desktop_shortcut:
+            create_desktop_shortcut(self.config.local_path)
+        else:
+            remove_desktop_shortcut()
 
         if self.window:
             try:

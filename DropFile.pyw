@@ -82,10 +82,11 @@ def main():
     # 2. Load configuration
     config = Config()
 
-    # 3. Ensure local sync folder and desktop shortcut exist
+    # 3. Ensure local sync folder and optional desktop shortcut exist
     local_folder = config.local_path
     local_folder.mkdir(parents=True, exist_ok=True)
-    create_desktop_shortcut(local_folder)
+    if config.desktop_shortcut:
+        create_desktop_shortcut(local_folder)
 
     # 4. Initialize Database
     db_path = config.config_dir / "state.db"

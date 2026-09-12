@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
+    "desktop_shortcut": True,
     "language": "en",  # Default interface language (10 languages supported)
     "file_retention_days": 30,  # File auto-cleanup in days (0 = disabled)
     "log_retention_days": 30,  # History log retention in days (0 = keep forever)
@@ -237,4 +238,12 @@ class Config:
             self._data["conflict_action"] = val
         else:
             self._data["conflict_action"] = "keep_both"
+
+    @property
+    def desktop_shortcut(self) -> bool:
+        return bool(self._data.get("desktop_shortcut", True))
+
+    @desktop_shortcut.setter
+    def desktop_shortcut(self, value: bool) -> None:
+        self._data["desktop_shortcut"] = bool(value)
 

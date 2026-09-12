@@ -48,6 +48,22 @@ def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "Dro
         return False
 
 
+def remove_desktop_shortcut(shortcut_name: str = "DropFile.lnk") -> bool:
+    """
+    Removes the shortcut from the current user's Desktop if it exists.
+    """
+    try:
+        desktop = Path.home() / "Desktop"
+        shortcut_path = desktop / shortcut_name
+        if shortcut_path.exists():
+            shortcut_path.unlink()
+            return True
+        return False
+    except Exception as e:
+        print(f"[win_utils] Error removing desktop shortcut: {e}")
+        return False
+
+
 def set_windows_autostart(enable: bool, script_path: Optional[Path | str] = None) -> bool:
     """
     Adds or removes DropFile from Windows startup (HKCU\\Run).

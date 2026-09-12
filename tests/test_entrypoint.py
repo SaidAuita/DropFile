@@ -30,6 +30,21 @@ class TestEntrypoint(unittest.TestCase):
         self.assertTrue(hasattr(mod, "ensure_single_instance"))
         self.assertTrue(hasattr(mod, "release_instance_socket"))
 
+    def test_desktop_shortcut_config(self):
+        import tempfile, shutil
+        from config import Config
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            cfg = Config(temp_dir)
+            self.assertTrue(cfg.desktop_shortcut)
+            cfg.desktop_shortcut = False
+            self.assertFalse(cfg.desktop_shortcut)
+            cfg.save()
+            cfg2 = Config(temp_dir)
+            self.assertFalse(cfg2.desktop_shortcut)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
