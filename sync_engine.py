@@ -183,6 +183,7 @@ class SyncEngine:
         # Perform initial sync on startup
         time.sleep(1.0)
         if self.config.server_url and self.config.username:
+            self._init_last_uploaded_from_history()
             self.reconcile_all()
         else:
             self.set_status("Требуется настройка подключения", "paused")
@@ -536,6 +537,38 @@ class SyncEngine:
                 self.on_share_ready(self.last_uploaded_item)
             except Exception as e:
                 print(f"[SyncEngine] on_share_ready callback error: {e}")
+
+    def _init_last_uploaded_from_history(self) -> None:
+        """Restores last_uploaded_item from the most recent upload in sync_history."""
+        if not self.config.server_url or not self.config.username:
+            return
+
+        try:
+            with self.state_db._get_connection() as conn:
+                cur = conn.execute(
+                    "SELECT rel_path FROM sync_history WHERE action = 'upload' AND direction = 'local->remote' AND status = 'success' ORDER BY id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                if row:
+                    rel = row["rel_path"]
+                    clean_rel = rel.replace("\\", "/").lstrip("/")
+                    name = Path(clean_rel).name
+                    remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                    share_url = self.client.get_or_create_share_link(remote_dest)
+                    self.last_uploaded_item = {
+                        "name": name,
+                        "rel_path": clean_rel,
+                        "remote_path": remote_dest,
+                        "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
+                    }
+                    if self.on_share_ready:
+                        try:
+                            self.on_share_ready(self.last_uploaded_item)
+                        except Exception:
+                            pass
+                    print(f"[SyncEngine] Restored last uploaded item: {name} -> {self.last_uploaded_item['share_url']}")
+        except Exception as e:
+            print(f"[SyncEngine] Error restoring last uploaded item from history: {e}")
 
     def _handle_conflict(self, rel: str, local_file: Path, r_item: RemoteItem) -> None:
         """Handles simultaneous local & remote edits by creating a conflicted copy."""
