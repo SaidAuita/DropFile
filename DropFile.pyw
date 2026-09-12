@@ -28,6 +28,18 @@ if getattr(sys, "frozen", False):
         except Exception:
             pass
 
+# Configure macOS Cocoa activation policy: hide Dock icon for background agent
+if sys.platform == "darwin":
+    try:
+        from AppKit import NSApplication, NSApplicationActivationPolicyAccessory, NSApplicationActivationPolicyRegular
+        ns_app = NSApplication.sharedApplication()
+        if "--settings" in sys.argv:
+            ns_app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+        else:
+            ns_app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+    except Exception:
+        pass
+
 from config import Config, get_app_dir
 from fb_client import FileBrowserClient
 from gui_settings import SettingsDialog
