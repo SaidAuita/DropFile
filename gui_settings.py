@@ -340,6 +340,8 @@ class SettingsDialog:
             self.combo_conflict.current(cur_idx if cur_idx >= 0 else 0)
         if hasattr(self, "btn_dedup_now"):
             self.btn_dedup_now.config(text=t("settings_dedup_btn"))
+        if hasattr(self, "lbl_dedup_hint"):
+            self.lbl_dedup_hint.config(text=t("settings_dedup_hint"))
         self.lbl_lang.config(text=t("settings_lang_label"))
         self.chk_auto.config(text=t("settings_autostart"))
         self.chk_notify.config(text=t("settings_notify"))
@@ -557,9 +559,9 @@ class SettingsDialog:
         self.lbl_log_ret_hint = ttk.Label(log_ret_row, text=t("settings_forever_hint"), style="Subheader.TLabel")
         self.lbl_log_ret_hint.pack(side="left")
 
-        # 4. Conflict resolution & Deduplication
+        # 4. Conflict resolution
         conflict_row = tk.Frame(parent, bg="#FFFFFF")
-        conflict_row.pack(fill="x", pady=(0, 5))
+        conflict_row.pack(fill="x", pady=(0, 4))
         self.lbl_conflict = ttk.Label(conflict_row, text=t("settings_conflict_label"), style="Card.TLabel")
         self.lbl_conflict.pack(side="left", padx=(0, 8))
 
@@ -568,15 +570,22 @@ class SettingsDialog:
             values=[t("settings_conflict_keep_both"), t("settings_conflict_newer_wins")],
             state="readonly",
             font=("Segoe UI", 9),
-            width=36,
         )
         self.combo_conflict.current(1 if self.config.conflict_action == "newer_wins" else 0)
-        self.combo_conflict.pack(side="left", padx=(0, 10))
+        self.combo_conflict.pack(side="left", fill="x", expand=True)
 
+        # 4b. Deduplication button row (below conflict selector for full visibility)
+        dedup_row = tk.Frame(parent, bg="#FFFFFF")
+        dedup_row.pack(fill="x", pady=(2, 6))
         self.btn_dedup_now = ttk.Button(
-            conflict_row, text=t("settings_dedup_btn"), command=self._trigger_dedup_now
+            dedup_row, text=t("settings_dedup_btn"), command=self._trigger_dedup_now
         )
-        self.btn_dedup_now.pack(side="left")
+        self.btn_dedup_now.pack(side="left", padx=(0, 8))
+
+        self.lbl_dedup_hint = ttk.Label(
+            dedup_row, text=t("settings_dedup_hint"), style="Subheader.TLabel"
+        )
+        self.lbl_dedup_hint.pack(side="left", fill="x", expand=True)
 
         # 5. Interface Language selector with live switching
         lang_row = tk.Frame(parent, bg="#FFFFFF")
