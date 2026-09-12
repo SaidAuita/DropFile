@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 # Add project directory to sys.path
 BASE_DIR = Path(__file__).resolve().parent
