@@ -410,6 +410,14 @@ class SettingsDialog:
         self.btn_shortcut.config(text=t("folders_shortcut_btn"))
         self.lbl_folders_remote.config(text=t("folders_remote_label"))
         self.lbl_folders_hint.config(text=t("folders_remote_hint"))
+        if hasattr(self, "lbl_sync_tools_hdr"):
+            self.lbl_sync_tools_hdr.config(text=t("sync_tools_header"))
+        if hasattr(self, "lbl_sync_tools_sub"):
+            self.lbl_sync_tools_sub.config(text=t("sync_tools_sub"))
+        if hasattr(self, "btn_pull_missing"):
+            self.btn_pull_missing.config(text=f"📥 {t('btn_pull_missing')}")
+        if hasattr(self, "btn_full_sync"):
+            self.btn_full_sync.config(text=f"🔄 {t('btn_full_sync')}")
 
         # Settings Tab
         self.lbl_settings_hdr.config(text=t("settings_header"))
@@ -579,6 +587,140 @@ class SettingsDialog:
             style="Subheader.TLabel",
         )
         self.lbl_folders_hint.pack(anchor="w")
+
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
+
+        # --- Server Synchronization Tools ---
+        self.lbl_sync_tools_hdr = ttk.Label(parent, text=t("sync_tools_header"), style="Header.TLabel")
+        self.lbl_sync_tools_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_sync_tools_sub = ttk.Label(
+            parent,
+            text=t("sync_tools_sub"),
+            style="Subheader.TLabel",
+        )
+        self.lbl_sync_tools_sub.pack(anchor="w", pady=(0, 10))
+
+        sync_btns_row = tk.Frame(parent, bg="#FFFFFF")
+        sync_btns_row.pack(fill="x", pady=(0, 8))
+
+        # Button: Pull Missing Files
+        self.btn_pull_missing = ttk.Button(
+            sync_btns_row,
+            text=f"📥 {t('btn_pull_missing')}",
+            command=self._pull_missing_files_ui,
+        )
+        self.btn_pull_missing.pack(side="left", padx=(0, 8))
+
+        # Button: Full Resync
+        self.btn_full_sync = ttk.Button(
+            sync_btns_row,
+            text=f"🔄 {t('btn_full_sync')}",
+            command=self._full_sync_ui,
+        )
+        self.btn_full_sync.pack(side="left")
+
+        self.lbl_sync_status = tk.Label(parent, text="", font=("Segoe UI", 9), bg="#FFFFFF", anchor="w")
+        self.lbl_sync_status.pack(fill="x", pady=(4, 0))
+
+    def _pull_missing_files_ui(self) -> None:
+        """Triggers pulling missing files from server in background and updates UI."""
+        self._read_form_into_config()
+        self.config.save()
+
+        if self.client:
+            self.client.base_url = self.config.server_url
+            self.client.username = self.config.username
+            self.client.password = self.config.password
+
+        self.btn_pull_missing.config(state="disabled")
+        self.btn_full_sync.config(state="disabled")
+        self.lbl_sync_status.config(text=t("pull_missing_progress"), fg="#0067C0")
+
+        def worker():
+            engine = getattr(self, "engine", None)
+            if not engine:
+                db_path = self.config.config_dir / "state.db"
+                state_db = StateDatabase(db_path)
+                client = FileBrowserClient(
+                    base_url=self.config.server_url,
+                    username=self.config.username,
+                    password=self.config.password,
+                )
+                engine = SyncEngine(config=self.config, state_db=state_db, client=client)
+
+            downloaded, errors = engine.pull_missing_files()
+
+            def on_done():
+                if self._is_window_alive():
+                    self.btn_pull_missing.config(state="normal")
+                    self.btn_full_sync.config(state="normal")
+                    if downloaded > 0:
+                        self.lbl_sync_status.config(
+                            text=t("pull_missing_done_msg", count=downloaded),
+                            fg="#0F7B0F",
+                        )
+                        messagebox.showinfo(
+                            t("pull_missing_done_title"),
+                            t("pull_missing_done_msg", count=downloaded),
+                            parent=self.window,
+                        )
+                    else:
+                        self.lbl_sync_status.config(
+                            text=t("pull_missing_none_msg"),
+                            fg="#505050",
+                        )
+                        messagebox.showinfo(
+                            t("pull_missing_none_title"),
+                            t("pull_missing_none_msg"),
+                            parent=self.window,
+                        )
+                    self._refresh_logs()
+
+            if self._is_window_alive():
+                self.window.after(0, on_done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _full_sync_ui(self) -> None:
+        """Triggers full bidirectional synchronization."""
+        self._read_form_into_config()
+        self.config.save()
+
+        if self.client:
+            self.client.base_url = self.config.server_url
+            self.client.username = self.config.username
+            self.client.password = self.config.password
+
+        self.btn_pull_missing.config(state="disabled")
+        self.btn_full_sync.config(state="disabled")
+        self.lbl_sync_status.config(text=t("status_checking"), fg="#0067C0")
+
+        def worker():
+            engine = getattr(self, "engine", None)
+            if not engine:
+                db_path = self.config.config_dir / "state.db"
+                state_db = StateDatabase(db_path)
+                client = FileBrowserClient(
+                    base_url=self.config.server_url,
+                    username=self.config.username,
+                    password=self.config.password,
+                )
+                engine = SyncEngine(config=self.config, state_db=state_db, client=client)
+
+            engine.reconcile_all()
+
+            def on_done():
+                if self._is_window_alive():
+                    self.btn_pull_missing.config(state="normal")
+                    self.btn_full_sync.config(state="normal")
+                    self.lbl_sync_status.config(text=t("status_synced"), fg="#0F7B0F")
+                    self._refresh_logs()
+
+            if self._is_window_alive():
+                self.window.after(0, on_done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _browse_local_folder(self) -> None:
         chosen = filedialog.askdirectory(initialdir=self.entry_local.get())

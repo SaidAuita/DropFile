@@ -371,21 +371,29 @@ class SyncEngine:
 
             root_prefix = self.config.remote_path.strip("/")
             for item in remote_items:
-                if item.is_dir:
-                    continue
-                # Normalize relative path
                 clean_p = item.path.strip("/")
-                if clean_p.startswith(root_prefix):
+                if clean_p.lower().startswith(root_prefix.lower()):
                     rel = clean_p[len(root_prefix):].lstrip("/")
                 else:
                     rel = clean_p
-                if rel and not self.is_ignored(rel):
-                    remote_dict[rel] = item
+                if not rel or self.is_ignored(rel):
+                    continue
 
-            # 3. Scan local files
+                if item.is_dir:
+                    (self.config.local_path / rel).mkdir(parents=True, exist_ok=True)
+                    continue
+
+                remote_dict[rel] = item
+
+            # 3. Scan local files and ensure directories exist remotely
             local_dict: Dict[str, Path] = {}
             if self.config.local_path.exists():
-                for root, _, files in os.walk(self.config.local_path):
+                for root, dirs, files in os.walk(self.config.local_path):
+                    for d in dirs:
+                        full_d = Path(root) / d
+                        if not self.is_ignored(full_d):
+                            rel_d = str(full_d.relative_to(self.config.local_path)).replace("\\", "/")
+                            self.client.ensure_remote_dir_exists(f"{self.config.remote_path}/{rel_d}")
                     for file in files:
                         full_path = Path(root) / file
                         if self.is_ignored(full_path):
@@ -510,6 +518,91 @@ class SyncEngine:
                 )
 
             self.set_status(t("status_synced"), "idle")
+
+    def pull_missing_files(self) -> Tuple[int, int]:
+        """
+        Forces downloading of all files from remote FileBrowser that are missing locally.
+        Clears stale state DB records for missing files to prevent accidental deletion,
+        ensures remote folders are created locally, and downloads missing items.
+        Returns (downloaded_count, error_count).
+        """
+        if not self.config.server_url or not self.config.username:
+            return 0, 0
+
+        downloaded = 0
+        errors = 0
+
+        with self._sync_lock:
+            self.set_status(t("status_checking"), "syncing")
+            ok, msg = self.client.test_connection()
+            if not ok:
+                self.set_status(t("status_conn_error", msg=msg[:40]), "error")
+                return 0, 1
+
+            self.client.ensure_remote_dir_exists(self.config.remote_path)
+            remote_items = self.client.list_recursive(self.config.remote_path)
+            root_prefix = self.config.remote_path.strip("/")
+
+            # 1. First pass: ensure all directories exist locally
+            for item in remote_items:
+                clean_p = item.path.strip("/")
+                if clean_p.lower().startswith(root_prefix.lower()):
+                    rel = clean_p[len(root_prefix):].lstrip("/")
+                else:
+                    rel = clean_p
+                if not rel or self.is_ignored(rel):
+                    continue
+
+                if item.is_dir:
+                    (self.config.local_path / rel).mkdir(parents=True, exist_ok=True)
+
+            # 2. Second pass: download missing files or files needing update
+            for item in remote_items:
+                if item.is_dir:
+                    continue
+
+                clean_p = item.path.strip("/")
+                if clean_p.lower().startswith(root_prefix.lower()):
+                    rel = clean_p[len(root_prefix):].lstrip("/")
+                else:
+                    rel = clean_p
+                if not rel or self.is_ignored(rel):
+                    continue
+
+                local_target = self.config.local_path / rel
+                need_download = False
+
+                if not local_target.exists():
+                    # File is missing locally! Clear any old state record so it's not marked as deleted
+                    self.state_db.delete_record(rel)
+                    need_download = True
+                else:
+                    # Local file exists: check if size or hash differs from remote
+                    rec = self.state_db.get_record(rel)
+                    if rec:
+                        if rec.remote_mtime != item.modified or rec.remote_size != item.size:
+                            need_download = True
+                    else:
+                        stat = local_target.stat()
+                        if stat.st_size != item.size:
+                            need_download = True
+
+                if need_download:
+                    local_target.parent.mkdir(parents=True, exist_ok=True)
+                    success = self._download_remote_file(rel, item, local_target)
+                    if success:
+                        downloaded += 1
+                    else:
+                        errors += 1
+
+            self.set_status(t("status_synced"), "idle")
+            if downloaded > 0:
+                self.notify(
+                    t("notify_pull_done_title"),
+                    t("notify_pull_done_msg", count=downloaded),
+                )
+
+        return downloaded, errors
 
     def _download_remote_file(self, rel: str, r_item: RemoteItem, target: Path) -> bool:
         self.set_status(t("status_downloading", file=rel), "syncing")

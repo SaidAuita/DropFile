@@ -132,6 +132,22 @@ class DropFileTray:
     def _sync_now(self, icon, item) -> None:
         self.engine.trigger_sync_now()
 
+    def _pull_missing(self, icon=None, item=None) -> None:
+        def worker():
+            downloaded, errors = self.engine.pull_missing_files()
+            if downloaded > 0:
+                self.send_notification(
+                    t("pull_missing_done_title"),
+                    t("pull_missing_done_msg", count=downloaded),
+                )
+            else:
+                self.send_notification(
+                    t("pull_missing_none_title"),
+                    t("pull_missing_none_msg"),
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _toggle_pause(self, icon, item) -> None:
         if self.engine.is_paused():
             self.engine.resume()
@@ -229,6 +245,7 @@ class DropFileTray:
             ),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_sync_now"), self._sync_now),
+            item(lambda text: t("tray_pull_missing"), self._pull_missing),
             item(
                 lambda text: t("tray_resume") if self.engine.is_paused() else t("tray_pause"),
                 self._toggle_pause,

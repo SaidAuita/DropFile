@@ -258,6 +258,42 @@ class TestSyncEngine(unittest.TestCase):
         self.assertTrue(doc.exists())
         self.assertTrue(real_conflict.exists())
 
+    def test_pull_missing_files(self):
+        from fb_client import RemoteItem
+        sync_folder = self.temp_dir / "sync_pull"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.server_url = "https://mock.local"
+        self.config.username = "test_user"
+
+        # Mock remote tree with a directory and 2 files
+        remote_items = [
+            RemoteItem(path="/DropFile/AI_Code_Pro", name="AI_Code_Pro", size=0, modified="", is_dir=True),
+            RemoteItem(path="/DropFile/AI_Code_Pro/task.py", name="task.py", size=15, modified="2026-01-01T00:00:00Z", is_dir=False),
+            RemoteItem(path="/DropFile/readme.txt", name="readme.txt", size=10, modified="2026-01-01T00:00:00Z", is_dir=False),
+        ]
+        self.client.test_connection = lambda: (True, "OK")
+        self.client.ensure_remote_dir_exists = lambda path: True
+        self.client.list_recursive = lambda path: remote_items
+
+        def mock_download(remote_path, dest_path):
+            p = Path(dest_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("downloaded", encoding="utf-8")
+            return True
+
+        self.client.download_file = mock_download
+
+        pulled, errors = self.engine.pull_missing_files()
+        self.assertEqual(pulled, 2)
+        self.assertEqual(errors, 0)
+
+        # Check directory created
+        self.assertTrue((sync_folder / "AI_Code_Pro").is_dir())
+        # Check files exist
+        self.assertTrue((sync_folder / "AI_Code_Pro" / "task.py").is_file())
+        self.assertTrue((sync_folder / "readme.txt").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
