@@ -49,9 +49,27 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
+# Clear quarantine flags and ensure execution permissions in current folder
+xattr -cr "$SCRIPT_DIR" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/*.command 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/DropFile.pyw 2>/dev/null || true
+
 # 2. Virtual environment (.venv)
 echo ""
 echo "[2/5] Setting up isolated environment (.venv)..."
+if [ -d ".venv" ]; then
+    # Python virtual environments contain hardcoded paths and cannot be relocated;
+    # detect if folder was moved from another location and recreate .venv cleanly
+    if [ -f ".venv/bin/activate" ]; then
+        if ! grep -Fq "$SCRIPT_DIR" ".venv/bin/activate" 2>/dev/null; then
+            echo "   -> Folder location changed. Recreating .venv for new path..."
+            rm -rf ".venv" 2>/dev/null || true
+        fi
+    else
+        rm -rf ".venv" 2>/dev/null || true
+    fi
+fi
+
 if [ ! -d ".venv" ]; then
     "$PYTHON_BIN" -m venv .venv
     echo "   -> Created .venv environment."
