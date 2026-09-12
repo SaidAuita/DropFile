@@ -1,8 +1,9 @@
 """
 Modern Tkinter Settings and Activity Log dialog for DropFile.
 Features native Windows 10/11 visual styles, high-DPI scaling,
-connection testing, backup/restore, autostart, multi-language support (10 languages)
-with live dynamic language switching, instant reload and restart capability.
+responsive scrollable tabs, connection testing, backup/restore,
+autostart, multi-language support (10 languages) with live dynamic switching,
+and guaranteed visible bottom action bar.
 """
 
 import os
@@ -39,6 +40,52 @@ if sys.platform.startswith("win"):
             pass
 
 
+class ScrollableTab(ttk.Frame):
+    """
+    Card-styled scrollable frame for settings tabs that automatically
+    shows a vertical scrollbar only when content overflows visible height.
+    """
+    def __init__(self, parent, bg="#FFFFFF", padding=(18, 14)):
+        super().__init__(parent, style="Card.TFrame")
+        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, bg=bg)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.content = ttk.Frame(self.canvas, style="Card.TFrame", padding=padding)
+
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self._win_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        self.content.bind("<Configure>", self._on_content_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # Mouse wheel support
+        self.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
+        self.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
+
+    def _on_content_configure(self, event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._update_scrollbar()
+
+    def _on_canvas_configure(self, event):
+        self.canvas.itemconfig(self._win_id, width=event.width)
+        self._update_scrollbar()
+
+    def _update_scrollbar(self):
+        req_h = self.content.winfo_reqheight()
+        canv_h = self.canvas.winfo_height()
+        if canv_h > 40 and req_h > canv_h + 10:
+            if not self.scrollbar.winfo_ismapped():
+                self.scrollbar.pack(side="right", fill="y")
+        else:
+            if self.scrollbar.winfo_ismapped():
+                self.scrollbar.pack_forget()
+
+    def _on_mousewheel(self, event):
+        if self.canvas.winfo_exists() and self.scrollbar.winfo_ismapped():
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+
 class SettingsDialog:
     def __init__(
         self,
@@ -69,8 +116,9 @@ class SettingsDialog:
 
         self.window = tk.Tk()
         self.window.title(f"{t('app_name')} v{__version__} — {t('tab_settings').strip()}")
-        self.window.geometry("670x620")
-        self.window.minsize(600, 540)
+        # Generous dimensions to fit all content cleanly across scaling factors
+        self.window.geometry("740x660")
+        self.window.minsize(640, 500)
 
         # Apply native Windows visual style
         style = ttk.Style()
@@ -109,7 +157,7 @@ class SettingsDialog:
         style.configure("TCheckbutton", background=bg_card, font=("Segoe UI", 9), foreground=fg_text)
 
         # --- Top Header Bar ---
-        header_bar = tk.Frame(self.window, bg="#FFFFFF", padx=20, pady=12)
+        header_bar = tk.Frame(self.window, bg="#FFFFFF", padx=20, pady=10)
         header_bar.pack(fill="x", side="top")
 
         title_row = tk.Frame(header_bar, bg="#FFFFFF")
@@ -148,36 +196,15 @@ class SettingsDialog:
         # Divider under header
         tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="top")
 
-        # --- Tab Notebook ---
-        self.notebook = ttk.Notebook(self.window)
-        self.notebook.pack(fill="both", expand=True, padx=14, pady=12)
-
-        # Tab 1: Connection
-        self.tab_conn = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
-        self.notebook.add(self.tab_conn, text=t("tab_conn"))
-        self._build_connection_tab(self.tab_conn)
-
-        # Tab 2: Folders
-        self.tab_folders = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
-        self.notebook.add(self.tab_folders, text=t("tab_folders"))
-        self._build_folders_tab(self.tab_folders)
-
-        # Tab 3: Settings & Backup
-        self.tab_settings = ttk.Frame(self.notebook, padding=14, style="Card.TFrame")
-        self.notebook.add(self.tab_settings, text=t("tab_settings"))
-        self._build_settings_tab(self.tab_settings)
-
-        # Tab 4: History / Log
-        self.tab_log = ttk.Frame(self.notebook, padding=12, style="Card.TFrame")
-        self.notebook.add(self.tab_log, text=t("tab_log"))
-        self._build_log_tab(self.tab_log)
-
         # --- Bottom Action Bar ---
-        tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="bottom")
-        bottom_bar = tk.Frame(self.window, bg=bg_window, padx=16, pady=12)
+        # IMPORTANT: Pack bottom bar FIRST so it is ALWAYS anchored and visible!
+        bottom_divider = tk.Frame(self.window, height=1, bg="#E5E5E5")
+        bottom_divider.pack(fill="x", side="bottom")
+
+        bottom_bar = tk.Frame(self.window, bg=bg_window, padx=16, pady=10)
         bottom_bar.pack(fill="x", side="bottom")
 
-        # "Save and Restart" button (Prominent primary action)
+        # "Save and Restart" button (Primary Accent button)
         self.btn_restart = ttk.Button(
             bottom_bar,
             text=f"🔄 {t('btn_save_restart')}",
@@ -198,12 +225,36 @@ class SettingsDialog:
         self.btn_cancel = ttk.Button(bottom_bar, text=t("btn_close"), command=self.window.destroy)
         self.btn_cancel.pack(side="right")
 
+        # --- Tab Notebook (Expands in remaining space) ---
+        self.notebook = ttk.Notebook(self.window)
+        self.notebook.pack(fill="both", expand=True, padx=14, pady=(8, 8))
+
+        # Tab 1: Connection (Scrollable)
+        self.tab_conn = ScrollableTab(self.notebook, padding=(18, 14))
+        self.notebook.add(self.tab_conn, text=t("tab_conn"))
+        self._build_connection_tab(self.tab_conn.content)
+
+        # Tab 2: Folders (Scrollable)
+        self.tab_folders = ScrollableTab(self.notebook, padding=(18, 14))
+        self.notebook.add(self.tab_folders, text=t("tab_folders"))
+        self._build_folders_tab(self.tab_folders.content)
+
+        # Tab 3: Settings & Backup (Scrollable)
+        self.tab_settings = ScrollableTab(self.notebook, padding=(18, 14))
+        self.notebook.add(self.tab_settings, text=t("tab_settings"))
+        self._build_settings_tab(self.tab_settings.content)
+
+        # Tab 4: History / Log
+        self.tab_log = ttk.Frame(self.notebook, padding=12, style="Card.TFrame")
+        self.notebook.add(self.tab_log, text=t("tab_log"))
+        self._build_log_tab(self.tab_log)
+
         # Center on screen
         self.window.update_idletasks()
         w = self.window.winfo_width()
         h = self.window.winfo_height()
-        x = (self.window.winfo_screenwidth() // 2) - (w // 2)
-        y = (self.window.winfo_screenheight() // 2) - (h // 2)
+        x = max(0, (self.window.winfo_screenwidth() // 2) - (w // 2))
+        y = max(0, (self.window.winfo_screenheight() // 2) - (h // 2))
         self.window.geometry(f"+{x}+{y}")
 
         self.window.mainloop()
@@ -281,32 +332,32 @@ class SettingsDialog:
             text=t("conn_sub"),
             style="Subheader.TLabel",
         )
-        self.lbl_conn_sub.pack(anchor="w", pady=(0, 14))
+        self.lbl_conn_sub.pack(anchor="w", pady=(0, 12))
 
         # Server URL
         self.lbl_conn_url = ttk.Label(parent, text=t("conn_url_label"), style="Card.TLabel")
         self.lbl_conn_url.pack(anchor="w", pady=(0, 2))
         self.entry_url = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_url.insert(0, self.config.server_url)
-        self.entry_url.pack(fill="x", pady=(0, 10))
+        self.entry_url.pack(fill="x", pady=(0, 8))
 
         # Username
         self.lbl_conn_user = ttk.Label(parent, text=t("conn_user_label"), style="Card.TLabel")
         self.lbl_conn_user.pack(anchor="w", pady=(0, 2))
         self.entry_user = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_user.insert(0, self.config.username)
-        self.entry_user.pack(fill="x", pady=(0, 10))
+        self.entry_user.pack(fill="x", pady=(0, 8))
 
         # Password
         self.lbl_conn_pwd = ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_conn_pwd.pack(anchor="w", pady=(0, 2))
         self.entry_pwd = ttk.Entry(parent, font=("Segoe UI", 9), show="•")
         self.entry_pwd.insert(0, self.config.password)
-        self.entry_pwd.pack(fill="x", pady=(0, 16))
+        self.entry_pwd.pack(fill="x", pady=(0, 14))
 
         # Test Connection button & status indicator
         test_frame = tk.Frame(parent, bg="#FFFFFF")
-        test_frame.pack(fill="x")
+        test_frame.pack(fill="x", pady=(0, 6))
 
         self.btn_test = ttk.Button(test_frame, text=t("conn_test_btn"), command=self._test_connection)
         self.btn_test.pack(side="left")
@@ -352,14 +403,14 @@ class SettingsDialog:
             text=t("folders_sub"),
             style="Subheader.TLabel",
         )
-        self.lbl_folders_sub.pack(anchor="w", pady=(0, 14))
+        self.lbl_folders_sub.pack(anchor="w", pady=(0, 12))
 
         # Local folder
         self.lbl_folders_local = ttk.Label(parent, text=t("folders_local_label"), style="Card.TLabel")
         self.lbl_folders_local.pack(anchor="w", pady=(0, 2))
 
         local_row = tk.Frame(parent, bg="#FFFFFF")
-        local_row.pack(fill="x", pady=(0, 8))
+        local_row.pack(fill="x", pady=(0, 6))
 
         self.entry_local = ttk.Entry(local_row, font=("Segoe UI", 9))
         self.entry_local.insert(0, str(self.config.local_path))
@@ -370,7 +421,7 @@ class SettingsDialog:
 
         # Action helpers for local folder
         btns_row = tk.Frame(parent, bg="#FFFFFF")
-        btns_row.pack(fill="x", pady=(0, 16))
+        btns_row.pack(fill="x", pady=(0, 12))
 
         self.btn_open = ttk.Button(
             btns_row,
@@ -384,7 +435,7 @@ class SettingsDialog:
         )
         self.btn_shortcut.pack(side="left")
 
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 14))
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 12))
 
         # Remote folder
         self.lbl_folders_remote = ttk.Label(parent, text=t("folders_remote_label"), style="Card.TLabel")
@@ -424,11 +475,11 @@ class SettingsDialog:
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.lbl_settings_hdr = ttk.Label(parent, text=t("settings_header"), style="Header.TLabel")
-        self.lbl_settings_hdr.pack(anchor="w", pady=(0, 10))
+        self.lbl_settings_hdr.pack(anchor="w", pady=(0, 8))
 
         # 1. Poll interval
         poll_row = tk.Frame(parent, bg="#FFFFFF")
-        poll_row.pack(fill="x", pady=(0, 6))
+        poll_row.pack(fill="x", pady=(0, 5))
         self.lbl_poll = ttk.Label(poll_row, text=t("settings_poll_label"), style="Card.TLabel")
         self.lbl_poll.pack(side="left", padx=(0, 8))
 
@@ -438,12 +489,12 @@ class SettingsDialog:
 
         # 2. File retention (Auto-cleanup of old files)
         file_ret_row = tk.Frame(parent, bg="#FFFFFF")
-        file_ret_row.pack(fill="x", pady=(0, 6))
+        file_ret_row.pack(fill="x", pady=(0, 5))
         self.lbl_file_ret = ttk.Label(file_ret_row, text=t("settings_file_ret_label"), style="Card.TLabel")
         self.lbl_file_ret.pack(side="left", padx=(0, 8))
 
         self.spin_file_retention = ttk.Spinbox(
-            file_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9)
+            file_ret_row, from_=0, to=365, width=5, font=("Segoe UI", 9)
         )
         self.spin_file_retention.set(self.config.file_retention_days)
         self.spin_file_retention.pack(side="left", padx=(0, 6))
@@ -458,11 +509,11 @@ class SettingsDialog:
 
         # 3. History log retention
         log_ret_row = tk.Frame(parent, bg="#FFFFFF")
-        log_ret_row.pack(fill="x", pady=(0, 6))
+        log_ret_row.pack(fill="x", pady=(0, 5))
         self.lbl_log_ret = ttk.Label(log_ret_row, text=t("settings_log_ret_label"), style="Card.TLabel")
         self.lbl_log_ret.pack(side="left", padx=(0, 8))
 
-        self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=6, font=("Segoe UI", 9))
+        self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=5, font=("Segoe UI", 9))
         self.spin_retention.set(self.config.log_retention_days)
         self.spin_retention.pack(side="left", padx=(0, 6))
 
@@ -471,7 +522,7 @@ class SettingsDialog:
 
         # 4. Interface Language selector with live switching
         lang_row = tk.Frame(parent, bg="#FFFFFF")
-        lang_row.pack(fill="x", pady=(0, 4))
+        lang_row.pack(fill="x", pady=(0, 2))
         self.lbl_lang = ttk.Label(lang_row, text=t("settings_lang_label"), style="Card.TLabel")
         self.lbl_lang.pack(side="left", padx=(0, 8))
 
@@ -501,7 +552,7 @@ class SettingsDialog:
             bg="#FFFFFF",
             anchor="w",
         )
-        self.lbl_lang_hint.pack(fill="x", pady=(0, 8))
+        self.lbl_lang_hint.pack(fill="x", pady=(0, 6))
 
         # Checkboxes
         self.var_autostart = tk.BooleanVar(value=is_windows_autostart_enabled())
@@ -511,7 +562,7 @@ class SettingsDialog:
             variable=self.var_autostart,
             style="TCheckbutton",
         )
-        self.chk_auto.pack(anchor="w", pady=(2, 5))
+        self.chk_auto.pack(anchor="w", pady=(1, 4))
 
         self.var_notify = tk.BooleanVar(value=self.config.notify_on_sync)
         self.chk_notify = ttk.Checkbutton(
@@ -520,7 +571,7 @@ class SettingsDialog:
             variable=self.var_notify,
             style="TCheckbutton",
         )
-        self.chk_notify.pack(anchor="w", pady=(2, 8))
+        self.chk_notify.pack(anchor="w", pady=(1, 6))
 
         # Ignore patterns
         self.lbl_ignore = ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel")
@@ -528,10 +579,10 @@ class SettingsDialog:
 
         self.entry_ignore = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
-        self.entry_ignore.pack(fill="x", pady=(0, 12))
+        self.entry_ignore.pack(fill="x", pady=(0, 8))
 
         # Backup / Restore settings section
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(2, 10))
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 8))
         self.lbl_backup_hdr = ttk.Label(parent, text=t("settings_backup_header"), style="Header.TLabel")
         self.lbl_backup_hdr.pack(anchor="w", pady=(0, 2))
 
@@ -540,10 +591,10 @@ class SettingsDialog:
             text=t("settings_backup_sub"),
             style="Subheader.TLabel",
         )
-        self.lbl_backup_sub.pack(anchor="w", pady=(0, 8))
+        self.lbl_backup_sub.pack(anchor="w", pady=(0, 6))
 
         backup_row = tk.Frame(parent, bg="#FFFFFF")
-        backup_row.pack(fill="x")
+        backup_row.pack(fill="x", pady=(0, 4))
 
         self.btn_export = ttk.Button(
             backup_row, text=t("settings_export_btn"), command=self._export_settings
