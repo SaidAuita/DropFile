@@ -122,11 +122,22 @@ class SyncEngine:
         self._running = True
         self.config.local_path.mkdir(parents=True, exist_ok=True)
 
-        # Start Watchdog
+        # Start Watchdog with graceful fallback to PollingObserver (crucial for macOS VMs)
         handler = LocalFolderHandler(self)
-        self._observer = Observer()
-        self._observer.schedule(handler, str(self.config.local_path), recursive=True)
-        self._observer.start()
+        try:
+            self._observer = Observer()
+            self._observer.schedule(handler, str(self.config.local_path), recursive=True)
+            self._observer.start()
+        except Exception as e:
+            print(f"[SyncEngine] Native observer failed ({e}), falling back to PollingObserver...")
+            try:
+                from watchdog.observers.polling import PollingObserver
+                self._observer = PollingObserver()
+                self._observer.schedule(handler, str(self.config.local_path), recursive=True)
+                self._observer.start()
+            except Exception as e2:
+                print(f"[SyncEngine] PollingObserver fallback failed: {e2}")
+                self._observer = None
 
         # Start background polling / processing thread
         self._poll_thread = threading.Thread(target=self._worker_loop, daemon=True)

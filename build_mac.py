@@ -82,6 +82,15 @@ def build_mac_app() -> Path:
         "--hidden-import=AppKit",
         "--hidden-import=Foundation",
         "--hidden-import=objc",
+        "--hidden-import=watchdog.observers.fsevents",
+        "--hidden-import=watchdog.observers.kqueue",
+        "--hidden-import=watchdog.observers.polling",
+        "--hidden-import=tkinter",
+        "--hidden-import=_tkinter",
+        "--hidden-import=sqlite3",
+        "--hidden-import=_sqlite3",
+        "--collect-submodules=watchdog",
+        "--collect-submodules=pystray",
     ]
 
     if icns_file.exists():
@@ -154,5 +163,45 @@ def build_mac_app() -> Path:
     return app_dir
 
 
+def install_app(target_dir: Path = Path("/Applications")) -> bool:
+    dist_app = Path(__file__).resolve().parent / "dist" / "DropFile.app"
+    if not dist_app.exists():
+        print(f"[build_mac] Error: {dist_app} does not exist. Run build first.")
+        return False
+
+    dest_app = target_dir / "DropFile.app"
+    print(f"[build_mac] Installing to {dest_app}...")
+    try:
+        if dest_app.exists():
+            shutil.rmtree(dest_app)
+        shutil.copytree(dist_app, dest_app)
+        subprocess.run(["chmod", "-R", "755", str(dest_app)], check=False)
+        subprocess.run(["xattr", "-cr", str(dest_app)], check=False)
+        subprocess.run(
+            [
+                "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                "-f",
+                str(dest_app),
+            ],
+            check=False,
+        )
+        print(f"[build_mac] Successfully installed to {dest_app}")
+        return True
+    except PermissionError:
+        print(f"[build_mac] Permission denied. Run with sudo to install into {target_dir}")
+        return False
+    except Exception as e:
+        print(f"[build_mac] Install error: {e}")
+        return False
+
+
 if __name__ == "__main__":
-    build_mac_app()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="DropFile macOS Application Builder")
+    parser.add_argument("--install", nargs="?", const="/Applications", default=None, help="Install built app to specified folder (default: /Applications)")
+    args = parser.parse_args()
+
+    app_path = build_mac_app()
+    if args.install:
+        install_app(Path(args.install))

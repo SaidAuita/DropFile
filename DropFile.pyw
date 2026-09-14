@@ -11,10 +11,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-# Add project directory to sys.path
+# Add project directory to sys.path and set cwd
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+try:
+    os.chdir(BASE_DIR)
+except Exception:
+    pass
 
 # If running as frozen PyInstaller executable, clean PyInstaller internal variables
 # from os.environ so any spawned subprocesses run as fresh root instances without parent checks
@@ -71,16 +75,34 @@ def release_instance_socket() -> None:
         INSTANCE_SOCKET = None
 
 
+def _start_instance_command_listener(sock: socket.socket) -> None:
+    """Background listener for commands (e.g. SHOW_SETTINGS) from second instances."""
+    def listener():
+        while sock and sock == INSTANCE_SOCKET:
+            try:
+                conn, _ = sock.accept()
+                data = conn.recv(1024)
+                conn.close()
+                if b"SHOW_SETTINGS" in data:
+                    spawn_settings_process()
+            except Exception:
+                break
+
+    t = threading.Thread(target=listener, daemon=True)
+    t.start()
+
+
 def ensure_single_instance() -> socket.socket:
-    """Ensures only one instance of DropFile runs at a time with retry for restart handover."""
+    """Ensures only one instance of DropFile runs at a time with notification handover."""
     global INSTANCE_SOCKET
     for attempt in range(4):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
-            s.listen(1)
+            s.listen(2)
             INSTANCE_SOCKET = s
+            _start_instance_command_listener(s)
             return s
         except socket.error:
             try:
@@ -90,7 +112,34 @@ def ensure_single_instance() -> socket.socket:
             if attempt < 3:
                 time.sleep(0.5)
                 continue
-            print("[DropFile] Another instance of DropFile is already running. Exiting.")
+
+            # Another instance is actively running. Notify it to open Settings.
+            try:
+                notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                notify_s.settimeout(2.0)
+                notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
+                notify_s.sendall(b"SHOW_SETTINGS\n")
+                notify_s.close()
+            except Exception:
+                # If socket couldn't receive command, spawn settings directly
+                spawn_settings_process()
+
+            if sys.platform == "darwin":
+                try:
+                    import subprocess
+                    subprocess.run(
+                        [
+                            "osascript",
+                            "-e",
+                            'display notification "DropFile is already running in the top menu bar." with title "DropFile"',
+                        ],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
+
+            print("[DropFile] Another instance of DropFile is already running. Showing settings.")
             sys.exit(0)
 
 
@@ -205,5 +254,54 @@ def main():
         engine.stop()
 
 
+def _handle_fatal_exception(exc: BaseException) -> None:
+    """Logs fatal exceptions and alerts the user with a native modal dialog."""
+    import subprocess
+    import traceback
+    err_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    print(f"[DropFile FATAL CRASH] {err_text}", file=sys.stderr)
+
+    crash_log = None
+    try:
+        crash_log = get_app_dir() / "dropfile_crash.log"
+        with open(crash_log, "a", encoding="utf-8") as f:
+            f.write(f"\n=== Crash: {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            f.write(err_text)
+    except Exception:
+        try:
+            crash_log = Path.home() / "dropfile_crash.log"
+            with open(crash_log, "a", encoding="utf-8") as f:
+                f.write(f"\n=== Crash: {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+                f.write(err_text)
+        except Exception:
+            pass
+
+    if sys.platform == "darwin":
+        try:
+            msg_short = str(exc).replace('"', '\\"').replace("'", "")[:200]
+            log_str = str(crash_log).replace('"', '\\"') if crash_log else "~/dropfile_crash.log"
+            script = f'display alert "DropFile Error" message "DropFile could not start:\n\n{msg_short}\n\nError log: {log_str}" as critical'
+            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+        except Exception:
+            pass
+    elif sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"DropFile encountered a fatal startup error:\n\n{str(exc)[:300]}\n\nLog: {crash_log}",
+                "DropFile Error",
+                0x10,
+            )
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except BaseException as e:
+        _handle_fatal_exception(e)
+        sys.exit(1)

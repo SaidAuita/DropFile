@@ -166,7 +166,7 @@ The compiled single-file binary will be placed at `dist\DropFile.exe`.
    *(Or download the ZIP archive from [github.com/SaidAuita/DropFile](https://github.com/SaidAuita/DropFile) and unzip it into your home directory)*
 2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
    - Automatically configures a clean virtual environment (`.venv`) and installs dependencies (including native PyObjC Cocoa menu bar support).
-   - Packages a native `DropFile.app` into `~/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
+   - Packages a native `DropFile.app` into `/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
    - Creates a Desktop sync shortcut (`~/Desktop/DropFile`).
 3. DropFile icon appears in your top macOS menu bar and begins synchronizing!
 
@@ -361,7 +361,7 @@ python build_exe.py
    *(Либо скачайте ZIP-архив с GitHub и распакуйте в домашнюю папку)*
 2. Дважды кликните по файлу **`install_mac.command`** в Finder (или выполните `./install_mac.command` в Терминале):
    - Установщик автоматически создаст изолированное виртуальное окружение (`.venv`) и установит зависимости (включая нативный Cocoa / PyObjC).
-   - Соберёт и установит приложение **`~/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает как агент в верхнем статус-баре около часов, без лишней иконки в Dock).
+   - Соберёт и установит приложение **`/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает как агент в верхнем статус-баре около часов, без лишней иконки в Dock).
    - Создаст удобный ярлык рабочей папки на Рабочем столе (`~/Desktop/DropFile`).
 3. В строке меню macOS (вверху экрана около часов) появится иконка облака DropFile. Нажмите её, выберите **«Параметры»**, введите адрес сервера FileBrowser, логин и пароль.
 

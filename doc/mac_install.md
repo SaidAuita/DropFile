@@ -46,7 +46,7 @@
    - Проверит наличие Python 3.
    - Создаст изолированное виртуальное окружение `.venv`.
    - Установит все необходимые библиотеки (`requests`, `pystray`, `watchdog`, `pillow`, `pyobjc`).
-   - Соберёт приложение `DropFile.app` в папке `~/Applications/` (папка «Программы»).
+   - Соберёт приложение `DropFile.app` в общей системной папке `/Applications/` (папка «Программы»).
    - Создаст удобный ярлык на Рабочем столе для синхронизации.
 4. В конце появится вопрос: `Launch DropFile right now? [Y/n]`. Нажмите клавишу **`Y`** (или `Enter`).
 5. **Всё готово!** Окно Терминала после этого можно **просто закрыть** — клиент DropFile уже работает в фоновом режиме в верхней строке меню (menu bar).
@@ -133,13 +133,13 @@ curl -O https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg && su
 ### 4. Ошибка LaunchServices error -10810?
 Эта ошибка возникала в старых версиях из-за разыменования путей виртуального окружения. В текущей версии она устранена. Если вы запускаете приложение вручную, убедитесь, что карантин снят:
 ```bash
-xattr -cr ~/Applications/DropFile.app
+xattr -cr /Applications/DropFile.app 2>/dev/null || xattr -cr ~/Applications/DropFile.app 2>/dev/null
 ```
 
 ### 5. Как полностью удалить DropFile с Mac?
 Удалите три папки:
 ```bash
-rm -rf ~/Applications/DropFile.app
+rm -rf /Applications/DropFile.app ~/Applications/DropFile.app
 rm -rf ~/Library/Application\ Support/DropFile
 rm -f ~/Library/LaunchAgents/com.saidauita.dropfile.plist
 ```
