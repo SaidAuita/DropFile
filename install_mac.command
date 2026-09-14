@@ -10,6 +10,11 @@ set -e
 cd "$(dirname "$0")"
 SCRIPT_DIR="$(pwd)"
 
+# Strip macOS Gatekeeper quarantine and grant execute permissions
+xattr -cr "$SCRIPT_DIR" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/*.command 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/DropFile.pyw 2>/dev/null || true
+
 echo "=================================================================="
 echo "          DropFile — Client Installer for macOS                  "
 echo "=================================================================="
@@ -161,31 +166,23 @@ echo "[3/5] Installing dependencies (requests, pystray, pillow, watchdog, pyobjc
 pip install --upgrade pip >/dev/null 2>&1 || true
 pip install -r requirements-mac.txt
 
-# 4. Build DropFile.app in /Applications (System Applications)
+# 4. Build DropFile.app bundle
 echo ""
-echo "[4/5] Building native DropFile.app bundle in /Applications..."
+echo "[4/5] Building native DropFile.app bundle..."
 APP_DEST="/Applications"
-if [ -w "$APP_DEST" ]; then
-    "$VENV_PY" mac_bundle.py --target "$APP_DEST"
-    chmod -R 755 "$APP_DEST/DropFile.app" 2>/dev/null || true
-    chmod +x "$APP_DEST/DropFile.app/Contents/MacOS/DropFile" 2>/dev/null || true
-    chmod +x "$SCRIPT_DIR/DropFile.pyw" 2>/dev/null || true
-    xattr -cr "$APP_DEST/DropFile.app" 2>/dev/null || true
-    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST/DropFile.app" 2>/dev/null || true
-else
-    echo "   -> Administrator privileges required to install into /Applications. Requesting sudo..."
-    sudo "$VENV_PY" mac_bundle.py --target "$APP_DEST"
-    sudo chmod -R 755 "$APP_DEST/DropFile.app" 2>/dev/null || true
-    sudo chmod +x "$APP_DEST/DropFile.app/Contents/MacOS/DropFile" 2>/dev/null || true
-    chmod +x "$SCRIPT_DIR/DropFile.pyw" 2>/dev/null || true
-    sudo xattr -cr "$APP_DEST/DropFile.app" 2>/dev/null || true
-    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST/DropFile.app" 2>/dev/null || true
+if [ ! -w "$APP_DEST" ]; then
+    APP_DEST="$HOME/Applications"
 fi
+mkdir -p "$APP_DEST"
+echo "   -> Target directory: $APP_DEST"
 
-# Clean up older user-level bundle from ~/Applications if it exists
-if [ -d "$HOME/Applications/DropFile.app" ]; then
-    rm -rf "$HOME/Applications/DropFile.app" 2>/dev/null || true
-fi
+"$VENV_PY" mac_bundle.py --target "$APP_DEST"
+chmod -R 755 "$APP_DEST/DropFile.app" 2>/dev/null || true
+chmod +x "$APP_DEST/DropFile.app/Contents/MacOS/DropFile" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/DropFile.pyw" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/*.command 2>/dev/null || true
+xattr -cr "$APP_DEST/DropFile.app" 2>/dev/null || true
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DEST/DropFile.app" 2>/dev/null || true
 
 # 5. Setup sync folder and Desktop shortcut
 echo ""
@@ -201,7 +198,7 @@ fi
 echo ""
 echo "=================================================================="
 echo "🎉 Installation completed successfully!"
-echo "Application installed to: /Applications/DropFile.app"
+echo "Application installed to: $APP_DEST/DropFile.app"
 echo "The icon will appear in the menu bar at the top right."
 echo "=================================================================="
 echo ""
@@ -210,9 +207,9 @@ read -p "Launch DropFile right now? [Y/n]: " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
     echo "Launching DropFile..."
-    if ! open "/Applications/DropFile.app" 2>/dev/null; then
+    if ! open "$APP_DEST/DropFile.app" 2>/dev/null; then
         echo "Notice: LaunchServices open returned an issue; starting directly..."
-        "/Applications/DropFile.app/Contents/MacOS/DropFile" >/dev/null 2>&1 &
+        "$APP_DEST/DropFile.app/Contents/MacOS/DropFile" >/dev/null 2>&1 &
     fi
 fi
 

@@ -111,8 +111,14 @@ else
 fi
 """
 
-    # 3. Source files to include
+    # 3. Files to include in the portable DropFile macOS package
     include_files = [
+        "Install.command",
+        "Run.command",
+        "install_mac.command",
+        "run_mac.command",
+        "README_MAC.txt",
+        "README.md",
         "DropFile.pyw",
         "config.py",
         "config.example.json",
@@ -128,65 +134,37 @@ fi
         "win_utils.py",
         "mac_bundle.py",
         "requirements-mac.txt",
-        "install_mac.command",
-        "run_mac.command",
         "icon.ico",
     ]
 
-    # Generate icon PNG if Pillow is available
-    icon_png_bytes = None
-    try:
-        from icons import create_tray_icon
-        img = create_tray_icon("idle", size=512)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        icon_png_bytes = buf.getvalue()
-    except Exception as e:
-        print(f"[package_mac] Icon notice: {e}")
-
-    # 4. Write zip with POSIX permissions
+    # 4. Write zip with POSIX permissions and UNIX create_system
     if output_zip.exists():
         output_zip.unlink()
 
     with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         def add_file(archive_path: str, data: bytes, executable: bool = False):
             zinfo = zipfile.ZipInfo(archive_path)
+            zinfo.create_system = 3  # 3 = UNIX (ensures macOS/Linux honors executable bits)
             zinfo.compress_type = zipfile.ZIP_DEFLATED
             mode = 0o755 if executable else 0o644
             zinfo.external_attr = (mode << 16) | 0o100000
             zf.writestr(zinfo, data)
 
-        # DropFile.app/Contents/Info.plist
-        add_file("DropFile.app/Contents/Info.plist", plist_bytes)
-
-        # DropFile.app/Contents/PkgInfo
-        add_file("DropFile.app/Contents/PkgInfo", b"APPL????")
-
-        # DropFile.app/Contents/MacOS/DropFile (executable)
-        add_file(
-            "DropFile.app/Contents/MacOS/DropFile",
-            launcher_script.replace("\r\n", "\n").encode("utf-8"),
-            executable=True,
-        )
-
-        # DropFile.app/Contents/Resources/AppIcon.png
-        if icon_png_bytes:
-            add_file("DropFile.app/Contents/Resources/AppIcon.png", icon_png_bytes)
-
-        # Add all project source files to DropFile.app/Contents/Resources/app/
+        # Add all project source and launcher files into DropFile/ folder
         for fname in include_files:
             fpath = root_dir / fname
             if fpath.exists():
-                is_exec = fname.endswith((".command", ".pyw"))
+                is_exec = fname.endswith((".command", ".pyw", ".sh"))
                 add_file(
-                    f"DropFile.app/Contents/Resources/app/{fname}",
+                    f"DropFile/{fname}",
                     fpath.read_bytes(),
                     executable=is_exec,
                 )
 
-    print(f"[package_mac] Successfully created: {output_zip} ({output_zip.stat().st_size} bytes)")
+    print(f"[package_mac] Successfully created portable folder package: {output_zip} ({output_zip.stat().st_size} bytes)")
     return output_zip
 
 
 if __name__ == "__main__":
     package_mac_zip()
+
