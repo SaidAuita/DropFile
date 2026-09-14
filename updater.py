@@ -201,7 +201,25 @@ def check_for_updates(timeout: int = 8) -> Tuple[bool, Dict[str, Any]]:
                     "exe_asset_url": exe_url,
                     "exe_size": exe_size,
                 }
-                return newer, info
+                if newer:
+                    return True, info
+
+                # Check if there is a newer tag than the latest release
+                fallback_res = _check_via_tags_atom(timeout=timeout) or _check_via_git(timeout=timeout)
+                if fallback_res:
+                    fb_tag, fb_ver = fallback_res
+                    if is_remote_newer(fb_ver, remote_ver) and is_remote_newer(fb_ver, __version__):
+                        return True, {
+                            "version": fb_ver,
+                            "tag_name": fb_tag,
+                            "title": f"DropFile v{fb_ver}",
+                            "notes": f"New update DropFile v{fb_ver} is available on GitHub.",
+                            "html_url": f"https://github.com/{GITHUB_REPO}/releases/tag/{fb_tag}",
+                            "exe_asset_url": f"https://github.com/{GITHUB_REPO}/releases/download/{fb_tag}/DropFile.exe",
+                            "exe_size": 0,
+                        }
+
+                return False, info
     except urllib.error.HTTPError as e:
         if e.code == 404:
             is_404 = True
