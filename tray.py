@@ -151,6 +151,23 @@ class DropFileTray:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _get_servers_sync_label(self) -> str:
+        if not self.config.backup_server_enabled or not self.config.sync_backup_server:
+            return ""
+        st = self.engine.get_last_servers_sync_status()
+        summary = st.get("summary", "")
+        return t("tray_servers_sync_menu", status=summary)
+
+    def _sync_servers_mirror_tray(self, icon=None, item=None) -> None:
+        def worker():
+            self.send_notification("DropFile", t("servers_sync_checking"))
+            synced, errs = self.engine.sync_servers_mirror()
+            st = self.engine.get_last_servers_sync_status()
+            self.send_notification(t("servers_sync_status_title"), st.get("summary", ""))
+            self.refresh_menu()
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def _toggle_pause(self, icon, item) -> None:
         if self.engine.is_paused():
             self.engine.resume()
@@ -234,6 +251,12 @@ class DropFileTray:
     def _build_menu(self) -> pystray.Menu:
         return pystray.Menu(
             item(lambda text: self.current_status_text, None, enabled=False),
+            item(
+                lambda text: self._get_servers_sync_label(),
+                None,
+                enabled=False,
+                visible=lambda item: bool(self.config.backup_server_enabled and self.config.sync_backup_server),
+            ),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_open_folder"), self._open_local_folder, default=True),
             item(
@@ -248,6 +271,11 @@ class DropFileTray:
             ),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_sync_now"), self._sync_now),
+            item(
+                lambda text: f"⚡ {t('servers_sync_btn_sync')}",
+                self._sync_servers_mirror_tray,
+                visible=lambda item: bool(self.config.backup_server_enabled and self.config.sync_backup_server),
+            ),
             item(lambda text: t("tray_pull_missing"), self._pull_missing),
             item(
                 lambda text: t("tray_resume") if self.engine.is_paused() else t("tray_pause"),

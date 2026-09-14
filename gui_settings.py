@@ -9,6 +9,7 @@ and guaranteed visible bottom action bar.
 import os
 import sys
 import threading
+import time
 
 # Ensure macOS Tkinter [NSApp macOSVersion] selector compatibility before importing tkinter
 from platform_utils import ensure_macos_tk_compatibility
@@ -420,6 +421,21 @@ class SettingsDialog:
             self.lbl_backup_pwd.config(text=t("conn_pwd_label"))
         if hasattr(self, "btn_test2"):
             self.btn_test2.config(text=t("conn_test_btn2"))
+        if hasattr(self, "chk_sync_backup"):
+            self.chk_sync_backup.config(text=f"🔄 {t('conn_sync_backup_enable')}")
+        if hasattr(self, "lbl_sync_backup_hint"):
+            self.lbl_sync_backup_hint.config(text=t("conn_sync_backup_hint"))
+        if hasattr(self, "lbl_sync_warn"):
+            self.lbl_sync_warn.config(text=t("conn_sync_backup_warning"))
+        if hasattr(self, "lbl_sync_status_title"):
+            self.lbl_sync_status_title.config(text=f"📊 {t('servers_sync_status_title')}:")
+        if hasattr(self, "btn_check_servers"):
+            self.btn_check_servers.config(text=f"🔍 {t('servers_sync_btn_check')}")
+        if hasattr(self, "btn_sync_servers_now"):
+            self.btn_sync_servers_now.config(text=f"⚡ {t('servers_sync_btn_sync')}")
+        if hasattr(self, "engine") and self.engine and hasattr(self, "_update_servers_sync_ui"):
+            cached = self.engine.get_last_servers_sync_status()
+            self._update_servers_sync_ui(cached)
 
 
         # Folders Tab
@@ -481,6 +497,8 @@ class SettingsDialog:
         self._refresh_logs()
 
     def _get_active_server_display_text(self) -> str:
+        if self.config.backup_server_enabled and self.config.sync_backup_server:
+            return f"[{t('server_badge')} 1 ⇄ 2] — {t('conn_sync_backup_enable')}"
         idx = getattr(self.engine, "active_server_index", self.config.primary_server_index) if self.engine else self.config.primary_server_index
         srv_name = t(f"server_{idx}")
         return t("conn_active_server_status", srv=srv_name)
@@ -519,6 +537,7 @@ class SettingsDialog:
             text=t("server_1"),
             variable=self.var_primary_server,
             value=1,
+            command=self._on_primary_server_toggle,
         )
         self.radio_prim1.pack(side="left", padx=(0, 12))
         self.radio_prim2 = ttk.Radiobutton(
@@ -526,6 +545,7 @@ class SettingsDialog:
             text=t("server_2"),
             variable=self.var_primary_server,
             value=2,
+            command=self._on_primary_server_toggle,
         )
         self.radio_prim2.pack(side="left")
 
@@ -622,10 +642,177 @@ class SettingsDialog:
         )
         self.lbl_test_status2.pack(side="left", padx=(14, 0), fill="x", expand=True, anchor="w")
 
+        ttk.Separator(self.frame_server2_body, orient="horizontal").pack(fill="x", pady=(8, 10))
+
+        # --- Dual Server Synchronization (Mirroring) ---
+        self.var_sync_backup = tk.BooleanVar(value=self.config.sync_backup_server)
+        self.chk_sync_backup = ttk.Checkbutton(
+            self.frame_server2_body,
+            text=f"🔄 {t('conn_sync_backup_enable')}",
+            variable=self.var_sync_backup,
+            command=self._on_sync_backup_toggle,
+        )
+        self.chk_sync_backup.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_sync_backup_hint = ttk.Label(
+            self.frame_server2_body,
+            text=t("conn_sync_backup_hint"),
+            style="Subheader.TLabel",
+        )
+        self.lbl_sync_backup_hint.pack(anchor="w", pady=(0, 4))
+
+        # Warning callout banner
+        self.frame_sync_warn = tk.Frame(self.frame_server2_body, bg="#FFF4CE", relief="solid", bd=1, padx=8, pady=6)
+        self.frame_sync_warn.pack(fill="x", pady=(0, 8))
+        self.lbl_sync_warn = tk.Label(
+            self.frame_sync_warn,
+            text=t("conn_sync_backup_warning"),
+            font=("Segoe UI", 8),
+            bg="#FFF4CE",
+            fg="#794B02",
+            justify="left",
+            wraplength=520,
+            anchor="w",
+        )
+        self.lbl_sync_warn.pack(fill="x")
+
+        # Status & Comparison Card
+        self.frame_sync_status = tk.Frame(self.frame_server2_body, bg="#F8F9FA", relief="solid", bd=1, padx=10, pady=8)
+        self.frame_sync_status.pack(fill="x", pady=(0, 6))
+
+        # Title & Badge row
+        hdr_box = tk.Frame(self.frame_sync_status, bg="#F8F9FA")
+        hdr_box.pack(fill="x", pady=(0, 4))
+        self.lbl_sync_status_title = tk.Label(
+            hdr_box,
+            text=f"📊 {t('servers_sync_status_title')}:",
+            font=("Segoe UI", 9, "bold"),
+            bg="#F8F9FA",
+            fg="#202124",
+        )
+        self.lbl_sync_status_title.pack(side="left")
+
+        self.lbl_sync_status_badge = tk.Label(
+            hdr_box,
+            text="...",
+            font=("Segoe UI", 9, "bold"),
+            bg="#F8F9FA",
+            fg="#0067C0",
+        )
+        self.lbl_sync_status_badge.pack(side="left", padx=(8, 0))
+
+        # Server 1 details line
+        self.lbl_s1_detail = tk.Label(
+            self.frame_sync_status,
+            text="",
+            font=("Segoe UI", 8),
+            bg="#F8F9FA",
+            fg="#5F6368",
+            anchor="w",
+        )
+        self.lbl_s1_detail.pack(fill="x", pady=(1, 1))
+
+        # Server 2 details line
+        self.lbl_s2_detail = tk.Label(
+            self.frame_sync_status,
+            text="",
+            font=("Segoe UI", 8),
+            bg="#F8F9FA",
+            fg="#5F6368",
+            anchor="w",
+        )
+        self.lbl_s2_detail.pack(fill="x", pady=(1, 1))
+
+        # Coordinator / Leader details line
+        self.lbl_leader_detail = tk.Label(
+            self.frame_sync_status,
+            text="",
+            font=("Segoe UI", 8),
+            bg="#F8F9FA",
+            fg="#5F6368",
+            anchor="w",
+        )
+        self.lbl_leader_detail.pack(fill="x", pady=(1, 6))
+
+        # Action buttons
+        btn_box = tk.Frame(self.frame_sync_status, bg="#F8F9FA")
+        btn_box.pack(fill="x")
+
+        self.btn_check_servers = ttk.Button(
+            btn_box,
+            text=f"🔍 {t('servers_sync_btn_check')}",
+            command=self._on_check_servers_status,
+        )
+        self.btn_check_servers.pack(side="left", padx=(0, 6))
+
+        self.btn_sync_servers_now = ttk.Button(
+            btn_box,
+            text=f"⚡ {t('servers_sync_btn_sync')}",
+            command=self._on_sync_servers_now,
+        )
+        self.btn_sync_servers_now.pack(side="left")
+
+        self.lbl_sync_action_status = tk.Label(
+            btn_box,
+            text="",
+            font=("Segoe UI", 8, "italic"),
+            bg="#F8F9FA",
+            fg="#5F6368",
+        )
+        self.lbl_sync_action_status.pack(side="left", padx=(10, 0))
+
         self._on_backup_enable_toggle()
 
+        # Initial status populate & check
+        if getattr(self, "engine", None):
+            cached = self.engine.get_last_servers_sync_status()
+            self._update_servers_sync_ui(cached)
+            if self.config.backup_server_enabled:
+                self.window.after(300, self._on_check_servers_status)
+        else:
+            self._update_servers_sync_ui({"enabled": False, "state": "disabled", "badge": "⚪ " + t("servers_sync_disabled")})
+
+    def _on_sync_backup_toggle(self) -> None:
+        if self.var_sync_backup.get():
+            ans = messagebox.askyesno(
+                t("conn_sync_backup_confirm_title"),
+                t("conn_sync_backup_confirm_msg"),
+                parent=self.window,
+            )
+            if not ans:
+                self.var_sync_backup.set(False)
+                return
+
+        self.config.sync_backup_server = self.var_sync_backup.get()
+        is_enabled = self.var_sync_backup.get() and self.var_backup_enabled.get()
+        if hasattr(self, "lbl_active_server"):
+            self.lbl_active_server.config(text=self._get_active_server_display_text())
+        if hasattr(self, "btn_sync_servers_now"):
+            self.btn_sync_servers_now.config(state="normal" if is_enabled else "disabled")
+        if not self.config.sync_backup_server and getattr(self, "engine", None):
+            try:
+                self.engine.release_sync_leader()
+            except Exception:
+                pass
+        if is_enabled and getattr(self, "engine", None):
+            self.window.after(100, self._on_check_servers_status)
+        elif not is_enabled and hasattr(self, "lbl_leader_detail"):
+            self.lbl_leader_detail.config(text="")
+
+    def _on_primary_server_toggle(self) -> None:
+        """Invoked when user switches between Server 1 and Server 2 as preferred."""
+        prim_idx = self.var_primary_server.get()
+        self.config.primary_server_index = prim_idx
+        if prim_idx == 2:
+            self.var_backup_enabled.set(True)
+            self.config.backup_server_enabled = True
+        self._on_backup_enable_toggle()
+        if hasattr(self, "lbl_active_server"):
+            self.lbl_active_server.config(text=self._get_active_server_display_text())
+
     def _on_backup_enable_toggle(self) -> None:
-        state = "normal" if self.var_backup_enabled.get() else "disabled"
+        is_server2_active = self.var_backup_enabled.get() or (getattr(self, "var_primary_server", tk.IntVar(value=1)).get() == 2)
+        state = "normal" if is_server2_active else "disabled"
         if hasattr(self, "entry_backup_url"):
             self.entry_backup_url.config(state=state)
         if hasattr(self, "entry_backup_user"):
@@ -634,6 +821,147 @@ class SettingsDialog:
             self.entry_backup_pwd.config(state=state)
         if hasattr(self, "btn_test2"):
             self.btn_test2.config(state=state)
+        if hasattr(self, "chk_sync_backup"):
+            self.chk_sync_backup.config(state=state)
+        if hasattr(self, "btn_check_servers"):
+            self.btn_check_servers.config(state=state)
+        if hasattr(self, "btn_sync_servers_now"):
+            s_state = "normal" if (is_server2_active and getattr(self, "var_sync_backup", tk.BooleanVar()).get()) else "disabled"
+            self.btn_sync_servers_now.config(state=s_state)
+        if hasattr(self, "lbl_active_server"):
+            self.lbl_active_server.config(text=self._get_active_server_display_text())
+        if not is_server2_active and hasattr(self, "lbl_sync_status_badge"):
+            self._update_servers_sync_ui({"enabled": False, "state": "disabled", "badge": "⚪ " + t("servers_sync_disabled")})
+
+    def _update_servers_sync_ui(self, st: dict) -> None:
+        if not self._is_window_alive():
+            return
+        if not hasattr(self, "lbl_sync_status_badge"):
+            return
+
+        state = st.get("state", "disabled")
+        badge = st.get("badge", "")
+
+        color_map = {
+            "synced": "#0F7B0F",
+            "server1_newer": "#B25E00",
+            "server2_newer": "#B25E00",
+            "diff_count": "#B25E00",
+            "server1_offline": "#C42B1C",
+            "server2_offline": "#C42B1C",
+            "both_offline": "#C42B1C",
+            "disabled": "#5F6368",
+        }
+        fg_color = color_map.get(state, "#5F6368")
+
+        self.lbl_sync_status_badge.config(text=badge, fg=fg_color)
+
+        s1 = st.get("server1", {})
+        s2 = st.get("server2", {})
+
+        if s1.get("online"):
+            cnt1 = s1.get("file_count", 0)
+            f1 = s1.get("latest_file", "")
+            t1 = s1.get("latest_time_str", "")
+            if cnt1 > 0 and f1:
+                self.lbl_s1_detail.config(text=t("servers_sync_srv_info", idx=1, count=cnt1, file=f1, time=t1))
+            else:
+                self.lbl_s1_detail.config(text=t("servers_sync_srv_none", idx=1))
+        elif s1.get("url"):
+            self.lbl_s1_detail.config(text=t("servers_sync_srv_offline", idx=1))
+        else:
+            self.lbl_s1_detail.config(text="")
+
+        if s2.get("online"):
+            cnt2 = s2.get("file_count", 0)
+            f2 = s2.get("latest_file", "")
+            t2 = s2.get("latest_time_str", "")
+            if cnt2 > 0 and f2:
+                self.lbl_s2_detail.config(text=t("servers_sync_srv_info", idx=2, count=cnt2, file=f2, time=t2))
+            else:
+                self.lbl_s2_detail.config(text=t("servers_sync_srv_none", idx=2))
+        elif s2.get("url"):
+            self.lbl_s2_detail.config(text=t("servers_sync_srv_offline", idx=2))
+        else:
+            self.lbl_s2_detail.config(text="")
+
+        if hasattr(self, "lbl_leader_detail"):
+            leader = st.get("leader", {})
+            if not self.config.sync_backup_server or not self.config.backup_server_enabled:
+                self.lbl_leader_detail.config(text="")
+            elif leader.get("is_self"):
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_self"), fg="#0F7B0F")
+            elif leader.get("hostname") and time.time() <= float(leader.get("expires_at", 0)):
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_other", host=leader.get("hostname")), fg="#5F6368")
+            else:
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_none"), fg="#5F6368")
+
+        if hasattr(self, "btn_check_servers"):
+            b_state = "normal" if self.var_backup_enabled.get() else "disabled"
+            self.btn_check_servers.config(state=b_state)
+        if hasattr(self, "btn_sync_servers_now"):
+            s_state = "normal" if (self.var_backup_enabled.get() and getattr(self, "var_sync_backup", tk.BooleanVar()).get()) else "disabled"
+            self.btn_sync_servers_now.config(state=s_state)
+
+    def _on_check_servers_status(self) -> None:
+        if not hasattr(self, "lbl_sync_status_badge"):
+            return
+        self.lbl_sync_status_badge.config(text=t("servers_sync_checking"), fg="#0067C0")
+        if hasattr(self, "btn_check_servers"):
+            self.btn_check_servers.config(state="disabled")
+        if hasattr(self, "btn_sync_servers_now"):
+            self.btn_sync_servers_now.config(state="disabled")
+
+        def worker():
+            engine = getattr(self, "engine", None)
+            if engine:
+                res = engine.compare_servers_status()
+            else:
+                db_path = self.config.config_dir / "state.db"
+                sdb = StateDatabase(db_path)
+                cli = FileBrowserClient(base_url=self.config.server_url, username=self.config.username, password=self.config.password)
+                eng = SyncEngine(config=self.config, state_db=sdb, client=cli)
+                res = eng.compare_servers_status()
+            if self._is_window_alive():
+                self.window.after(0, lambda: self._update_servers_sync_ui(res))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_sync_servers_now(self) -> None:
+        if not hasattr(self, "btn_sync_servers_now"):
+            return
+        self._read_form_into_config()
+        self.config.save()
+
+        self.btn_check_servers.config(state="disabled")
+        self.btn_sync_servers_now.config(state="disabled")
+        if hasattr(self, "lbl_sync_action_status"):
+            self.lbl_sync_action_status.config(text=t("status_checking"), fg="#0067C0")
+
+        def worker():
+            engine = getattr(self, "engine", None)
+            if not engine:
+                db_path = self.config.config_dir / "state.db"
+                sdb = StateDatabase(db_path)
+                cli = FileBrowserClient(base_url=self.config.server_url, username=self.config.username, password=self.config.password)
+                engine = SyncEngine(config=self.config, state_db=sdb, client=cli)
+
+            synced, errs = engine.sync_servers_mirror()
+            res = engine.get_last_servers_sync_status()
+
+            def on_done():
+                if self._is_window_alive():
+                    self._update_servers_sync_ui(res)
+                    if hasattr(self, "lbl_sync_action_status"):
+                        txt = f"✓ {synced} synced" if errs == 0 else f"✓ {synced} synced, {errs} errors"
+                        col = "#0F7B0F" if errs == 0 else "#C42B1C"
+                        self.lbl_sync_action_status.config(text=txt, fg=col)
+                    self._refresh_logs()
+
+            if self._is_window_alive():
+                self.window.after(0, on_done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _test_connection(self) -> None:
         self.lbl_test_status.config(text=t("conn_testing"), fg="#0067C0")
@@ -1219,35 +1547,48 @@ class SettingsDialog:
         self.config.username = self.entry_user.get().strip()
         self.config.password = self.entry_pwd.get()
 
+        if hasattr(self, "var_primary_server"):
+            self.config.primary_server_index = self.var_primary_server.get()
+
         if hasattr(self, "var_backup_enabled"):
-            self.config.backup_server_enabled = self.var_backup_enabled.get()
+            if self.config.primary_server_index == 2:
+                self.config.backup_server_enabled = True
+            else:
+                self.config.backup_server_enabled = self.var_backup_enabled.get()
+
+        if hasattr(self, "var_sync_backup"):
+            self.config.sync_backup_server = self.var_sync_backup.get()
+
         if hasattr(self, "entry_backup_url"):
             self.config.backup_server_url = self.entry_backup_url.get().strip()
         if hasattr(self, "entry_backup_user"):
             self.config.backup_username = self.entry_backup_user.get().strip()
         if hasattr(self, "entry_backup_pwd"):
             self.config.backup_password = self.entry_backup_pwd.get()
-        if hasattr(self, "var_primary_server"):
-            self.config.primary_server_index = self.var_primary_server.get()
 
-        self.config.local_path = self.entry_local.get().strip()
-        self.config.remote_path = self.entry_remote.get().strip()
+        if hasattr(self, "entry_local"):
+            self.config.local_path = self.entry_local.get().strip()
+        if hasattr(self, "entry_remote"):
+            self.config.remote_path = self.entry_remote.get().strip()
+            self.config.backup_remote_path = self.entry_remote.get().strip()
 
+        if hasattr(self, "spin_poll"):
+            try:
+                self.config.poll_interval = int(self.spin_poll.get())
+            except Exception:
+                pass
 
-        try:
-            self.config.poll_interval = int(self.spin_poll.get())
-        except Exception:
-            pass
+        if hasattr(self, "spin_file_retention"):
+            try:
+                self.config.file_retention_days = int(self.spin_file_retention.get())
+            except Exception:
+                pass
 
-        try:
-            self.config.file_retention_days = int(self.spin_file_retention.get())
-        except Exception:
-            pass
-
-        try:
-            self.config.log_retention_days = int(self.spin_retention.get())
-        except Exception:
-            pass
+        if hasattr(self, "spin_retention"):
+            try:
+                self.config.log_retention_days = int(self.spin_retention.get())
+            except Exception:
+                pass
 
         if hasattr(self, "combo_lang"):
             idx = self.combo_lang.current()
@@ -1260,14 +1601,17 @@ class SettingsDialog:
             idx = self.combo_conflict.current()
             self.config.conflict_action = "newer_wins" if idx == 1 else "keep_both"
 
-        self.config.notify_on_sync = self.var_notify.get()
-        self.config.start_with_windows = self.var_autostart.get()
+        if hasattr(self, "var_notify"):
+            self.config.notify_on_sync = self.var_notify.get()
+        if hasattr(self, "var_autostart"):
+            self.config.start_with_windows = self.var_autostart.get()
         if hasattr(self, "var_shortcut"):
             self.config.desktop_shortcut = self.var_shortcut.get()
 
-        raw_patterns = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
-        if raw_patterns:
-            self.config.set("ignore_patterns", raw_patterns)
+        if hasattr(self, "entry_ignore"):
+            raw_patterns = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
+            if raw_patterns:
+                self.config.set("ignore_patterns", raw_patterns)
 
     def _populate_form_fields(self) -> None:
         """Populates UI fields from the current config object."""
@@ -1282,15 +1626,23 @@ class SettingsDialog:
 
         if hasattr(self, "var_backup_enabled"):
             self.var_backup_enabled.set(self.config.backup_server_enabled)
-        if hasattr(self, "entry_backup_url"):
-            self.entry_backup_url.delete(0, tk.END)
-            self.entry_backup_url.insert(0, self.config.backup_server_url)
-        if hasattr(self, "entry_backup_user"):
-            self.entry_backup_user.delete(0, tk.END)
-            self.entry_backup_user.insert(0, self.config.backup_username)
-        if hasattr(self, "entry_backup_pwd"):
-            self.entry_backup_pwd.delete(0, tk.END)
-            self.entry_backup_pwd.insert(0, self.config.backup_password)
+        if hasattr(self, "var_sync_backup"):
+            self.var_sync_backup.set(self.config.sync_backup_server)
+
+        # Set state to normal first so delete/insert succeeds reliably without Tkinter dropping text
+        for entry_widget, val in [
+            (getattr(self, "entry_backup_url", None), self.config.backup_server_url),
+            (getattr(self, "entry_backup_user", None), self.config.backup_username),
+            (getattr(self, "entry_backup_pwd", None), self.config.backup_password),
+        ]:
+            if entry_widget:
+                try:
+                    entry_widget.config(state="normal")
+                    entry_widget.delete(0, tk.END)
+                    entry_widget.insert(0, val or "")
+                except Exception:
+                    pass
+
         if hasattr(self, "var_primary_server"):
             self.var_primary_server.set(self.config.primary_server_index)
         if hasattr(self, "lbl_active_server"):
@@ -1385,8 +1737,12 @@ class SettingsDialog:
 
     def _save_and_close(self) -> None:
         """Saves configuration and applies to active client/engine without restarting process."""
-        self._read_form_into_config()
-        self.config.save()
+        try:
+            self._read_form_into_config()
+            self.config.save()
+        except Exception as e:
+            messagebox.showerror(t("error_title"), f"Error saving settings: {e}", parent=self.window)
+            return
 
         # Update Windows autostart registry
         set_windows_autostart(self.var_autostart.get())
@@ -1401,9 +1757,14 @@ class SettingsDialog:
         if self.engine:
             self.engine.apply_server_connection(self.config.primary_server_index)
         elif self.client:
-            self.client.base_url = self.config.server_url
-            self.client.username = self.config.username
-            self.client.password = self.config.password
+            if self.config.primary_server_index == 2:
+                self.client.base_url = self.config.backup_server_url
+                self.client.username = self.config.backup_username or self.config.username
+                self.client.password = self.config.backup_password or self.config.password
+            else:
+                self.client.base_url = self.config.server_url
+                self.client.username = self.config.username
+                self.client.password = self.config.password
             self.client.token = None  # Force re-login with updated credentials
 
 
@@ -1419,8 +1780,12 @@ class SettingsDialog:
 
     def _save_and_restart(self) -> None:
         """Saves configuration and triggers a clean full application restart."""
-        self._read_form_into_config()
-        self.config.save()
+        try:
+            self._read_form_into_config()
+            self.config.save()
+        except Exception as e:
+            messagebox.showerror(t("error_title"), f"Error saving settings: {e}", parent=self.window)
+            return
 
         # Update Windows autostart registry
         set_windows_autostart(self.var_autostart.get())

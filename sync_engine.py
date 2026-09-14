@@ -5,15 +5,18 @@ Implements bidirectional sync, loop prevention, debouncing, and conflict handlin
 """
 
 import fnmatch
+import json
 import os
 import platform
 import re
 import shutil
+import socket
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -44,7 +47,7 @@ class SyncEngine:
         self.last_uploaded_item: Optional[Dict[str, str]] = None
         self._running = False
         self._paused = False
-        self._sync_lock = threading.Lock()
+        self._sync_lock = threading.RLock()
         self._observer: Optional[Observer] = None
         self._poll_thread: Optional[threading.Thread] = None
 
@@ -66,6 +69,14 @@ class SyncEngine:
         self.active_server_index = self.config.primary_server_index
         self._last_primary_probe_time: float = 0.0
 
+        self._last_servers_sync_status: Dict[str, Any] = {}
+
+        # Distributed sync leader coordination
+        self.hostname = socket.gethostname()
+        self.client_id = f"{self.hostname}_{uuid.uuid4().hex[:6]}"
+        self.is_sync_leader = False
+        self.leader_info: Dict[str, Any] = {}
+
         try:
             self._last_cfg_mtime = self.config.config_file.stat().st_mtime if self.config.config_file.exists() else 0.0
         except Exception:
@@ -79,8 +90,10 @@ class SyncEngine:
         return self.config.remote_path
 
     def get_active_server_label(self) -> str:
-        """Returns server indicator label (e.g. '[Сервер 1]' or '[Сервер 2]') if backup server is enabled."""
+        """Returns server indicator label (e.g. '[Сервер 1]' or '[Сервер 2]' or '[Сервер 1 ⇄ 2]') if backup server is enabled."""
         if self.config.backup_server_enabled:
+            if self.config.sync_backup_server:
+                return f"[{t('server_badge')} 1 ⇄ 2]"
             return f"[{t('server_badge')} {self.active_server_index}]"
         return ""
 
@@ -95,6 +108,93 @@ class SyncEngine:
         else:
             return self.config.server_url, self.config.username, self.config.password, self.config.remote_path
 
+    def _get_secondary_client(self) -> Optional[Tuple[FileBrowserClient, str]]:
+        """Returns (FileBrowserClient, remote_path) for the secondary/backup server if enabled."""
+        if not self.config.backup_server_enabled:
+            return None
+        sec_idx = 2 if self.active_server_index == 1 else 1
+        url, user, pwd, rem = self.get_server_credentials(sec_idx)
+        if not url or not user:
+            return None
+        timeout = self.client.timeout if self.client else 15
+        return FileBrowserClient(base_url=url, username=user, password=pwd, timeout=timeout), rem
+
+    @property
+    def leader_lock_remote_path(self) -> str:
+        """Returns the remote path for the distributed leader lock file."""
+        return f"{self.config.remote_path.rstrip('/')}/.dropfile_leader.json"
+
+    def acquire_or_renew_sync_leader(self) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Acquires or renews the distributed leader lock on the primary server.
+        Ensures only ONE client in the network actively mirrors servers.
+        Lock expires after 180 seconds if client goes offline.
+        Returns (is_leader: bool, leader_dict: dict).
+        """
+        if not self.config.backup_server_enabled or not self.config.sync_backup_server:
+            self.is_sync_leader = False
+            self.leader_info = {}
+            return False, {}
+
+        lock_path = self.leader_lock_remote_path
+        now = time.time()
+        lease_duration = 180.0  # 3 minutes lease
+
+        current_lock: Optional[Dict[str, Any]] = None
+        try:
+            raw_text = self.client.read_text_file(lock_path)
+            if raw_text:
+                current_lock = json.loads(raw_text)
+        except Exception:
+            current_lock = None
+
+        can_claim = False
+        if not current_lock:
+            can_claim = True
+        else:
+            expires_at = float(current_lock.get("expires_at", 0.0))
+            holder_id = current_lock.get("client_id", "")
+            if holder_id == self.client_id:
+                # Renew our existing lock
+                can_claim = True
+            elif now > expires_at:
+                # Stale lock expired (previous leader PC turned off)
+                can_claim = True
+
+        if can_claim:
+            new_lock = {
+                "client_id": self.client_id,
+                "hostname": self.hostname,
+                "acquired_at": now,
+                "expires_at": now + lease_duration,
+            }
+            try:
+                ok = self.client.write_text_file(lock_path, json.dumps(new_lock, ensure_ascii=False))
+                if ok:
+                    self.is_sync_leader = True
+                    self.leader_info = new_lock
+                    return True, new_lock
+            except Exception as e:
+                print(f"[SyncEngine] Error writing leader lock: {e}")
+
+        self.is_sync_leader = False
+        self.leader_info = current_lock or {}
+        return False, self.leader_info
+
+    def release_sync_leader(self) -> None:
+        """Releases the leader lock so another client can immediately take over."""
+        if not self.is_sync_leader:
+            return
+        try:
+            lock_path = self.leader_lock_remote_path
+            self.client.delete_resource(lock_path)
+            print(f"[SyncEngine] Released leader lock: {self.client_id}")
+        except Exception as e:
+            print(f"[SyncEngine] Error releasing leader lock: {e}")
+        finally:
+            self.is_sync_leader = False
+            self.leader_info = {}
+
     def apply_server_connection(self, index: int) -> None:
         """Configures client with credentials of server index (1 or 2)."""
         url, user, pwd, _ = self.get_server_credentials(index)
@@ -104,6 +204,288 @@ class SyncEngine:
             self.client.password = pwd
             self.client.token = None
         self.active_server_index = index
+
+    def compare_servers_status(self) -> Dict[str, Any]:
+        """
+        Inspects Server 1 and Server 2, comparing file counts and newest file modification times.
+        Returns status dictionary and caches it in self._last_servers_sync_status.
+        """
+        if not self.config.backup_server_enabled:
+            res = {
+                "enabled": False,
+                "state": "disabled",
+                "badge": "⚪ " + t("servers_sync_disabled"),
+                "summary": t("servers_sync_disabled"),
+                "server1": {"online": False, "url": self.config.server_url, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""},
+                "server2": {"online": False, "url": self.config.backup_server_url, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""},
+                "last_checked": time.time(),
+            }
+            self._last_servers_sync_status = res
+            return res
+
+        def parse_iso_mtime(iso_val: str) -> float:
+            if not iso_val:
+                return 0.0
+            try:
+                clean_iso = iso_val.replace("Z", "+00:00")
+                return datetime.fromisoformat(clean_iso).timestamp()
+            except Exception:
+                return 0.0
+
+        # Inspect Server 1
+        url1, u1, p1, r1 = self.get_server_credentials(1)
+        s1_info = {"online": False, "url": url1, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""}
+        if url1 and u1:
+            try:
+                c1 = FileBrowserClient(base_url=url1, username=u1, password=p1, timeout=8)
+                ok1, msg1 = c1.test_connection()
+                if ok1:
+                    s1_info["online"] = True
+                    items1 = c1.list_recursive(r1)
+                    files1 = [it for it in items1 if not it.is_dir and not self.is_ignored(it.path)]
+                    s1_info["file_count"] = len(files1)
+                    if files1:
+                        newest1 = max(files1, key=lambda it: parse_iso_mtime(it.modified))
+                        s1_info["latest_mtime"] = parse_iso_mtime(newest1.modified)
+                        s1_info["latest_file"] = newest1.name
+                        if s1_info["latest_mtime"] > 0:
+                            s1_info["latest_time_str"] = datetime.fromtimestamp(s1_info["latest_mtime"]).strftime("%d.%m.%Y %H:%M")
+                else:
+                    s1_info["error"] = msg1
+            except Exception as e:
+                s1_info["error"] = str(e)
+
+        # Inspect Server 2
+        url2, u2, p2, r2 = self.get_server_credentials(2)
+        s2_info = {"online": False, "url": url2, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""}
+        if url2 and u2:
+            try:
+                c2 = FileBrowserClient(base_url=url2, username=u2, password=p2, timeout=8)
+                ok2, msg2 = c2.test_connection()
+                if ok2:
+                    s2_info["online"] = True
+                    items2 = c2.list_recursive(r2)
+                    files2 = [it for it in items2 if not it.is_dir and not self.is_ignored(it.path)]
+                    s2_info["file_count"] = len(files2)
+                    if files2:
+                        newest2 = max(files2, key=lambda it: parse_iso_mtime(it.modified))
+                        s2_info["latest_mtime"] = parse_iso_mtime(newest2.modified)
+                        s2_info["latest_file"] = newest2.name
+                        if s2_info["latest_mtime"] > 0:
+                            s2_info["latest_time_str"] = datetime.fromtimestamp(s2_info["latest_mtime"]).strftime("%d.%m.%Y %H:%M")
+                else:
+                    s2_info["error"] = msg2
+            except Exception as e:
+                s2_info["error"] = str(e)
+
+        # Determine comparison state
+        if not s1_info["online"] and not s2_info["online"]:
+            state = "both_offline"
+            badge = "🔴 " + t("servers_sync_both_offline")
+            summary = t("servers_sync_both_offline")
+        elif not s1_info["online"]:
+            state = "server1_offline"
+            badge = "🔴 " + t("servers_sync_s1_offline")
+            summary = t("servers_sync_s1_offline")
+        elif not s2_info["online"]:
+            state = "server2_offline"
+            badge = "🔴 " + t("servers_sync_s2_offline")
+            summary = t("servers_sync_s2_offline")
+        else:
+            c1 = s1_info["file_count"]
+            c2 = s2_info["file_count"]
+            mt1 = s1_info["latest_mtime"]
+            mt2 = s2_info["latest_mtime"]
+
+            if c1 == c2 and abs(mt1 - mt2) < 3.0:
+                state = "synced"
+                badge = t("servers_sync_synced", count=c1)
+                summary = t("servers_sync_synced", count=c1)
+            elif mt1 > mt2 + 3.0:
+                state = "server1_newer"
+                badge = t("servers_sync_s1_newer")
+                summary = f"{t('servers_sync_s1_newer')} ({c1} vs {c2})"
+            elif mt2 > mt1 + 3.0:
+                state = "server2_newer"
+                badge = t("servers_sync_s2_newer")
+                summary = f"{t('servers_sync_s2_newer')} ({c2} vs {c1})"
+            elif c1 != c2:
+                state = "diff_count"
+                badge = t("servers_sync_diff_count", c1=c1, c2=c2)
+                summary = t("servers_sync_diff_count", c1=c1, c2=c2)
+            else:
+                state = "synced"
+                badge = t("servers_sync_synced", count=c1)
+                summary = t("servers_sync_synced", count=c1)
+
+        # Determine coordinator (leader) info
+        leader_stat = {
+            "is_self": self.is_sync_leader,
+            "hostname": self.leader_info.get("hostname", ""),
+            "client_id": self.leader_info.get("client_id", ""),
+            "expires_at": float(self.leader_info.get("expires_at", 0.0)),
+        }
+        if self.config.backup_server_enabled and self.config.sync_backup_server:
+            if not leader_stat["hostname"] or time.time() > leader_stat["expires_at"]:
+                try:
+                    raw_txt = self.client.read_text_file(self.leader_lock_remote_path)
+                    if raw_txt:
+                        l_data = json.loads(raw_txt)
+                        leader_stat["hostname"] = l_data.get("hostname", "")
+                        leader_stat["client_id"] = l_data.get("client_id", "")
+                        leader_stat["expires_at"] = float(l_data.get("expires_at", 0.0))
+                        leader_stat["is_self"] = (leader_stat["client_id"] == self.client_id)
+                        self.is_sync_leader = leader_stat["is_self"]
+                        self.leader_info = l_data
+                except Exception:
+                    pass
+
+        res = {
+            "enabled": True,
+            "state": state,
+            "badge": badge,
+            "summary": summary,
+            "server1": s1_info,
+            "server2": s2_info,
+            "leader": leader_stat,
+            "last_checked": time.time(),
+        }
+        self._last_servers_sync_status = res
+        return res
+
+    def get_last_servers_sync_status(self) -> Dict[str, Any]:
+        """Returns the cached server sync comparison or executes a check if not yet available."""
+        cached = getattr(self, "_last_servers_sync_status", None)
+        if not cached:
+            return self.compare_servers_status()
+        return cached
+
+    def sync_servers_mirror(self) -> Tuple[int, int]:
+        """
+        Synchronizes files between primary server, secondary server, and local folder.
+        Ensures both servers have identical files.
+        Returns (synced_count, error_count).
+        """
+        if not self.config.backup_server_enabled:
+            return 0, 0
+
+        url1, u1, p1, r1 = self.get_server_credentials(1)
+        url2, u2, p2, r2 = self.get_server_credentials(2)
+        if not url1 or not u1 or not url2 or not u2:
+            return 0, 0
+
+        with self._sync_lock:
+            synced_count = 0
+            error_count = 0
+
+            try:
+                c1 = FileBrowserClient(base_url=url1, username=u1, password=p1, timeout=15)
+                c2 = FileBrowserClient(base_url=url2, username=u2, password=p2, timeout=15)
+
+                ok1, _ = c1.test_connection()
+                ok2, _ = c2.test_connection()
+
+                if not ok1 or not ok2:
+                    self.compare_servers_status()
+                    return 0, 1
+
+                c1.ensure_remote_dir_exists(r1)
+                c2.ensure_remote_dir_exists(r2)
+
+                items1 = c1.list_recursive(r1)
+                items2 = c2.list_recursive(r2)
+
+                files1: Dict[str, RemoteItem] = {}
+                prefix1 = r1.strip("/")
+                for it in items1:
+                    clean_p = it.path.strip("/")
+                    rel = clean_p[len(prefix1):].strip("/.") if clean_p.lower().startswith(prefix1.lower()) else clean_p.strip("/.")
+                    if rel and not it.is_dir and not self.is_ignored(rel):
+                        files1[rel] = it
+
+                files2: Dict[str, RemoteItem] = {}
+                prefix2 = r2.strip("/")
+                for it in items2:
+                    clean_p = it.path.strip("/")
+                    rel = clean_p[len(prefix2):].strip("/.") if clean_p.lower().startswith(prefix2.lower()) else clean_p.strip("/.")
+                    if rel and not it.is_dir and not self.is_ignored(rel):
+                        files2[rel] = it
+
+                def parse_iso(iso_str: str) -> float:
+                    try:
+                        return datetime.fromisoformat(iso_str.replace("Z", "+00:00")).timestamp()
+                    except Exception:
+                        return 0.0
+
+                # A. Push files from Server 1 -> Server 2 (if missing or older on Server 2)
+                for rel, it1 in files1.items():
+                    it2 = files2.get(rel)
+                    local_target = self.config.local_path / rel
+
+                    need_push = False
+                    if not it2:
+                        need_push = True
+                    else:
+                        mt1 = parse_iso(it1.modified)
+                        mt2 = parse_iso(it2.modified)
+                        if mt1 > mt2 + 3.0 and it1.size != it2.size:
+                            need_push = True
+
+                    if need_push:
+                        if not local_target.exists() or local_target.stat().st_size != it1.size:
+                            local_target.parent.mkdir(parents=True, exist_ok=True)
+                            c1.download_file(f"{r1}/{rel}", local_target)
+
+                        if local_target.exists():
+                            if c2.upload_file(local_target, f"{r2}/{rel}"):
+                                synced_count += 1
+                            else:
+                                error_count += 1
+
+                # B. Push files from Server 2 -> Server 1 (if missing or older on Server 1)
+                for rel, it2 in files2.items():
+                    it1 = files1.get(rel)
+                    local_target = self.config.local_path / rel
+
+                    need_push = False
+                    if not it1:
+                        if self.state_db.is_tracked(rel) and not local_target.exists():
+                            c2.delete_resource(f"{r2}/{rel}")
+                        else:
+                            need_push = True
+                    else:
+                        mt1 = parse_iso(it1.modified)
+                        mt2 = parse_iso(it2.modified)
+                        if mt2 > mt1 + 3.0 and it1.size != it2.size:
+                            need_push = True
+
+                    if need_push:
+                        local_target.parent.mkdir(parents=True, exist_ok=True)
+                        if c2.download_file(f"{r2}/{rel}", local_target):
+                            if c1.upload_file(local_target, f"{r1}/{rel}"):
+                                synced_count += 1
+                                stat = local_target.stat()
+                                rec = FileRecord(
+                                    rel_path=rel,
+                                    local_mtime=stat.st_mtime,
+                                    local_size=stat.st_size,
+                                    remote_mtime=it2.modified,
+                                    remote_size=it2.size,
+                                    content_hash=compute_file_hash(local_target),
+                                    is_dir=False,
+                                    last_sync_time=time.time(),
+                                )
+                                self.state_db.upsert_record(rec)
+                            else:
+                                error_count += 1
+
+            except Exception as e:
+                print(f"[SyncEngine] sync_servers_mirror error: {e}")
+                error_count += 1
+            finally:
+                self.compare_servers_status()
+
+            return synced_count, error_count
 
     def set_status(self, message: str, state: str) -> None:
         if self.config.backup_server_enabled:
@@ -194,6 +576,7 @@ class SyncEngine:
     def stop(self) -> None:
         """Stops the sync engine."""
         self._running = False
+        self.release_sync_leader()
         if self._observer:
             try:
                 self._observer.stop()
@@ -268,7 +651,7 @@ class SyncEngine:
                     self._last_cfg_mtime = mtime
                     print("[SyncEngine] config.json modification detected, reloading...")
                     self.config.load()
-                    self.apply_server_connection(self.active_server_index)
+                    self.apply_server_connection(self.config.primary_server_index)
                     self.trigger_sync_now()
         except Exception as e:
             print(f"[SyncEngine] Error checking config reload: {e}")
@@ -386,6 +769,17 @@ class SyncEngine:
                             "error",
                             "Remote directory delete failed",
                         )
+
+                    # Mirror delete to secondary server if dual sync enabled
+                    if self.config.backup_server_enabled and self.config.sync_backup_server:
+                        sec = self._get_secondary_client()
+                        if sec:
+                            sec_client, sec_rem = sec
+                            try:
+                                sec_client.delete_resource(f"{sec_rem}/{clean_rel}")
+                            except Exception:
+                                pass
+
                     self.set_status(t("status_synced"), "idle")
 
             elif event_type == "created" and local_dir.is_dir():
@@ -401,6 +795,16 @@ class SyncEngine:
                     self.state_db.upsert_record(rec)
                     self.state_db.log_sync(clean_rel, "create_dir", "local->remote", "success")
                     print(f"[SyncEngine] Created remote directory: {clean_rel}")
+
+                    # Mirror create to secondary server if dual sync enabled
+                    if self.config.backup_server_enabled and self.config.sync_backup_server:
+                        sec = self._get_secondary_client()
+                        if sec:
+                            sec_client, sec_rem = sec
+                            try:
+                                sec_client.create_directory(f"{sec_rem}/{clean_rel}")
+                            except Exception:
+                                pass
 
 
     def _sync_single_local_file(self, rel_path: str) -> None:
@@ -424,6 +828,17 @@ class SyncEngine:
                         print(f"[SyncEngine] Deleted remotely: {clean_rel}")
                     else:
                         self.state_db.log_sync(clean_rel, "delete", "local->remote", "error", "Remote delete failed")
+
+                    # Mirror delete to secondary server if dual sync enabled
+                    if self.config.backup_server_enabled and self.config.sync_backup_server:
+                        sec = self._get_secondary_client()
+                        if sec:
+                            sec_client, sec_rem = sec
+                            try:
+                                sec_client.delete_resource(f"{sec_rem}/{clean_rel}")
+                            except Exception:
+                                pass
+
                     self.set_status(t("status_synced"), "idle")
                 return
 
@@ -481,6 +896,17 @@ class SyncEngine:
                 self.state_db.upsert_record(new_rec)
                 self.state_db.log_sync(clean_rel, "upload", "local->remote", "success")
                 self._record_uploaded_item(local_file, clean_rel, remote_dest)
+
+                # Mirror upload to secondary server if dual sync enabled
+                if self.config.backup_server_enabled and self.config.sync_backup_server:
+                    sec = self._get_secondary_client()
+                    if sec:
+                        sec_client, sec_rem = sec
+                        try:
+                            sec_client.upload_file(local_file, f"{sec_rem}/{clean_rel}")
+                        except Exception as e:
+                            print(f"[SyncEngine] Mirror upload error: {e}")
+
                 self.notify(t("notify_upload_done_title"), t("notify_upload_done_msg", name=local_file.name))
                 print(f"[SyncEngine] Successfully uploaded: {clean_rel}")
             else:
@@ -820,6 +1246,18 @@ class SyncEngine:
                     t("notify_sync_msg", down=downloads_count, up=uploads_count),
                 )
 
+            # If dual server sync (backup server mirroring) is enabled, coordinate via Leader Lock!
+            if self.config.backup_server_enabled and self.config.sync_backup_server:
+                is_leader, leader_info = self.acquire_or_renew_sync_leader()
+                if is_leader:
+                    self.sync_servers_mirror()
+                else:
+                    host = leader_info.get("hostname", "other PC")
+                    print(f"[SyncEngine] Dual sync: coordinator is '{host}'. Running as follower (monitoring only).")
+                    threading.Thread(target=self.compare_servers_status, daemon=True).start()
+            elif self.config.backup_server_enabled:
+                threading.Thread(target=self.compare_servers_status, daemon=True).start()
+
             self.set_status(t("status_synced"), "idle")
 
     def pull_missing_files(self) -> Tuple[int, int]:
@@ -962,6 +1400,17 @@ class SyncEngine:
             self.state_db.upsert_record(rec)
             self.state_db.log_sync(rel, "upload", "local->remote", "success")
             self._record_uploaded_item(local_file, rel, remote_dest)
+
+            # Mirror upload to secondary server if dual sync enabled
+            if self.config.backup_server_enabled and self.config.sync_backup_server:
+                sec = self._get_secondary_client()
+                if sec:
+                    sec_client, sec_rem = sec
+                    try:
+                        sec_client.upload_file(local_file, f"{sec_rem}/{rel}")
+                    except Exception as e:
+                        print(f"[SyncEngine] Mirror upload error: {e}")
+
             print(f"[SyncEngine] Successfully uploaded: {rel}")
             return True
         else:

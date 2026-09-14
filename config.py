@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "backup_password": "",
     "backup_remote_path": "/DropFile",
     "primary_server_index": 1,  # 1 or 2
+    "sync_backup_server": False,  # Two-way sync / mirroring between primary and backup servers
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
@@ -44,8 +45,12 @@ DEFAULT_CONFIG = {
 
 def get_app_dir() -> Path:
     """Returns the directory where application data (config, db, logs) should be stored."""
-    # Check if local config.json exists (portable mode)
-    script_dir = Path(__file__).resolve().parent
+    # Check if local config.json exists (portable mode next to executable or script)
+    if getattr(sys, "frozen", False):
+        script_dir = Path(sys.executable).resolve().parent
+    else:
+        script_dir = Path(__file__).resolve().parent
+
     if (script_dir / "config.json").exists():
         return script_dir
 
@@ -214,7 +219,10 @@ class Config:
 
     @property
     def backup_remote_path(self) -> str:
-        p = self._data.get("backup_remote_path", "/DropFile").strip()
+        p = self._data.get("backup_remote_path")
+        if not p:
+            return self.remote_path
+        p = str(p).strip()
         if not p.startswith("/"):
             p = "/" + p
         return p.rstrip("/")
@@ -235,6 +243,14 @@ class Config:
     def primary_server_index(self, value: int) -> None:
         idx = int(value)
         self._data["primary_server_index"] = 2 if idx == 2 else 1
+
+    @property
+    def sync_backup_server(self) -> bool:
+        return bool(self._data.get("sync_backup_server", False))
+
+    @sync_backup_server.setter
+    def sync_backup_server(self, value: bool) -> None:
+        self._data["sync_backup_server"] = bool(value)
 
     @property
     def local_path(self) -> Path:

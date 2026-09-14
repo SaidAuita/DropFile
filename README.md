@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS%2010.15%2B-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.11-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.16-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -38,6 +38,12 @@
 - 🔄 **Bidirectional Automatic Synchronization**:
   - Real-time local filesystem monitoring via `watchdog` (drop files into the folder and they are instantly uploaded).
   - Background periodic remote polling detects new or modified files on the server and downloads them seamlessly.
+- 🌐 **Dual-Server Synchronization & Mirroring (Server 1 ⇄ 2)**:
+  - Configure both Primary and Backup FileBrowser servers with automatic failover and failback.
+  - Optional full bidirectional server mirroring: keeps Server 1 and Server 2 exchange folders identical.
+  - **Distributed Leader Election (Lock lease)**: When multiple PCs run in the same local network, an active coordinator (Leader) is automatically elected via `.dropfile_leader.json` lock. Only 1 PC mirrors the servers to avoid redundant network load, while all other clients operate safely in follower mode.
+  - Live status indicator showing server availability, total file counts, coordinator status, and which server has newer files.
+  - One-click server comparison check and manual instant synchronization from Settings or the System Tray.
 - 🌍 **Multi-Language Interface (10 Languages)**:
   - English (default), Russian, German, French, Spanish, Italian, Portuguese, Polish, Simplified Chinese, Japanese.
   - Switch languages anytime in Settings or configuration.
@@ -286,6 +292,12 @@ python -m unittest discover tests
 
 ### 🌟 Основные возможности
 - 🔄 **Двусторонняя автоматическая синхронизация**: локальный мониторинг через `watchdog` и фоновый периодический опрос сервера.
+- 🌐 **Синхронизация и зеркалирование двух серверов (Сервер 1 ⇄ 2)**:
+  - Поддержка основного и резервного сервера FileBrowser с автоматическим переключением (failover) и возвратом (failback).
+  - Опциональное двустороннее зеркалирование: поддержание идентичного состава файлов на Сервере 1 и Сервере 2.
+  - **Распределенная блокировка и координатор (Leader Election)**: При работе нескольких ПК в сети автоматически выбирается один координатор (Лидер) через серверный lock-файл `.dropfile_leader.json` (аренда на 3 мин). Только один клиент зеркалирует серверы во избежание дублирования трафика, остальные ПК работают в режиме мониторинга.
+  - Наглядная индикация статуса синхронизации серверов: количество файлов, дата последнего изменения, статус координатора и где файлы новее.
+  - Кнопки быстрой проверки статуса и принудительной синхронизации серверов в окне настроек и меню трея.
 - 🌍 **Поддержка 10 языков интерфейса**: русский, английский (по умолчанию), немецкий, французский, испанский, итальянский, португальский, польский, китайский, японский.
 - 👥 **Готовность к командной работе**: изоляция личных папок сотрудников или общая папка обмена отдела.
 - 🔗 **Мгновенные публичные ссылки для обмена в трее**:

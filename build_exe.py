@@ -72,6 +72,14 @@ def build():
         print(f"Output executable: {dist_exe}")
         print(f"Size: {size_mb:.2f} MB")
         print("=" * 60)
+
+        # Also deploy to parent directory (e.g. C:\_CODE\Utilites\DropFile.exe)
+        parent_target = root.parent / "DropFile.exe"
+        try:
+            shutil.copy2(dist_exe, parent_target)
+            print(f"Copied updated binary to: {parent_target}")
+        except Exception as e:
+            print(f"Note: Could not copy to {parent_target}: {e}")
     else:
         print("Build completed, but dist/DropFile.exe was not found!")
         sys.exit(1)

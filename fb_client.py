@@ -406,3 +406,40 @@ class FileBrowserClient:
 
         # 3. Graceful fallback: direct web link inside FileBrowser files viewer
         return f"{self.base_url}/files{encoded}"
+
+    def read_text_file(self, remote_path: str) -> Optional[str]:
+        """Reads content of a remote text file via GET /api/raw/<path>."""
+        if not self.ensure_authenticated():
+            return None
+        encoded = self._encode_path(remote_path)
+        url = f"{self.base_url}/api/raw{encoded}"
+        try:
+            resp = self.session.get(url, timeout=self.timeout)
+            if resp.status_code in (401, 403):
+                if self.login():
+                    resp = self.session.get(url, timeout=self.timeout)
+            if resp.status_code == 200:
+                return resp.text
+        except Exception as e:
+            print(f"[FileBrowserClient] read_text_file error: {e}")
+        return None
+
+    def write_text_file(self, remote_path: str, text_content: str) -> bool:
+        """Writes text content to remote file via POST /api/resources/<path>?override=true."""
+        if not self.ensure_authenticated():
+            return False
+        remote_parent = str(Path(remote_path).parent).replace("\\", "/")
+        if remote_parent and remote_parent != "/":
+            self.ensure_remote_dir_exists(remote_parent)
+        encoded = self._encode_path(remote_path)
+        url = f"{self.base_url}/api/resources{encoded}?override=true"
+        try:
+            payload = text_content.encode("utf-8")
+            resp = self.session.post(url, data=payload, timeout=self.timeout)
+            if resp.status_code in (401, 403):
+                if self.login():
+                    resp = self.session.post(url, data=payload, timeout=self.timeout)
+            return resp.status_code in (200, 201)
+        except Exception as e:
+            print(f"[FileBrowserClient] write_text_file error: {e}")
+            return False
