@@ -96,13 +96,15 @@ class TestEntrypoint(unittest.TestCase):
             cl = FileBrowserClient("http://mock", "user", "pwd")
             engine = SyncEngine(cfg, db, cl)
 
-            # Modify config.json on disk
-            time.sleep(0.05)
+            # Modify config.json on disk and advance mtime to guarantee detection
+            import os
             with open(cfg.config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             data["username"] = "updated_user"
             with open(cfg.config_file, "w", encoding="utf-8") as f:
                 json.dump(data, f)
+            future_mtime = getattr(engine, "_last_cfg_mtime", 0.0) + 10.0
+            os.utime(cfg.config_file, (future_mtime, future_mtime))
 
             # Check config reload
             engine._check_config_reload()
