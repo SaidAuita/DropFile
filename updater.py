@@ -281,11 +281,12 @@ def apply_update(
         update_temp_exe = current_dir / "DropFile.update.exe"
         swap_bat = current_dir / "apply_update.bat"
 
-        # Candidates: direct URL first, then fast proxy mirrors for ISP / DPI circumvention (WinError 10054)
+        # Candidates: proxy mirrors for ISP / DPI circumvention first, then direct URL
         candidate_urls = [
-            exe_url,
-            f"https://ghfast.top/{exe_url}",
             f"https://gh-proxy.com/{exe_url}",
+            f"https://ghproxy.net/{exe_url}",
+            f"https://gh.ddlc.top/{exe_url}",
+            exe_url,
         ]
 
         browser_headers = {
@@ -304,20 +305,29 @@ def apply_update(
                         import requests
                         session = requests.Session()
                         resp = None
-                        try:
-                            resp = session.get(candidate, headers=browser_headers, stream=True, timeout=15)
-                        except Exception:
-                            # Fallback without environment proxy in case of proxy tunnel failures
-                            session.trust_env = False
-                            resp = session.get(candidate, headers=browser_headers, stream=True, timeout=25)
+                        # Try with environment proxy first (if user has VPN/proxy), then direct
+                        for trust_env in [True, False]:
+                            session.trust_env = trust_env
+                            try:
+                                resp = session.get(
+                                    candidate,
+                                    headers=browser_headers,
+                                    stream=True,
+                                    timeout=(5, 12),
+                                )
+                                if resp.status_code == 200:
+                                    break
+                            except Exception:
+                                continue
 
-                        if resp.status_code != 200:
-                            last_error = f"HTTP {resp.status_code} from {candidate[:35]}"
+                        if resp is None or resp.status_code != 200:
+                            code_str = resp.status_code if resp else "timeout"
+                            last_error = f"HTTP {code_str} from {candidate[:35]}"
                             continue
 
                         total_size = int(resp.headers.get("content-length", 0))
                         downloaded = 0
-                        chunk_size = 64 * 1024
+                        chunk_size = 128 * 1024
 
                         with open(update_temp_exe, "wb") as f_out:
                             for chunk in resp.iter_content(chunk_size=chunk_size):
@@ -331,15 +341,15 @@ def apply_update(
                         req = urllib.request.Request(candidate, headers=browser_headers)
                         resp = None
                         try:
-                            resp = urllib.request.urlopen(req, timeout=15)
+                            resp = urllib.request.urlopen(req, timeout=10)
                         except Exception:
                             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                            resp = opener.open(req, timeout=25)
+                            resp = opener.open(req, timeout=12)
 
                         with resp:
                             total_size = int(resp.headers.get("content-length", 0))
                             downloaded = 0
-                            chunk_size = 64 * 1024
+                            chunk_size = 128 * 1024
 
                             with open(update_temp_exe, "wb") as f_out:
                                 while True:
@@ -384,10 +394,12 @@ def apply_update(
 chcp 65001 >nul
 set _PYI_PARENT_PROCESS_LEVEL=
 set _MEIPASS2=
+taskkill /f /im DropFile.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
 :retry
 copy /y "{update_temp_exe.name}" "{current_exe.name}" >nul 2>&1
 if errorlevel 1 (
+    taskkill /f /im DropFile.exe >nul 2>&1
     timeout /t 1 /nobreak >nul
     goto retry
 )
