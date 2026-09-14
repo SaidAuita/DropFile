@@ -16,9 +16,9 @@
 ---
 
 ## 1. Системные требования
-* **Операционная система**: macOS 10.15 Catalina или новее (включая виртуальные машины Tahoe / Sequoia и Хакинтош).
+* **Операционная система**: macOS 10.15 Catalina или новее (10.15 Catalina, Big Sur, Monterey, Ventura, Sonoma, Sequoia, Tahoe, а также Хакинтош).
 * **Архитектура процессора**: Intel Core (x86_64) или Apple Silicon (M1 / M2 / M3 / M4).
-* **Окружение**: Python 3.9 – 3.12 (с поддержкой Tkinter).
+* **Окружение**: Python 3.9 – 3.14 (с поддержкой графического модуля Tkinter).
 * **Серверная часть**: Работающий экземпляр [FileBrowser](https://github.com/filebrowser/filebrowser) (HTTP или HTTPS).
 
 ---
@@ -143,3 +143,14 @@ rm -rf /Applications/DropFile.app ~/Applications/DropFile.app
 rm -rf ~/Library/Application\ Support/DropFile
 rm -f ~/Library/LaunchAgents/com.saidauita.dropfile.plist
 ```
+
+### 6. Ошибка «ModuleNotFoundError: No module named '_tkinter'»?
+В Homebrew графический модуль Tkinter вынесен в отдельный пакет. Чтобы устранить ошибку, установите его в Терминале:
+```bash
+# Для Apple Silicon (M1/M2/M3):
+brew install python-tk
+
+# Для Intel Mac (x86_64, если brew не найден в PATH):
+/usr/local/bin/brew install python-tk
+```
+Либо установите официальный пакет Python с сайта [python.org/downloads/macos](https://www.python.org/downloads/macos/) — в нём Tkinter и Tcl/Tk уже встроены и настроены из коробки. После этого запустите `./install_mac.command` повторно.
