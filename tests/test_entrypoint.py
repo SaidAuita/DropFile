@@ -14,12 +14,8 @@ class TestEntrypoint(unittest.TestCase):
     def test_import_all_modules(self):
         root = Path(__file__).resolve().parent.parent
         for py_file in root.glob("*.py"):
-            mod_name = py_file.stem
-            spec = importlib.util.spec_from_file_location(mod_name, str(py_file))
-            self.assertIsNotNone(spec)
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules[mod_name] = mod
-            spec.loader.exec_module(mod)
+            mod = importlib.import_module(py_file.stem)
+            self.assertIsNotNone(mod)
 
         # Test DropFile.pyw
         pyw_file = root / "DropFile.pyw"

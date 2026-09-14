@@ -84,8 +84,11 @@ class TestUpdater(unittest.TestCase):
         self.assertFalse(has_update)
         self.assertEqual(info["version"], "1.01")
 
+    @patch("updater._check_via_git", return_value=None)
+    @patch("updater._check_via_web_redirect", return_value=None)
+    @patch("updater._check_via_tags_atom", return_value=None)
     @patch("urllib.request.urlopen")
-    def test_check_for_updates_404_handled(self, mock_urlopen):
+    def test_check_for_updates_404_handled(self, mock_urlopen, mock_atom, mock_web, mock_git):
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="https://api.github.com/...", code=404, msg="Not Found", hdrs={}, fp=None
         )

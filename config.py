@@ -165,11 +165,22 @@ class Config:
 
     @property
     def local_path(self) -> Path:
-        return Path(self._data.get("local_path", DEFAULT_CONFIG["local_path"]))
+        raw = self._data.get("local_path", DEFAULT_CONFIG["local_path"])
+        p_str = str(raw).strip()
+        # If running on macOS or Linux and config contains Windows drive letter (e.g. D:\DropFile)
+        # fallback to native Desktop/DropFile
+        if sys.platform != "win32":
+            import re
+            if re.match(r"^[a-zA-Z]:", p_str) or "\\" in p_str:
+                default_path = Path.home() / "Desktop" / "DropFile"
+                self._data["local_path"] = str(default_path)
+                return default_path
+        return Path(p_str)
 
     @local_path.setter
     def local_path(self, value: str | Path) -> None:
-        self._data["local_path"] = str(Path(value).resolve())
+        p = Path(value).expanduser()
+        self._data["local_path"] = str(p.resolve())
 
     @property
     def poll_interval(self) -> int:
