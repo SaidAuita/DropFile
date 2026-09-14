@@ -174,10 +174,27 @@ The compiled single-file binary will be placed at `dist\DropFile.exe`.
 
 ---
 
-### 🔄 In-App Auto-Updates
-- Click **"🔍 Check for Updates"** in the Settings dialog header, or right-click the System Tray icon and select **"🔄 Check for updates..."**.
-- If an update is found on GitHub Releases, DropFile prompts you to update.
+### 🔄 Updates
+
+#### 1. In-App Auto-Update (One-Click)
+- Click **"🔍 Check for Updates"** in the Settings dialog header, or right-click the System Tray / Menu Bar icon and select **"🔄 Check for updates..."**.
+- If an update is found on GitHub, DropFile prompts you to update.
 - When confirmed, it downloads the new release, performs a clean binary swap (or `git pull`), and seamlessly restarts the app in the background.
+
+#### 2. Manual Update via Terminal (macOS, Linux & Source Installs)
+If you installed DropFile via `git clone`, you can update at any time directly in the Terminal:
+```bash
+cd ~/DropFile
+git pull origin main
+```
+> 💡 **Troubleshooting Git Merge Conflicts**: If you made local modifications and git warns that *«Your local changes would be overwritten by merge»*, safely stash your local edits and pull the clean release:
+> ```bash
+> cd ~/DropFile
+> git stash
+> git pull origin main
+> ```
+
+> 🍏 **Note for macOS users**: You do **NOT** need to recompile or rebuild `/Applications/DropFile.app` after running `git pull`! The application bundle operates as a native launcher that directly runs the updated code from `~/DropFile`. Simply restart the app (`Quit` in the menu bar and reopen `/Applications/DropFile.app`).
 
 ---
 
@@ -368,8 +385,25 @@ python build_exe.py
 > 📖 **Полное пошаговое руководство по macOS**: см. файл [`doc/mac_install.md`](doc/mac_install.md) (быстрые команды установки Python 3 через `curl` или Homebrew, проверка работы Tkinter, автозапуск через LaunchAgent и решение возможных проблем).
 
 #### 🔄 Обновление
-- Нажмите **«🔍 Проверить обновления»** в окне настроек или выберите **«🔄 Проверить обновления...»** в трее.
-- При наличии новой версии на GitHub DropFile скачает обновление, выполнит безопасную замену бинарника и автоматически перезапустится в фоне.
+
+##### Способ 1: Автоматическое обновление из программы (в 1 клик)
+- Нажмите кнопку **«🔍 Проверить обновления»** в шапке окна настроек или пункт **«🔄 Проверить обновления...»** в меню системного трея / строки меню macOS.
+- При наличии новой версии DropFile скачает обновление, выполнит безопасную замену файлов и автоматически перезапустится в фоне.
+
+##### Способ 2: Ручное обновление через Терминал (macOS, Linux и запуск из исходников)
+Если вы устанавливали DropFile через `git clone`, обновиться можно в любой момент прямо в Терминале:
+```bash
+cd ~/DropFile
+git pull origin main
+```
+> 💡 **Решение конфликтов при обновлении**: если в папке остались локальные изменения и Git выдаёт ошибку *«Your local changes would be overwritten by merge»*, спрячьте локальные правки в stash и скачайте чистый релиз:
+> ```bash
+> cd ~/DropFile
+> git stash
+> git pull origin main
+> ```
+
+> 🍏 **Важно для пользователей macOS**: после выполнения `git pull` заново собирать файл приложения **НЕ требуется**! Приложение `/Applications/DropFile.app` устроено как нативный лаунчер, который сразу запускает обновленный код из папки `~/DropFile`. Достаточно просто перезапустить программу через верхнюю строку меню (`Выход` -> снова открыть `/Applications/DropFile.app`).
 
 ---
 
