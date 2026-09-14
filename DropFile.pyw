@@ -33,8 +33,10 @@ if getattr(sys, "frozen", False):
             pass
 
 from platform_utils import (
+    acquire_single_instance_lock,
     create_desktop_shortcut,
     ensure_macos_tk_compatibility,
+    release_single_instance_lock,
     restart_dropfile,
     spawn_settings_process,
 )
@@ -101,7 +103,7 @@ INSTANCE_SOCKET: Optional[socket.socket] = None
 
 
 def release_instance_socket() -> None:
-    """Closes the single-instance lock socket immediately to allow restart handover."""
+    """Closes the single-instance lock socket and OS mutex immediately to allow restart handover."""
     global INSTANCE_SOCKET
     if INSTANCE_SOCKET:
         try:
@@ -109,6 +111,7 @@ def release_instance_socket() -> None:
         except Exception:
             pass
         INSTANCE_SOCKET = None
+    release_single_instance_lock()
 
 
 def _start_instance_command_listener(sock: socket.socket) -> None:
@@ -128,55 +131,58 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
     t.start()
 
 
-def ensure_single_instance() -> socket.socket:
-    """Ensures only one instance of DropFile runs at a time with notification handover."""
+def ensure_single_instance() -> Optional[socket.socket]:
+    """
+    Ensures only one background instance of DropFile runs at a time.
+    Uses Win32 Named Mutex on Windows / fcntl.flock on macOS/Linux for race-free protection,
+    plus a TCP socket listener on localhost:49195 for SHOW_SETTINGS command handover.
+    """
     global INSTANCE_SOCKET
-    for attempt in range(4):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # 1. OS-level atomic single-instance lock
+    if not acquire_single_instance_lock():
+        # Another instance is actively running. Notify it to open Settings.
         try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
-            s.listen(2)
-            INSTANCE_SOCKET = s
-            _start_instance_command_listener(s)
-            return s
-        except socket.error:
+            notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            notify_s.settimeout(2.0)
+            notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
+            notify_s.sendall(b"SHOW_SETTINGS\n")
+            notify_s.close()
+        except Exception:
+            # If socket couldn't receive command, spawn settings directly
+            spawn_settings_process()
+
+        if sys.platform == "darwin":
             try:
-                s.close()
+                import subprocess
+                subprocess.run(
+                    [
+                        "osascript",
+                        "-e",
+                        'display notification "DropFile is already running in the top menu bar." with title "DropFile"',
+                    ],
+                    capture_output=True,
+                    timeout=5,
+                )
             except Exception:
                 pass
-            if attempt < 3:
-                time.sleep(0.5)
-                continue
 
-            # Another instance is actively running. Notify it to open Settings.
-            try:
-                notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                notify_s.settimeout(2.0)
-                notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
-                notify_s.sendall(b"SHOW_SETTINGS\n")
-                notify_s.close()
-            except Exception:
-                # If socket couldn't receive command, spawn settings directly
-                spawn_settings_process()
+        print("[DropFile] Another instance of DropFile is already running. Showing settings.")
+        sys.exit(0)
 
-            if sys.platform == "darwin":
-                try:
-                    import subprocess
-                    subprocess.run(
-                        [
-                            "osascript",
-                            "-e",
-                            'display notification "DropFile is already running in the top menu bar." with title "DropFile"',
-                        ],
-                        capture_output=True,
-                        timeout=5,
-                    )
-                except Exception:
-                    pass
-
-            print("[DropFile] Another instance of DropFile is already running. Showing settings.")
-            sys.exit(0)
+    # 2. We are the unique primary instance. Bind IPC command socket listener
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if sys.platform != "win32":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+        s.listen(2)
+        INSTANCE_SOCKET = s
+        _start_instance_command_listener(s)
+        return s
+    except Exception as e:
+        print(f"[DropFile] Warning: Could not bind single instance command port ({e}). Primary OS lock is active.")
+        return None
 
 
 def main():

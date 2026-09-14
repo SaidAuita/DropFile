@@ -117,6 +117,204 @@ class TestEntrypoint(unittest.TestCase):
         self.assertTrue(callable(spawn_settings_process))
         self.assertTrue(callable(win_spawn))
 
+    def test_single_instance_lock(self):
+        from platform_utils import acquire_single_instance_lock, release_single_instance_lock
+        release_single_instance_lock()
+        lock1 = acquire_single_instance_lock()
+        self.assertTrue(lock1)
+
+        if sys.platform.startswith("win"):
+            lock2 = acquire_single_instance_lock()
+            self.assertFalse(lock2)
+
+        release_single_instance_lock()
+        lock3 = acquire_single_instance_lock()
+        self.assertTrue(lock3)
+        release_single_instance_lock()
+
+    def test_dual_server_config(self):
+        import tempfile, shutil
+        from config import Config
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            cfg = Config(temp_dir)
+            self.assertFalse(cfg.backup_server_enabled)
+            self.assertEqual(cfg.backup_server_url, "")
+            self.assertEqual(cfg.backup_username, "")
+            self.assertEqual(cfg.backup_password, "")
+            self.assertEqual(cfg.backup_remote_path, "/DropFile")
+            self.assertEqual(cfg.primary_server_index, 1)
+
+            cfg.backup_server_enabled = True
+            cfg.backup_server_url = "https://backup.example.com/"
+            cfg.backup_username = "backup_user"
+            cfg.backup_password = "secret_password"
+            cfg.backup_remote_path = "Exchange/Backup"
+            cfg.primary_server_index = 2
+
+            self.assertTrue(cfg.backup_server_enabled)
+            self.assertEqual(cfg.backup_server_url, "https://backup.example.com")
+            self.assertEqual(cfg.backup_username, "backup_user")
+            self.assertEqual(cfg.backup_password, "secret_password")
+            self.assertEqual(cfg.backup_remote_path, "/Exchange/Backup")
+            self.assertEqual(cfg.primary_server_index, 2)
+
+            cfg.save()
+            cfg2 = Config(temp_dir)
+            self.assertTrue(cfg2.backup_server_enabled)
+            self.assertEqual(cfg2.backup_server_url, "https://backup.example.com")
+            self.assertEqual(cfg2.backup_username, "backup_user")
+            self.assertEqual(cfg2.primary_server_index, 2)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_cross_platform_config_exchange(self):
+        import tempfile, shutil, json
+        from config import Config, DEFAULT_CONFIG
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            # 1. Mac export -> Windows import
+            mac_config_data = dict(DEFAULT_CONFIG)
+            mac_config_data["server_url"] = "https://my.server.com"
+            mac_config_data["username"] = "said_mac"
+            mac_config_data["local_path"] = "/Users/said/Desktop/DropFile"
+            mac_config_data["backup_server_enabled"] = True
+            mac_config_data["backup_server_url"] = "https://backup.server.com"
+
+            export_file = temp_dir / "mac_export.json"
+            with open(export_file, "w", encoding="utf-8") as f:
+                json.dump(mac_config_data, f)
+
+            cfg = Config(temp_dir)
+            ok = cfg.import_config(export_file)
+            self.assertTrue(ok)
+            self.assertEqual(cfg.username, "said_mac")
+            self.assertEqual(cfg.server_url, "https://my.server.com")
+            self.assertTrue(cfg.backup_server_enabled)
+
+            if sys.platform == "win32":
+                self.assertFalse(str(cfg.local_path).startswith("/Users/"))
+                self.assertEqual(cfg.local_path, Path.home() / "Desktop" / "DropFile")
+
+            # 2. Windows export -> Mac import
+            win_config_data = dict(DEFAULT_CONFIG)
+            win_config_data["server_url"] = "https://win.server.com"
+            win_config_data["local_path"] = r"D:\DropFile\Sync"
+            win_export_file = temp_dir / "win_export.json"
+            with open(win_export_file, "w", encoding="utf-8") as f:
+                json.dump(win_config_data, f)
+
+            cfg_win = Config(temp_dir)
+            ok_win = cfg_win.import_config(win_export_file)
+            self.assertTrue(ok_win)
+            if sys.platform != "win32":
+                self.assertFalse(":" in str(cfg_win.local_path))
+                self.assertEqual(cfg_win.local_path, Path.home() / "Desktop" / "DropFile")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_sync_engine_failover(self):
+        import tempfile, shutil
+        from config import Config
+        from fb_client import FileBrowserClient
+        from state_db import StateDatabase
+        from sync_engine import SyncEngine
+        from i18n import set_current_language
+
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            cfg = Config(temp_dir)
+            cfg.server_url = "https://primary.server.com"
+            cfg.username = "primary_user"
+            cfg.password = "primary_pwd"
+            cfg.remote_path = "/PrimaryRemote"
+
+            cfg.backup_server_enabled = True
+            cfg.backup_server_url = "https://backup.server.com"
+            cfg.backup_username = "backup_user"
+            cfg.backup_password = "backup_pwd"
+            cfg.backup_remote_path = "/BackupRemote"
+            cfg.primary_server_index = 1
+
+            db = StateDatabase(temp_dir / "state.db")
+            client = FileBrowserClient("https://primary.server.com", "primary_user", "primary_pwd")
+            engine = SyncEngine(cfg, db, client)
+
+            self.assertEqual(engine.active_server_index, 1)
+            self.assertEqual(engine.active_remote_path, "/PrimaryRemote")
+            self.assertIn("1", engine.get_active_server_label())
+
+            engine.apply_server_connection(2)
+            self.assertEqual(engine.active_server_index, 2)
+            self.assertEqual(engine.client.base_url, "https://backup.server.com")
+            self.assertEqual(engine.client.username, "backup_user")
+            self.assertEqual(engine.active_remote_path, "/BackupRemote")
+            self.assertIn("2", engine.get_active_server_label())
+
+            set_current_language("ru")
+            engine.set_status("Синхронизировано", "idle")
+            self.assertIn("[Сервер 2]", engine.status_message)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_sync_engine_automatic_failover(self):
+        import tempfile, shutil
+        from unittest.mock import patch
+        from config import Config
+        from fb_client import FileBrowserClient
+        from state_db import StateDatabase
+        from sync_engine import SyncEngine
+
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            cfg = Config(temp_dir)
+            cfg.server_url = "https://primary.server.com"
+            cfg.username = "primary_user"
+            cfg.password = "primary_pwd"
+            cfg.remote_path = "/DropFile"
+
+            cfg.backup_server_enabled = True
+            cfg.backup_server_url = "https://backup.server.com"
+            cfg.backup_username = "backup_user"
+            cfg.backup_password = "backup_pwd"
+            cfg.backup_remote_path = "/DropFile"
+            cfg.primary_server_index = 1
+
+            db = StateDatabase(temp_dir / "state.db")
+            client = FileBrowserClient(cfg.server_url, cfg.username, cfg.password)
+            engine = SyncEngine(cfg, db, client)
+            engine._running = True
+
+            def mock_test_connection(client_self, *args, **kwargs):
+                if client_self.base_url == "https://primary.server.com":
+                    return False, "Primary connection refused"
+                elif client_self.base_url == "https://backup.server.com":
+                    return True, "Connected to backup"
+                return False, "Unknown"
+
+            with patch.object(FileBrowserClient, "test_connection", autospec=True, side_effect=mock_test_connection):
+                with patch.object(FileBrowserClient, "ensure_remote_dir_exists", return_value=True):
+                    with patch.object(FileBrowserClient, "list_recursive", return_value=[]):
+                        engine.reconcile_all()
+
+
+            self.assertEqual(engine.active_server_index, 2)
+            self.assertEqual(engine.client.base_url, "https://backup.server.com")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_dual_server_i18n(self):
+        from i18n import t, set_current_language
+        for lang in ("en", "ru"):
+            set_current_language(lang)
+            self.assertTrue(bool(t("conn_server1_title")))
+            self.assertTrue(bool(t("conn_server2_title")))
+            self.assertTrue(bool(t("conn_backup_enable")))
+            self.assertTrue(bool(t("conn_test_btn1")))
+            self.assertTrue(bool(t("conn_test_btn2")))
+            self.assertTrue(bool(t("server_badge")))
+
 
 if __name__ == "__main__":
     unittest.main()
+

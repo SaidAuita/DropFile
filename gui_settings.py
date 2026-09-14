@@ -396,10 +396,31 @@ class SettingsDialog:
         # Connection Tab
         self.lbl_conn_hdr.config(text=t("conn_header"))
         self.lbl_conn_sub.config(text=t("conn_sub"))
+        if hasattr(self, "lbl_active_server"):
+            self.lbl_active_server.config(text=self._get_active_server_display_text())
+        if hasattr(self, "lbl_prim_label"):
+            self.lbl_prim_label.config(text=t("conn_primary_label"))
+        if hasattr(self, "radio_prim1"):
+            self.radio_prim1.config(text=t("server_1"))
+        if hasattr(self, "radio_prim2"):
+            self.radio_prim2.config(text=t("server_2"))
+        if hasattr(self, "lbl_s1_hdr"):
+            self.lbl_s1_hdr.config(text=f"🌐 {t('conn_server1_title')}")
         self.lbl_conn_url.config(text=t("conn_url_label"))
         self.lbl_conn_user.config(text=t("conn_user_label"))
         self.lbl_conn_pwd.config(text=t("conn_pwd_label"))
-        self.btn_test.config(text=t("conn_test_btn"))
+        self.btn_test.config(text=t("conn_test_btn1"))
+        if hasattr(self, "chk_backup_enable"):
+            self.chk_backup_enable.config(text=f"🛡️ {t('conn_backup_enable')}")
+        if hasattr(self, "lbl_backup_url"):
+            self.lbl_backup_url.config(text=t("conn_url_label"))
+        if hasattr(self, "lbl_backup_user"):
+            self.lbl_backup_user.config(text=t("conn_user_label"))
+        if hasattr(self, "lbl_backup_pwd"):
+            self.lbl_backup_pwd.config(text=t("conn_pwd_label"))
+        if hasattr(self, "btn_test2"):
+            self.btn_test2.config(text=t("conn_test_btn2"))
+
 
         # Folders Tab
         self.lbl_folders_hdr.config(text=t("folders_header"))
@@ -459,6 +480,11 @@ class SettingsDialog:
         self.tree_log.heading("status", text=t("log_col_status"))
         self._refresh_logs()
 
+    def _get_active_server_display_text(self) -> str:
+        idx = getattr(self.engine, "active_server_index", self.config.primary_server_index) if self.engine else self.config.primary_server_index
+        srv_name = t(f"server_{idx}")
+        return t("conn_active_server_status", srv=srv_name)
+
     def _build_connection_tab(self, parent: ttk.Frame) -> None:
         self.lbl_conn_hdr = ttk.Label(parent, text=t("conn_header"), style="Header.TLabel")
         self.lbl_conn_hdr.pack(anchor="w", pady=(0, 2))
@@ -468,44 +494,146 @@ class SettingsDialog:
             text=t("conn_sub"),
             style="Subheader.TLabel",
         )
-        self.lbl_conn_sub.pack(anchor="w", pady=(0, 12))
+        self.lbl_conn_sub.pack(anchor="w", pady=(0, 10))
 
-        # Server URL
+        # Active server indicator banner
+        self.frame_active_badge = tk.Frame(parent, bg="#EBF3FB", padx=10, pady=6)
+        self.frame_active_badge.pack(fill="x", pady=(0, 10))
+        self.lbl_active_server = tk.Label(
+            self.frame_active_badge,
+            text=self._get_active_server_display_text(),
+            font=("Segoe UI", 9, "bold"),
+            fg="#0067C0",
+            bg="#EBF3FB",
+        )
+        self.lbl_active_server.pack(side="left")
+
+        # Preferred primary server selector
+        prim_frame = tk.Frame(parent, bg="#FFFFFF")
+        prim_frame.pack(fill="x", pady=(0, 12))
+        self.lbl_prim_label = ttk.Label(prim_frame, text=t("conn_primary_label"), style="Card.TLabel")
+        self.lbl_prim_label.pack(side="left", padx=(0, 12))
+        self.var_primary_server = tk.IntVar(value=self.config.primary_server_index)
+        self.radio_prim1 = ttk.Radiobutton(
+            prim_frame,
+            text=t("server_1"),
+            variable=self.var_primary_server,
+            value=1,
+        )
+        self.radio_prim1.pack(side="left", padx=(0, 12))
+        self.radio_prim2 = ttk.Radiobutton(
+            prim_frame,
+            text=t("server_2"),
+            variable=self.var_primary_server,
+            value=2,
+        )
+        self.radio_prim2.pack(side="left")
+
+        # ================= Server 1 Card =================
+        self.lbl_s1_hdr = ttk.Label(parent, text=f"🌐 {t('conn_server1_title')}", style="Header.TLabel")
+        self.lbl_s1_hdr.pack(anchor="w", pady=(0, 4))
+
+        # Server 1 URL
         self.lbl_conn_url = ttk.Label(parent, text=t("conn_url_label"), style="Card.TLabel")
         self.lbl_conn_url.pack(anchor="w", pady=(0, 2))
         self.entry_url = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_url.insert(0, self.config.server_url)
-        self.entry_url.pack(fill="x", pady=(0, 8))
+        self.entry_url.pack(fill="x", pady=(0, 6))
 
-        # Username
+        # Server 1 Username
         self.lbl_conn_user = ttk.Label(parent, text=t("conn_user_label"), style="Card.TLabel")
         self.lbl_conn_user.pack(anchor="w", pady=(0, 2))
         self.entry_user = ttk.Entry(parent, font=("Segoe UI", 9))
         self.entry_user.insert(0, self.config.username)
-        self.entry_user.pack(fill="x", pady=(0, 8))
+        self.entry_user.pack(fill="x", pady=(0, 6))
 
-        # Password
+        # Server 1 Password
         self.lbl_conn_pwd = ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_conn_pwd.pack(anchor="w", pady=(0, 2))
         self.entry_pwd = ttk.Entry(parent, font=("Segoe UI", 9), show="•")
         self.entry_pwd.insert(0, self.config.password)
-        self.entry_pwd.pack(fill="x", pady=(0, 14))
+        self.entry_pwd.pack(fill="x", pady=(0, 8))
 
-        # Test Connection button & status indicator
-        test_frame = tk.Frame(parent, bg="#FFFFFF")
-        test_frame.pack(fill="x", pady=(0, 6))
+        # Test Server 1 button & status indicator
+        test_frame1 = tk.Frame(parent, bg="#FFFFFF")
+        test_frame1.pack(fill="x", pady=(0, 10))
 
-        self.btn_test = ttk.Button(test_frame, text=t("conn_test_btn"), command=self._test_connection)
+        self.btn_test = ttk.Button(test_frame1, text=t("conn_test_btn1"), command=self._test_connection)
         self.btn_test.pack(side="left")
 
         self.lbl_test_status = tk.Label(
-            test_frame,
+            test_frame1,
             text="",
             font=("Segoe UI", 9, "bold"),
             fg="#5F6368",
             bg="#FFFFFF",
         )
         self.lbl_test_status.pack(side="left", padx=(14, 0), fill="x", expand=True, anchor="w")
+
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(6, 12))
+
+        # ================= Server 2 Card (Backup) =================
+        self.var_backup_enabled = tk.BooleanVar(value=self.config.backup_server_enabled)
+        self.chk_backup_enable = ttk.Checkbutton(
+            parent,
+            text=f"🛡️ {t('conn_backup_enable')}",
+            variable=self.var_backup_enabled,
+            command=self._on_backup_enable_toggle,
+        )
+        self.chk_backup_enable.pack(anchor="w", pady=(0, 6))
+
+        self.frame_server2_body = tk.Frame(parent, bg="#FFFFFF")
+        self.frame_server2_body.pack(fill="x", pady=(0, 4))
+
+        # Server 2 URL
+        self.lbl_backup_url = ttk.Label(self.frame_server2_body, text=t("conn_url_label"), style="Card.TLabel")
+        self.lbl_backup_url.pack(anchor="w", pady=(0, 2))
+        self.entry_backup_url = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9))
+        self.entry_backup_url.insert(0, self.config.backup_server_url)
+        self.entry_backup_url.pack(fill="x", pady=(0, 6))
+
+        # Server 2 Username
+        self.lbl_backup_user = ttk.Label(self.frame_server2_body, text=t("conn_user_label"), style="Card.TLabel")
+        self.lbl_backup_user.pack(anchor="w", pady=(0, 2))
+        self.entry_backup_user = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9))
+        self.entry_backup_user.insert(0, self.config.backup_username)
+        self.entry_backup_user.pack(fill="x", pady=(0, 6))
+
+        # Server 2 Password
+        self.lbl_backup_pwd = ttk.Label(self.frame_server2_body, text=t("conn_pwd_label"), style="Card.TLabel")
+        self.lbl_backup_pwd.pack(anchor="w", pady=(0, 2))
+        self.entry_backup_pwd = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9), show="•")
+        self.entry_backup_pwd.insert(0, self.config.backup_password)
+        self.entry_backup_pwd.pack(fill="x", pady=(0, 8))
+
+        # Test Server 2 button & status indicator
+        test_frame2 = tk.Frame(self.frame_server2_body, bg="#FFFFFF")
+        test_frame2.pack(fill="x", pady=(0, 6))
+
+        self.btn_test2 = ttk.Button(test_frame2, text=t("conn_test_btn2"), command=self._test_connection_2)
+        self.btn_test2.pack(side="left")
+
+        self.lbl_test_status2 = tk.Label(
+            test_frame2,
+            text="",
+            font=("Segoe UI", 9, "bold"),
+            fg="#5F6368",
+            bg="#FFFFFF",
+        )
+        self.lbl_test_status2.pack(side="left", padx=(14, 0), fill="x", expand=True, anchor="w")
+
+        self._on_backup_enable_toggle()
+
+    def _on_backup_enable_toggle(self) -> None:
+        state = "normal" if self.var_backup_enabled.get() else "disabled"
+        if hasattr(self, "entry_backup_url"):
+            self.entry_backup_url.config(state=state)
+        if hasattr(self, "entry_backup_user"):
+            self.entry_backup_user.config(state=state)
+        if hasattr(self, "entry_backup_pwd"):
+            self.entry_backup_pwd.config(state=state)
+        if hasattr(self, "btn_test2"):
+            self.btn_test2.config(state=state)
 
     def _test_connection(self) -> None:
         self.lbl_test_status.config(text=t("conn_testing"), fg="#0067C0")
@@ -529,6 +657,34 @@ class SettingsDialog:
             self.lbl_test_status.config(text=t("conn_success"), fg="#0F7B0F")
         else:
             self.lbl_test_status.config(text=t("conn_fail", msg=msg), fg="#C42B1C")
+
+    def _test_connection_2(self) -> None:
+        if not hasattr(self, "lbl_test_status2"):
+            return
+        self.lbl_test_status2.config(text=t("conn_testing"), fg="#0067C0")
+        self.btn_test2.config(state="disabled")
+
+        url = self.entry_backup_url.get().strip()
+        user = self.entry_backup_user.get().strip() or self.entry_user.get().strip()
+        pwd = self.entry_backup_pwd.get() or self.entry_pwd.get()
+
+        def worker():
+            test_client = FileBrowserClient(base_url=url, username=user, password=pwd, timeout=8)
+            ok, msg = test_client.test_connection()
+            if self._is_window_alive():
+                self.window.after(0, lambda: self._on_test_2_done(ok, msg))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_test_2_done(self, ok: bool, msg: str) -> None:
+        if hasattr(self, "btn_test2"):
+            self.btn_test2.config(state="normal" if self.var_backup_enabled.get() else "disabled")
+        if hasattr(self, "lbl_test_status2"):
+            if ok:
+                self.lbl_test_status2.config(text=t("conn_success"), fg="#0F7B0F")
+            else:
+                self.lbl_test_status2.config(text=t("conn_fail", msg=msg), fg="#C42B1C")
+
 
     def _build_folders_tab(self, parent: ttk.Frame) -> None:
         self.lbl_folders_hdr = ttk.Label(parent, text=t("folders_header"), style="Header.TLabel")
@@ -1062,8 +1218,21 @@ class SettingsDialog:
         self.config.server_url = self.entry_url.get().strip()
         self.config.username = self.entry_user.get().strip()
         self.config.password = self.entry_pwd.get()
+
+        if hasattr(self, "var_backup_enabled"):
+            self.config.backup_server_enabled = self.var_backup_enabled.get()
+        if hasattr(self, "entry_backup_url"):
+            self.config.backup_server_url = self.entry_backup_url.get().strip()
+        if hasattr(self, "entry_backup_user"):
+            self.config.backup_username = self.entry_backup_user.get().strip()
+        if hasattr(self, "entry_backup_pwd"):
+            self.config.backup_password = self.entry_backup_pwd.get()
+        if hasattr(self, "var_primary_server"):
+            self.config.primary_server_index = self.var_primary_server.get()
+
         self.config.local_path = self.entry_local.get().strip()
         self.config.remote_path = self.entry_remote.get().strip()
+
 
         try:
             self.config.poll_interval = int(self.spin_poll.get())
@@ -1111,8 +1280,27 @@ class SettingsDialog:
         self.entry_pwd.delete(0, tk.END)
         self.entry_pwd.insert(0, self.config.password)
 
+        if hasattr(self, "var_backup_enabled"):
+            self.var_backup_enabled.set(self.config.backup_server_enabled)
+        if hasattr(self, "entry_backup_url"):
+            self.entry_backup_url.delete(0, tk.END)
+            self.entry_backup_url.insert(0, self.config.backup_server_url)
+        if hasattr(self, "entry_backup_user"):
+            self.entry_backup_user.delete(0, tk.END)
+            self.entry_backup_user.insert(0, self.config.backup_username)
+        if hasattr(self, "entry_backup_pwd"):
+            self.entry_backup_pwd.delete(0, tk.END)
+            self.entry_backup_pwd.insert(0, self.config.backup_password)
+        if hasattr(self, "var_primary_server"):
+            self.var_primary_server.set(self.config.primary_server_index)
+        if hasattr(self, "lbl_active_server"):
+            self.lbl_active_server.config(text=self._get_active_server_display_text())
+        if hasattr(self, "_on_backup_enable_toggle"):
+            self._on_backup_enable_toggle()
+
         self.entry_local.delete(0, tk.END)
         self.entry_local.insert(0, str(self.config.local_path))
+
 
         self.entry_remote.delete(0, tk.END)
         self.entry_remote.insert(0, self.config.remote_path)
@@ -1175,7 +1363,9 @@ class SettingsDialog:
             set_current_language(self.config.language)
             self._retranslate_ui()
             self._populate_form_fields()
-            if self.client:
+            if self.engine:
+                self.engine.apply_server_connection(self.config.primary_server_index)
+            elif self.client:
                 self.client.base_url = self.config.server_url
                 self.client.username = self.config.username
                 self.client.password = self.config.password
@@ -1208,11 +1398,14 @@ class SettingsDialog:
             remove_desktop_shortcut()
 
         # Update client
-        if self.client:
+        if self.engine:
+            self.engine.apply_server_connection(self.config.primary_server_index)
+        elif self.client:
             self.client.base_url = self.config.server_url
             self.client.username = self.config.username
             self.client.password = self.config.password
             self.client.token = None  # Force re-login with updated credentials
+
 
         if self.on_save_callback:
             try:

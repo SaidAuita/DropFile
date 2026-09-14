@@ -455,3 +455,80 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
 set_windows_autostart = set_autostart
 is_windows_autostart_enabled = is_autostart_enabled
 open_folder_in_explorer = open_folder_in_file_manager
+
+_SINGLE_INSTANCE_HANDLE = None
+
+
+def acquire_single_instance_lock() -> bool:
+    """
+    Acquires an OS-level exclusive single-instance lock.
+    Returns True if this is the only instance running, False if another instance already holds the lock.
+    - Windows: Uses Win32 Named Mutex 'Local\\DropFile_SingleInstance_Mutex'.
+    - macOS / Linux: Uses fcntl.flock on lockfile in app data directory.
+    """
+    global _SINGLE_INSTANCE_HANDLE
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            CreateMutexW = kernel32.CreateMutexW
+            CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+            CreateMutexW.restype = wintypes.HANDLE
+
+            mutex_name = "Local\\DropFile_SingleInstance_Mutex"
+            handle = CreateMutexW(None, True, mutex_name)
+            last_err = ctypes.get_last_error()
+            # ERROR_ALREADY_EXISTS = 183
+            if not handle or last_err == 183:
+                if handle:
+                    kernel32.CloseHandle(handle)
+                return False
+            _SINGLE_INSTANCE_HANDLE = handle
+            return True
+        except Exception as e:
+            print(f"[platform_utils] Win32 mutex error: {e}")
+            return True
+    elif sys.platform == "darwin" or sys.platform.startswith("linux"):
+        try:
+            import fcntl
+            if sys.platform == "darwin":
+                lock_dir = Path.home() / "Library" / "Application Support" / "DropFile"
+            else:
+                lock_dir = Path.home() / ".dropfile"
+            lock_dir.mkdir(parents=True, exist_ok=True)
+            lock_file = lock_dir / "dropfile.instance.lock"
+            f = open(lock_file, "a+")
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _SINGLE_INSTANCE_HANDLE = f
+            return True
+        except (IOError, BlockingIOError, PermissionError):
+            return False
+        except Exception as e:
+            print(f"[platform_utils] Unix flock lock error: {e}")
+            return True
+    return True
+
+
+def release_single_instance_lock() -> None:
+    """Releases the single instance lock handle immediately."""
+    global _SINGLE_INSTANCE_HANDLE
+    if _SINGLE_INSTANCE_HANDLE is None:
+        return
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CloseHandle(_SINGLE_INSTANCE_HANDLE)
+        except Exception:
+            pass
+        _SINGLE_INSTANCE_HANDLE = None
+    else:
+        try:
+            import fcntl
+            fcntl.flock(_SINGLE_INSTANCE_HANDLE.fileno(), fcntl.LOCK_UN)
+            _SINGLE_INSTANCE_HANDLE.close()
+        except Exception:
+            pass
+        _SINGLE_INSTANCE_HANDLE = None
+

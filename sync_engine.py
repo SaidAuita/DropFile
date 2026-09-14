@@ -62,12 +62,54 @@ class SyncEngine:
         self.last_sync_time: float = 0.0
         self.current_state = "idle"
         self.status_message = t("status_ready")
+
+        self.active_server_index = self.config.primary_server_index
+        self._last_primary_probe_time: float = 0.0
+
         try:
             self._last_cfg_mtime = self.config.config_file.stat().st_mtime if self.config.config_file.exists() else 0.0
         except Exception:
             self._last_cfg_mtime = 0.0
 
+    @property
+    def active_remote_path(self) -> str:
+        """Returns the remote directory path for the currently active server."""
+        if self.active_server_index == 2:
+            return self.config.backup_remote_path
+        return self.config.remote_path
+
+    def get_active_server_label(self) -> str:
+        """Returns server indicator label (e.g. '[Сервер 1]' or '[Сервер 2]') if backup server is enabled."""
+        if self.config.backup_server_enabled:
+            return f"[{t('server_badge')} {self.active_server_index}]"
+        return ""
+
+    def get_server_credentials(self, index: int) -> Tuple[str, str, str, str]:
+        """Returns (url, username, password, remote_path) for server 1 or 2."""
+        if index == 2:
+            url = self.config.backup_server_url
+            user = self.config.backup_username or self.config.username
+            pwd = self.config.backup_password or self.config.password
+            rem = self.config.backup_remote_path
+            return url, user, pwd, rem
+        else:
+            return self.config.server_url, self.config.username, self.config.password, self.config.remote_path
+
+    def apply_server_connection(self, index: int) -> None:
+        """Configures client with credentials of server index (1 or 2)."""
+        url, user, pwd, _ = self.get_server_credentials(index)
+        if self.client:
+            self.client.base_url = url
+            self.client.username = user
+            self.client.password = pwd
+            self.client.token = None
+        self.active_server_index = index
+
     def set_status(self, message: str, state: str) -> None:
+        if self.config.backup_server_enabled:
+            badge = self.get_active_server_label()
+            if badge and badge not in message and state in ("idle", "syncing"):
+                message = f"{message} {badge}"
         self.status_message = message
         self.current_state = state
         if self.on_status_change:
@@ -82,6 +124,7 @@ class SyncEngine:
                 self.on_notify(title, message)
             except Exception as e:
                 print(f"[SyncEngine] Notify callback error: {e}")
+
 
     def is_ignored(self, path: Path | str) -> bool:
         """Checks if a file or directory matches any ignore pattern."""
@@ -225,11 +268,7 @@ class SyncEngine:
                     self._last_cfg_mtime = mtime
                     print("[SyncEngine] config.json modification detected, reloading...")
                     self.config.load()
-                    if self.client:
-                        self.client.base_url = self.config.server_url
-                        self.client.username = self.config.username
-                        self.client.password = self.config.password
-                        self.client.token = None
+                    self.apply_server_connection(self.active_server_index)
                     self.trigger_sync_now()
         except Exception as e:
             print(f"[SyncEngine] Error checking config reload: {e}")
@@ -241,7 +280,15 @@ class SyncEngine:
 
         # Perform initial sync on startup
         time.sleep(1.0)
-        if self.config.server_url and self.config.username:
+        url, user, pwd, _ = self.get_server_credentials(self.active_server_index)
+        if not url or not user:
+            # Fallback to primary if active server credentials not set
+            if self.active_server_index != self.config.primary_server_index:
+                self.apply_server_connection(self.config.primary_server_index)
+                url, user, pwd, _ = self.get_server_credentials(self.active_server_index)
+
+        if url and user:
+            self.apply_server_connection(self.active_server_index)
             self._init_last_uploaded_from_history()
             try:
                 self.state_db.cleanup_old_history(self.config.log_retention_days)
@@ -252,6 +299,7 @@ class SyncEngine:
             self.reconcile_all()
         else:
             self.set_status(t("status_need_config"), "paused")
+
 
         while self._running:
             try:
@@ -318,7 +366,7 @@ class SyncEngine:
                 # Directory was deleted locally
                 if self.state_db.is_tracked(clean_rel):
                     self.set_status(t("status_deleting_remote", file=clean_rel), "syncing")
-                    remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                    remote_dest = f"{self.active_remote_path}/{clean_rel}"
                     ok = self.client.delete_resource(remote_dest)
                     if ok:
                         self.state_db.delete_record_and_children(clean_rel)
@@ -342,7 +390,7 @@ class SyncEngine:
 
             elif event_type == "created" and local_dir.is_dir():
                 # Directory was created locally
-                remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                remote_dest = f"{self.active_remote_path}/{clean_rel}"
                 ok = self.client.create_directory(remote_dest)
                 if ok:
                     rec = FileRecord(
@@ -353,6 +401,7 @@ class SyncEngine:
                     self.state_db.upsert_record(rec)
                     self.state_db.log_sync(clean_rel, "create_dir", "local->remote", "success")
                     print(f"[SyncEngine] Created remote directory: {clean_rel}")
+
 
     def _sync_single_local_file(self, rel_path: str) -> None:
         """Uploads a local file or handles its local deletion."""
@@ -367,7 +416,7 @@ class SyncEngine:
                 # File or directory was deleted locally
                 if self.state_db.is_tracked(clean_rel):
                     self.set_status(t("status_deleting_remote", file=clean_rel), "syncing")
-                    remote_file_path = f"{self.config.remote_path}/{clean_rel}"
+                    remote_file_path = f"{self.active_remote_path}/{clean_rel}"
                     ok = self.client.delete_resource(remote_file_path)
                     if ok:
                         self.state_db.delete_record_and_children(clean_rel)
@@ -410,8 +459,9 @@ class SyncEngine:
                 return
 
             self.set_status(t("status_uploading", file=clean_rel), "syncing")
-            remote_dest = f"{self.config.remote_path}/{clean_rel}"
+            remote_dest = f"{self.active_remote_path}/{clean_rel}"
             ok = self.client.upload_file(local_file, remote_dest)
+
 
             if ok:
                 meta = self.client.get_resource(remote_dest)
@@ -445,28 +495,73 @@ class SyncEngine:
         if not self._running or self._paused:
             return
 
-        if not self.config.server_url or not self.config.username:
-            self.set_status(t("status_need_config"), "paused")
-            return
+        # Ensure active server settings are configured on client
+        url, user, pwd, _ = self.get_server_credentials(self.active_server_index)
+        if not url or not user:
+            if self.active_server_index != self.config.primary_server_index:
+                self.apply_server_connection(self.config.primary_server_index)
+                url, user, pwd, _ = self.get_server_credentials(self.active_server_index)
+            if not url or not user:
+                self.set_status(t("status_need_config"), "paused")
+                return
 
         with self._sync_lock:
+            # 0. Check if primary server has recovered if we are currently running on backup server
+            if self.config.backup_server_enabled and self.active_server_index != self.config.primary_server_index:
+                now = time.time()
+                if now - self._last_primary_probe_time >= 60.0:
+                    self._last_primary_probe_time = now
+                    prim_idx = self.config.primary_server_index
+                    p_url, p_user, p_pwd, _ = self.get_server_credentials(prim_idx)
+                    if p_url and p_user:
+                        probe_client = FileBrowserClient(base_url=p_url, username=p_user, password=p_pwd, timeout=6)
+                        p_ok, _ = probe_client.test_connection()
+                        if p_ok:
+                            print(f"[SyncEngine] Primary server {prim_idx} recovered! Switching back.")
+                            self.apply_server_connection(prim_idx)
+                            self.notify(
+                                t("notify_failback_title"),
+                                t("notify_failback_msg", idx=prim_idx),
+                            )
+
             self.set_status(t("status_checking"), "syncing")
 
             # 1. Test / ensure connection
             ok, msg = self.client.test_connection()
             if not ok:
-                self.set_status(t("status_conn_error", msg=msg[:40]), "error")
-                return
+                # If active server failed, try backup server failover!
+                if self.config.backup_server_enabled:
+                    alt_idx = 2 if self.active_server_index == 1 else 1
+                    alt_url, alt_user, alt_pwd, _ = self.get_server_credentials(alt_idx)
+                    if alt_url and alt_user:
+                        alt_client = FileBrowserClient(base_url=alt_url, username=alt_user, password=alt_pwd, timeout=8)
+                        alt_ok, alt_msg = alt_client.test_connection()
+                        if alt_ok:
+                            old_idx = self.active_server_index
+                            print(f"[SyncEngine] Server {old_idx} unreachable ({msg}). Failover switching to Server {alt_idx}...")
+                            self.apply_server_connection(alt_idx)
+                            self.notify(
+                                t("notify_failover_title"),
+                                t("notify_failover_msg", from_idx=old_idx, to_idx=alt_idx),
+                            )
+                            ok = True
+
+                if not ok:
+                    self.set_status(t("status_conn_error", msg=msg[:40]), "error")
+                    return
+
+            active_remote = self.active_remote_path
 
             # Ensure remote root exists
-            self.client.ensure_remote_dir_exists(self.config.remote_path)
+            self.client.ensure_remote_dir_exists(active_remote)
 
             # 2. Fetch remote tree
-            remote_items = self.client.list_recursive(self.config.remote_path)
+            remote_items = self.client.list_recursive(active_remote)
             remote_files: Dict[str, RemoteItem] = {}
             remote_dirs: Dict[str, RemoteItem] = {}
 
-            root_prefix = self.config.remote_path.strip("/")
+            root_prefix = active_remote.strip("/")
+
             for item in remote_items:
                 clean_p = item.path.strip("/")
                 if clean_p.lower().startswith(root_prefix.lower()):
@@ -532,8 +627,9 @@ class SyncEngine:
                     if in_state:
                         # User deleted directory locally -> delete on remote
                         self.set_status(t("status_deleting_remote", file=d), "syncing")
-                        remote_dir_path = f"{self.config.remote_path}/{d}"
+                        remote_dir_path = f"{active_remote}/{d}"
                         ok = self.client.delete_resource(remote_dir_path)
+
                         if ok:
                             self.state_db.delete_record_and_children(d)
                             self.state_db.log_sync(d, "delete", "local->remote", "success", "Directory deleted locally")
@@ -574,14 +670,15 @@ class SyncEngine:
                                 print(f"[SyncEngine] Error removing local directory {d}: {e}")
                         else:
                             # Keep untracked files and re-upload directory to server
-                            remote_dir_path = f"{self.config.remote_path}/{d}"
+                            remote_dir_path = f"{active_remote}/{d}"
                             self.client.create_directory(remote_dir_path)
                             rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
                             self.state_db.upsert_record(rec)
                     else:
                         # New directory created locally -> create on remote
-                        remote_dir_path = f"{self.config.remote_path}/{d}"
+                        remote_dir_path = f"{active_remote}/{d}"
                         self.client.create_directory(remote_dir_path)
+
                         rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
                         self.state_db.upsert_record(rec)
                         self.state_db.log_sync(d, "create_dir", "local->remote", "success")
@@ -708,7 +805,7 @@ class SyncEngine:
                             print(f"[SyncEngine] Error removing local file {rel}: {e}")
                     else:
                         # New local file added by user -> Upload it
-                        remote_dest = f"{self.config.remote_path}/{rel}"
+                        remote_dest = f"{active_remote}/{rel}"
                         self._upload_local_file(rel, l_file, remote_dest)
                         uploads_count += 1
 
@@ -745,9 +842,11 @@ class SyncEngine:
                 self.set_status(t("status_conn_error", msg=msg[:40]), "error")
                 return 0, 1
 
-            self.client.ensure_remote_dir_exists(self.config.remote_path)
-            remote_items = self.client.list_recursive(self.config.remote_path)
-            root_prefix = self.config.remote_path.strip("/")
+            active_remote = self.active_remote_path
+            self.client.ensure_remote_dir_exists(active_remote)
+            remote_items = self.client.list_recursive(active_remote)
+            root_prefix = active_remote.strip("/")
+
 
             # 1. First pass: ensure all directories exist locally and track them
             for item in remote_items:
@@ -896,21 +995,26 @@ class SyncEngine:
             share_url = self.client.get_or_create_share_link(remote_dest)
         except Exception as e:
             print(f"[SyncEngine] Error obtaining share link: {e}")
-            share_url = f"{self.config.server_url}/files{remote_dest}"
+            share_url = f"{self.client.base_url}/files{remote_dest}"
 
         self.last_uploaded_item = {
             "name": local_file.name,
             "rel_path": rel_path,
             "remote_path": remote_dest,
-            "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
+            "share_url": share_url or f"{self.client.base_url}/files{remote_dest}",
         }
         self._notify_share_ready(self.last_uploaded_item, notify=True)
 
     def _init_last_uploaded_from_history(self) -> None:
         """Restores last_uploaded_item from the most recent upload in sync_history."""
         self._history_loaded = True
-        if not self.config.server_url or not self.config.username:
+        base_url = self.client.base_url or self.config.server_url
+        if not base_url:
             return
+        if not self.client.username and self.config.username:
+            self.client.username = self.config.username
+        if not self.client.password and self.config.password:
+            self.client.password = self.config.password
 
         try:
             with self.state_db._get_connection() as conn:
@@ -922,14 +1026,15 @@ class SyncEngine:
                     rel = row["rel_path"]
                     clean_rel = rel.replace("\\", "/").lstrip("/")
                     name = Path(clean_rel).name
-                    remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                    remote_dest = f"{self.active_remote_path}/{clean_rel}"
                     share_url = self.client.get_or_create_share_link(remote_dest)
                     self.last_uploaded_item = {
                         "name": name,
                         "rel_path": clean_rel,
                         "remote_path": remote_dest,
-                        "share_url": share_url or f"{self.config.server_url}/files{remote_dest}",
+                        "share_url": share_url or f"{base_url}/files{remote_dest}",
                     }
+
                     self._notify_share_ready(self.last_uploaded_item, notify=False)
                     print(f"[SyncEngine] Restored last uploaded item: {name} -> {self.last_uploaded_item['share_url']}")
         except Exception as e:
@@ -1263,12 +1368,13 @@ class SyncEngine:
                             removed_count += 1
 
                             # Remove remotely
-                            if self.config.server_url and self.config.username:
-                                remote_dest = f"{self.config.remote_path}/{rel_dup}"
+                            if self.client.base_url and self.client.username:
+                                remote_dest = f"{self.active_remote_path}/{rel_dup}"
                                 try:
                                     self.client.delete_resource(remote_dest)
                                 except Exception as e:
                                     print(f"[SyncEngine] Dedup remote delete error: {e}")
+
 
                             # Remove from DB
                             self.state_db.delete_record(rel_dup)

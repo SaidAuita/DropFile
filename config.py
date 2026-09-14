@@ -15,6 +15,12 @@ DEFAULT_CONFIG = {
     "password": "",
     "remote_path": "/DropFile",
     "local_path": str(Path.home() / "Desktop" / "DropFile"),
+    "backup_server_enabled": False,
+    "backup_server_url": "",
+    "backup_username": "",
+    "backup_password": "",
+    "backup_remote_path": "/DropFile",
+    "primary_server_index": 1,  # 1 or 2
     "poll_interval": 30,
     "start_with_windows": False,
     "notify_on_sync": True,
@@ -112,6 +118,17 @@ class Config:
                 loaded = json.load(f)
             if not isinstance(loaded, dict):
                 return False
+
+            # Cross-platform local_path adaptation for seamless PC <-> Mac exchange
+            import re
+            imported_local = str(loaded.get("local_path", "")).strip()
+            if sys.platform == "win32":
+                if imported_local.startswith(("/Users/", "/home/", "/Volumes/")) or (imported_local.startswith("/") and not imported_local.startswith("//")):
+                    loaded["local_path"] = str(Path.home() / "Desktop" / "DropFile")
+            else:
+                if re.match(r"^[a-zA-Z]:", imported_local) or "\\" in imported_local:
+                    loaded["local_path"] = str(Path.home() / "Desktop" / "DropFile")
+
             self._data.update(loaded)
             self.save()
             return True
@@ -164,18 +181,82 @@ class Config:
         self._data["remote_path"] = p.rstrip("/")
 
     @property
+    def backup_server_enabled(self) -> bool:
+        return bool(self._data.get("backup_server_enabled", False))
+
+    @backup_server_enabled.setter
+    def backup_server_enabled(self, value: bool) -> None:
+        self._data["backup_server_enabled"] = bool(value)
+
+    @property
+    def backup_server_url(self) -> str:
+        return self._data.get("backup_server_url", "").rstrip("/")
+
+    @backup_server_url.setter
+    def backup_server_url(self, value: str) -> None:
+        self._data["backup_server_url"] = value.strip().rstrip("/")
+
+    @property
+    def backup_username(self) -> str:
+        return self._data.get("backup_username", "")
+
+    @backup_username.setter
+    def backup_username(self, value: str) -> None:
+        self._data["backup_username"] = value.strip()
+
+    @property
+    def backup_password(self) -> str:
+        return self._data.get("backup_password", "")
+
+    @backup_password.setter
+    def backup_password(self, value: str) -> None:
+        self._data["backup_password"] = value
+
+    @property
+    def backup_remote_path(self) -> str:
+        p = self._data.get("backup_remote_path", "/DropFile").strip()
+        if not p.startswith("/"):
+            p = "/" + p
+        return p.rstrip("/")
+
+    @backup_remote_path.setter
+    def backup_remote_path(self, value: str) -> None:
+        p = value.strip()
+        if not p.startswith("/"):
+            p = "/" + p
+        self._data["backup_remote_path"] = p.rstrip("/")
+
+    @property
+    def primary_server_index(self) -> int:
+        idx = int(self._data.get("primary_server_index", 1))
+        return 2 if idx == 2 else 1
+
+    @primary_server_index.setter
+    def primary_server_index(self, value: int) -> None:
+        idx = int(value)
+        self._data["primary_server_index"] = 2 if idx == 2 else 1
+
+    @property
     def local_path(self) -> Path:
         raw = self._data.get("local_path", DEFAULT_CONFIG["local_path"])
         p_str = str(raw).strip()
+        import re
+        # Cross-platform sanity checks:
         # If running on macOS or Linux and config contains Windows drive letter (e.g. D:\DropFile)
         # fallback to native Desktop/DropFile
         if sys.platform != "win32":
-            import re
             if re.match(r"^[a-zA-Z]:", p_str) or "\\" in p_str:
                 default_path = Path.home() / "Desktop" / "DropFile"
                 self._data["local_path"] = str(default_path)
                 return default_path
+        # If running on Windows and config contains Unix/Mac style path (/Users/..., /home/..., or leading /)
+        if sys.platform == "win32":
+            if p_str.startswith(("/Users/", "/home/", "/Volumes/")) or (p_str.startswith("/") and not p_str.startswith("//")):
+                default_path = Path.home() / "Desktop" / "DropFile"
+                self._data["local_path"] = str(default_path)
+                return default_path
         return Path(p_str)
+
 
     @local_path.setter
     def local_path(self, value: str | Path) -> None:

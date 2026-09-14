@@ -17,6 +17,9 @@ from platform_utils import (
     set_autostart,
     set_windows_autostart,
     spawn_settings_process,
+    acquire_single_instance_lock,
+    release_single_instance_lock,
 )
+
 
 
