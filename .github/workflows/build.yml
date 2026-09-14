@@ -33,7 +33,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller DropFile.spec --noconfirm
+          python build_exe.py
 
       - name: Upload Windows executable artifact
         uses: actions/upload-artifact@v4
@@ -72,3 +72,31 @@ jobs:
         with:
           name: DropFile-macOS-Universal
           path: dist/DropFile-macOS.zip
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DropFile-Windows-x64
+          path: dist/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DropFile-macOS-Universal
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DropFile.exe
+            dist/DropFile-macOS.zip
+          generate_release_notes: true
