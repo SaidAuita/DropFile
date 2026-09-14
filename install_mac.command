@@ -20,11 +20,20 @@ echo "[1/5] Checking Python 3 environment..."
 PYTHON_BIN=""
 
 CANDIDATES=(
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
     "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
     "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
     "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3"
     "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
+    "/usr/local/bin/python3.13"
+    "/usr/local/bin/python3.12"
+    "/usr/local/bin/python3.11"
+    "/usr/local/bin/python3.10"
     "/usr/local/bin/python3"
+    "/opt/homebrew/bin/python3.13"
+    "/opt/homebrew/bin/python3.12"
+    "/opt/homebrew/bin/python3.11"
+    "/opt/homebrew/bin/python3.10"
     "/opt/homebrew/bin/python3"
     "python3"
 )
@@ -41,36 +50,71 @@ for cand in "${CANDIDATES[@]}"; do
     fi
 done
 
-# Second pass fallback: any Python 3
+# If no Python has Tkinter, attempt Homebrew auto-install or official Python
+if [ -z "$PYTHON_BIN" ]; then
+    echo "   ⚠️  No Python with Tkinter (_tkinter) found."
+    
+    BREW_BIN=""
+    for b in "brew" "/usr/local/bin/brew" "/opt/homebrew/bin/brew"; do
+        if command -v "$b" >/dev/null 2>&1; then
+            BREW_BIN="$b"
+            break
+        fi
+    done
+
+    if [ -n "$BREW_BIN" ]; then
+        echo "   -> Homebrew detected at $BREW_BIN."
+        echo "   -> Installing python-tk via Homebrew..."
+        "$BREW_BIN" install python-tk || true
+
+        # Re-check candidates
+        for cand in "${CANDIDATES[@]}"; do
+            if command -v "$cand" >/dev/null 2>&1; then
+                if "$cand" -c "import sys, tkinter" >/dev/null 2>&1; then
+                    VER=$("$cand" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)
+                    PYTHON_BIN="$cand"
+                    echo "   -> Found Python $VER with Tkinter ($cand)"
+                    break
+                fi
+            fi
+        done
+    fi
+fi
+
+# If still no Python with Tkinter, prompt to install official Python or fallback
 if [ -z "$PYTHON_BIN" ]; then
     for cand in "${CANDIDATES[@]}"; do
         if command -v "$cand" >/dev/null 2>&1; then
             VER=$("$cand" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)
             if [ -n "$VER" ]; then
                 PYTHON_BIN="$cand"
-                echo "   -> Found Python $VER ($cand)"
-                echo "   ⚠️  Notice: Tkinter not detected in $cand. If Settings dialog doesn't appear, install python-tk (e.g. 'brew install python-tk')."
                 break
             fi
         fi
     done
+
+    echo ""
+    echo "=================================================================="
+    echo "⚠️  Tkinter is required for the Settings GUI, but was not found."
+    echo "Current Python: $PYTHON_BIN ($VER)"
+    echo "=================================================================="
+    read -p "Install official Python 3.12 (with built-in Tkinter) now? [Y/n]: " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+        echo "Downloading official Python 3.12 installer..."
+        curl -fSL -o /tmp/python-3.12.8-macos11.pkg https://www.python.org/ftp/python/3.12.8/python-3.12.8-macos11.pkg
+        echo "Installing Python 3.12 (administrator password may be requested)..."
+        sudo installer -pkg /tmp/python-3.12.8-macos11.pkg -target /
+        rm -f /tmp/python-3.12.8-macos11.pkg
+        "/Applications/Python 3.12/Install Certificates.command" 2>/dev/null || true
+        PYTHON_BIN="/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+        echo "   -> Successfully configured: $PYTHON_BIN"
+    fi
 fi
 
 if [ -z "$PYTHON_BIN" ]; then
     echo ""
     echo "❌ Error: Python 3 was not found on your system."
-    echo ""
-    echo "To quickly install Python 3, run in Terminal:"
-    echo "1) Official installer in 1 command (recommended for macOS 10.15+):"
-    echo "   curl -O https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg && sudo installer -pkg python-3.11.9-macos11.pkg -target /"
-    echo "   \"/Applications/Python 3.11/Install Certificates.command\""
-    echo ""
-    echo "2) Via Apple Developer Command Line Tools:"
-    echo "   xcode-select --install"
-    echo ""
-    echo "3) Or via Homebrew:"
-    echo "   brew install python python-tk"
-    echo ""
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -84,21 +128,25 @@ chmod +x "$SCRIPT_DIR"/DropFile.pyw 2>/dev/null || true
 echo ""
 echo "[2/5] Setting up isolated environment (.venv)..."
 if [ -d ".venv" ]; then
-    # Python virtual environments contain hardcoded paths and cannot be relocated;
-    # detect if folder was moved from another location and recreate .venv cleanly
-    if [ -f ".venv/bin/activate" ]; then
-        if ! grep -Fq "$SCRIPT_DIR" ".venv/bin/activate" 2>/dev/null; then
-            echo "   -> Folder location changed. Recreating .venv for new path..."
-            rm -rf ".venv" 2>/dev/null || true
-        fi
-    else
+    RECREATE_VENV=0
+    # Recreate if folder relocated
+    if [ ! -f ".venv/bin/activate" ] || ! grep -Fq "$SCRIPT_DIR" ".venv/bin/activate" 2>/dev/null; then
+        echo "   -> Folder location changed. Recreating .venv for new path..."
+        RECREATE_VENV=1
+    # Recreate if .venv lacks Tkinter but PYTHON_BIN now has it
+    elif ! .venv/bin/python3 -c "import tkinter" >/dev/null 2>&1; then
+        echo "   -> Existing .venv lacks Tkinter. Recreating .venv with $PYTHON_BIN..."
+        RECREATE_VENV=1
+    fi
+
+    if [ "$RECREATE_VENV" -eq 1 ]; then
         rm -rf ".venv" 2>/dev/null || true
     fi
 fi
 
 if [ ! -d ".venv" ]; then
     "$PYTHON_BIN" -m venv .venv
-    echo "   -> Created .venv environment."
+    echo "   -> Created .venv environment using $PYTHON_BIN."
 else
     echo "   -> Using existing .venv environment."
 fi

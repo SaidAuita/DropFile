@@ -54,7 +54,43 @@ if sys.platform == "darwin" and "--settings" not in sys.argv:
 
 from config import Config, get_app_dir
 from fb_client import FileBrowserClient
-from gui_settings import SettingsDialog
+
+def _alert_missing_tkinter() -> None:
+    """Alerts the user when Tkinter is missing on the system."""
+    msg = (
+        "DropFile Settings dialog requires Python Tkinter (_tkinter).\n\n"
+        "To fix on Homebrew, run in Terminal:\n"
+        "  brew install python-tk\n\n"
+        "Or install official Python with built-in Tkinter from:\n"
+        "  https://www.python.org/downloads/macos/"
+    )
+    print(f"\n[DropFile Warning] {msg}\n", file=sys.stderr)
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+            s_msg = msg.replace('"', '\\"').replace("'", "")
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display alert "DropFile — Tkinter Required" message "{s_msg}" as critical',
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+try:
+    from gui_settings import SettingsDialog
+except ModuleNotFoundError as _tk_err:
+    if "_tkinter" in str(_tk_err) or "tkinter" in str(_tk_err):
+        SettingsDialog = None
+    else:
+        raise
+except Exception:
+    SettingsDialog = None
+
 from state_db import StateDatabase
 from sync_engine import SyncEngine
 from tray import DropFileTray
@@ -146,6 +182,9 @@ def ensure_single_instance() -> socket.socket:
 def main():
     # If invoked with --settings, open Settings UI directly on the main thread
     if "--settings" in sys.argv:
+        if SettingsDialog is None:
+            _alert_missing_tkinter()
+            sys.exit(1)
         config = Config()
         db_path = config.config_dir / "state.db"
         state_db = StateDatabase(db_path)
@@ -226,19 +265,25 @@ def main():
         os._exit(0)
 
     # 7. Initialize Settings Dialog
-    settings_dialog = SettingsDialog(
-        config=config,
-        state_db=state_db,
-        client=client,
-        on_save_callback=on_settings_saved,
-        on_restart_callback=on_restart,
-        on_cleanup_callback=on_cleanup,
-        engine=engine,
-    )
+    if SettingsDialog is not None:
+        settings_dialog = SettingsDialog(
+            config=config,
+            state_db=state_db,
+            client=client,
+            on_save_callback=on_settings_saved,
+            on_restart_callback=on_restart,
+            on_cleanup_callback=on_cleanup,
+            engine=engine,
+        )
+    else:
+        settings_dialog = None
 
     # Prompt user with settings dialog if server URL or username is not configured
     if not config.server_url or not config.username:
-        spawn_settings_process()
+        if SettingsDialog is None:
+            _alert_missing_tkinter()
+        else:
+            spawn_settings_process()
 
     # 8. Start System Tray
     tray = DropFileTray(

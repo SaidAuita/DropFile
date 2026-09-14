@@ -9,13 +9,16 @@ import sys
 import threading
 import webbrowser
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import pystray
 from pystray import MenuItem as item
 
 from config import Config
-from gui_settings import SettingsDialog
+try:
+    from gui_settings import SettingsDialog
+except Exception:
+    SettingsDialog = None
 from i18n import t
 from icons import create_tray_icon
 from platform_utils import (
@@ -32,14 +35,14 @@ class DropFileTray:
         self,
         config: Config,
         engine: SyncEngine,
-        settings_dialog: SettingsDialog,
+        settings_dialog: Optional[Any] = None,
         on_cleanup_callback: Optional[Callable[[], None]] = None,
     ):
         self.config = config
         self.engine = engine
         self.settings_dialog = settings_dialog
         self.on_cleanup_callback = on_cleanup_callback
-        if not getattr(self.settings_dialog, "engine", None):
+        if self.settings_dialog is not None and not getattr(self.settings_dialog, "engine", None):
             self.settings_dialog.engine = engine
 
         self.current_state = "idle"
