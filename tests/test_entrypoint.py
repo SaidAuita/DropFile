@@ -18,6 +18,7 @@ class TestEntrypoint(unittest.TestCase):
             spec = importlib.util.spec_from_file_location(mod_name, str(py_file))
             self.assertIsNotNone(spec)
             mod = importlib.util.module_from_spec(spec)
+            sys.modules[mod_name] = mod
             spec.loader.exec_module(mod)
 
         # Test DropFile.pyw
@@ -25,6 +26,7 @@ class TestEntrypoint(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("DropFile", str(pyw_file))
         self.assertIsNotNone(spec)
         mod = importlib.util.module_from_spec(spec)
+        sys.modules["DropFile"] = mod
         spec.loader.exec_module(mod)
         self.assertTrue(hasattr(mod, "main"))
         self.assertTrue(hasattr(mod, "ensure_single_instance"))
