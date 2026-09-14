@@ -57,6 +57,33 @@ class TestStateDB(unittest.TestCase):
         self.db.delete_record("to_delete.txt")
         self.assertIsNone(self.db.get_record("to_delete.txt"))
 
+    def test_delete_record_and_children(self):
+        dir_rec = FileRecord(rel_path="my_folder", is_dir=True)
+        file1 = FileRecord(rel_path="my_folder/file1.txt", local_size=10)
+        file2 = FileRecord(rel_path="my_folder/sub/file2.txt", local_size=20)
+        other = FileRecord(rel_path="other_folder/file.txt", local_size=30)
+
+        self.db.upsert_record(dir_rec)
+        self.db.upsert_record(file1)
+        self.db.upsert_record(file2)
+        self.db.upsert_record(other)
+
+        self.assertTrue(self.db.is_tracked("my_folder"))
+        self.assertTrue(self.db.is_tracked("my_folder/sub"))
+        self.assertTrue(self.db.is_tracked("other_folder"))
+        self.assertFalse(self.db.is_tracked("non_existent"))
+
+        deleted_count = self.db.delete_record_and_children("my_folder")
+        self.assertEqual(deleted_count, 3)
+
+        self.assertIsNone(self.db.get_record("my_folder"))
+        self.assertIsNone(self.db.get_record("my_folder/file1.txt"))
+        self.assertIsNone(self.db.get_record("my_folder/sub/file2.txt"))
+        self.assertIsNotNone(self.db.get_record("other_folder/file.txt"))
+
+        self.assertFalse(self.db.is_tracked("my_folder"))
+        self.assertTrue(self.db.is_tracked("other_folder"))
+
     def test_history_logging(self):
         self.db.log_sync("file1.txt", "upload", "local->remote", "success")
         self.db.log_sync("file2.txt", "download", "remote->local", "error", "Failed timeout")

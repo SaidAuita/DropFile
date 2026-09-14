@@ -3,6 +3,7 @@ Unit tests for SyncEngine helpers, suppression, and ignore patterns.
 """
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 import sys
@@ -293,6 +294,119 @@ class TestSyncEngine(unittest.TestCase):
         # Check files exist
         self.assertTrue((sync_folder / "AI_Code_Pro" / "task.py").is_file())
         self.assertTrue((sync_folder / "readme.txt").is_file())
+
+    def test_reconcile_all_local_directory_deletion(self):
+        """When a user deletes a folder locally, reconcile_all must delete it remotely and not resurrect it."""
+        import shutil
+        from fb_client import RemoteItem
+        from state_db import FileRecord
+
+        sync_folder = self.temp_dir / "sync_dir_delete"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.server_url = "https://mock.local"
+        self.config.username = "test_user"
+        self.engine._running = True
+
+        # Simulate previously synced folder with a file
+        self.db.upsert_record(FileRecord(rel_path="my_project", is_dir=True, last_sync_time=time.time()))
+        self.db.upsert_record(FileRecord(rel_path="my_project/sub/code.py", local_size=20, last_sync_time=time.time()))
+
+        # Remote server still has the directory and file
+        remote_items = [
+            RemoteItem(path="/DropFile/my_project", name="my_project", size=0, modified="", is_dir=True),
+            RemoteItem(path="/DropFile/my_project/sub", name="sub", size=0, modified="", is_dir=True),
+            RemoteItem(path="/DropFile/my_project/sub/code.py", name="code.py", size=20, modified="2026-01-01T00:00:00Z", is_dir=False),
+        ]
+        self.client.test_connection = lambda: (True, "OK")
+        self.client.ensure_remote_dir_exists = lambda path: True
+        self.client.list_recursive = lambda path: list(remote_items)
+
+        deleted_remotes = []
+        def mock_delete(path):
+            deleted_remotes.append(path)
+            return True
+        self.client.delete_resource = mock_delete
+
+        # User deleted my_project locally -> folder does not exist on disk
+        self.assertFalse((sync_folder / "my_project").exists())
+
+        # Run reconcile_all
+        self.engine.reconcile_all()
+
+        # Check remote directory was deleted
+        self.assertTrue(any("my_project" in p for p in deleted_remotes))
+        # Check records were purged from state_db
+        self.assertFalse(self.db.is_tracked("my_project"))
+        # Check folder was NOT resurrected locally as empty!
+        self.assertFalse((sync_folder / "my_project").exists())
+
+    def test_reconcile_all_remote_directory_deletion(self):
+        """When a directory was deleted on another machine (missing remotely), delete it locally."""
+        from state_db import FileRecord
+
+        sync_folder = self.temp_dir / "sync_remote_del"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.server_url = "https://mock.local"
+        self.config.username = "test_user"
+        self.engine._running = True
+
+        # Local directory exists on this machine
+        local_dir = sync_folder / "remote_deleted_project"
+        local_sub = local_dir / "sub"
+        local_sub.mkdir(parents=True)
+        local_file = local_sub / "code.py"
+        local_file.write_text("print('hello')", encoding="utf-8")
+
+        # Tracked in state_db
+        self.db.upsert_record(FileRecord(rel_path="remote_deleted_project", is_dir=True, last_sync_time=time.time()))
+        self.db.upsert_record(FileRecord(rel_path="remote_deleted_project/sub/code.py", local_size=len("print('hello')"), last_sync_time=time.time()))
+
+        # Remote has NOTHING (directory was deleted remotely)
+        self.client.test_connection = lambda: (True, "OK")
+        self.client.ensure_remote_dir_exists = lambda path: True
+        self.client.list_recursive = lambda path: []
+
+        self.engine.reconcile_all()
+
+        # Local directory must be deleted locally!
+        self.assertFalse(local_dir.exists())
+        # State DB records purged
+        self.assertFalse(self.db.is_tracked("remote_deleted_project"))
+
+    def test_reconcile_all_remote_dir_deleted_preserves_untracked_local_file(self):
+        """If remote folder was deleted, but user created a new untracked local file in it, preserve it!"""
+        from state_db import FileRecord
+
+        sync_folder = self.temp_dir / "sync_safety"
+        sync_folder.mkdir()
+        self.config.local_path = sync_folder
+        self.config.server_url = "https://mock.local"
+        self.config.username = "test_user"
+        self.engine._running = True
+
+        local_dir = sync_folder / "safety_project"
+        local_dir.mkdir()
+        # Brand new local file NOT in state_db
+        new_file = local_dir / "important_new_notes.txt"
+        new_file.write_text("critical user work", encoding="utf-8")
+
+        # Only the directory itself was in state_db, not this new file
+        self.db.upsert_record(FileRecord(rel_path="safety_project", is_dir=True, last_sync_time=time.time()))
+
+        self.client.test_connection = lambda: (True, "OK")
+        self.client.ensure_remote_dir_exists = lambda path: True
+        self.client.list_recursive = lambda path: []
+        created_dirs = []
+        self.client.create_directory = lambda path: created_dirs.append(path) or True
+        self.client.upload_file = lambda src, dst: True
+
+        self.engine.reconcile_all()
+
+        # User's new file must NOT be deleted!
+        self.assertTrue(new_file.exists())
+        self.assertEqual(new_file.read_text(encoding="utf-8"), "critical user work")
 
 
 if __name__ == "__main__":

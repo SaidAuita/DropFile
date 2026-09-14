@@ -166,10 +166,37 @@ class StateDatabase:
             conn.commit()
 
     def delete_record(self, rel_path: str) -> None:
-        clean_path = rel_path.replace("\\", "/").lstrip("/")
+        clean_path = rel_path.replace("\\", "/").strip("/.")
         with self._lock, self._get_connection() as conn:
             conn.execute("DELETE FROM file_states WHERE rel_path = ?", (clean_path,))
             conn.commit()
+
+    def delete_record_and_children(self, rel_path: str) -> int:
+        """Deletes record for rel_path and any child records whose path starts with rel_path + '/'."""
+        clean_path = rel_path.replace("\\", "/").strip("/.")
+        if not clean_path:
+            return 0
+        prefix = clean_path + "/%"
+        with self._lock, self._get_connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM file_states WHERE rel_path = ? OR rel_path LIKE ?",
+                (clean_path, prefix),
+            )
+            conn.commit()
+            return cur.rowcount
+
+    def is_tracked(self, rel_path: str) -> bool:
+        """Returns True if rel_path itself or any child records exist in file_states."""
+        clean_path = rel_path.replace("\\", "/").strip("/.")
+        if not clean_path:
+            return False
+        prefix = clean_path + "/%"
+        with self._lock, self._get_connection() as conn:
+            cur = conn.execute(
+                "SELECT 1 FROM file_states WHERE rel_path = ? OR rel_path LIKE ? LIMIT 1",
+                (clean_path, prefix),
+            )
+            return cur.fetchone() is not None
 
     def log_sync(
         self,

@@ -54,6 +54,8 @@ class SyncEngine:
 
         # Debounce dictionary for local file events: rel_path -> last event timestamp
         self._pending_local_events: Dict[str, float] = {}
+        # Debounce dictionary for local directory events: rel_path -> (timestamp, event_type)
+        self._pending_local_dir_events: Dict[str, Tuple[float, str]] = {}
         self._pending_lock = threading.Lock()
         self._debounce_seconds = 2.0
 
@@ -193,6 +195,26 @@ class SyncEngine:
         with self._pending_lock:
             self._pending_local_events[rel] = time.time()
 
+    def on_local_directory_event(self, local_abs_path: str, event_type: str) -> None:
+        """Called by watchdog when a directory event (create/delete) is detected locally."""
+        if not self._running or self._paused:
+            return
+
+        try:
+            rel = os.path.relpath(local_abs_path, str(self.config.local_path)).replace("\\", "/")
+        except ValueError:
+            return
+
+        clean_rel = rel.strip("/.")
+        if not clean_rel or self.is_ignored(local_abs_path):
+            return
+
+        if self._is_suppressed(clean_rel):
+            return
+
+        with self._pending_lock:
+            self._pending_local_dir_events[clean_rel] = (time.time(), event_type)
+
     def _check_config_reload(self) -> None:
         """Checks if config.json was modified on disk and reloads configuration dynamically."""
         try:
@@ -236,7 +258,19 @@ class SyncEngine:
                 self._check_config_reload()
                 now = time.time()
 
-                # Process debounced local changes
+                # Process debounced local directory changes
+                dir_events_to_process = []
+                with self._pending_lock:
+                    for rel, (timestamp, ev_type) in list(self._pending_local_dir_events.items()):
+                        if now - timestamp >= self._debounce_seconds:
+                            dir_events_to_process.append((rel, ev_type))
+                            del self._pending_local_dir_events[rel]
+
+                for rel, ev_type in dir_events_to_process:
+                    if not self._paused:
+                        self._sync_single_local_directory(rel, ev_type)
+
+                # Process debounced local file changes
                 to_process = []
                 with self._pending_lock:
                     for rel, timestamp in list(self._pending_local_events.items()):
@@ -268,24 +302,75 @@ class SyncEngine:
 
             time.sleep(0.5)
 
+    def _sync_single_local_directory(self, rel_path: str, event_type: str) -> None:
+        """Handles local directory creation or deletion."""
+        if not self.config.server_url or not self.config.username:
+            return
+
+        clean_rel = rel_path.replace("\\", "/").strip("/.")
+        if not clean_rel:
+            return
+
+        local_dir = self.config.local_path / clean_rel
+
+        with self._sync_lock:
+            if event_type == "deleted" or not local_dir.exists():
+                # Directory was deleted locally
+                if self.state_db.is_tracked(clean_rel):
+                    self.set_status(t("status_deleting_remote", file=clean_rel), "syncing")
+                    remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                    ok = self.client.delete_resource(remote_dest)
+                    if ok:
+                        self.state_db.delete_record_and_children(clean_rel)
+                        self.state_db.log_sync(
+                            clean_rel,
+                            "delete",
+                            "local->remote",
+                            "success",
+                            "Directory deleted locally",
+                        )
+                        print(f"[SyncEngine] Deleted remote directory: {clean_rel}")
+                    else:
+                        self.state_db.log_sync(
+                            clean_rel,
+                            "delete",
+                            "local->remote",
+                            "error",
+                            "Remote directory delete failed",
+                        )
+                    self.set_status(t("status_synced"), "idle")
+
+            elif event_type == "created" and local_dir.is_dir():
+                # Directory was created locally
+                remote_dest = f"{self.config.remote_path}/{clean_rel}"
+                ok = self.client.create_directory(remote_dest)
+                if ok:
+                    rec = FileRecord(
+                        rel_path=clean_rel,
+                        is_dir=True,
+                        last_sync_time=time.time(),
+                    )
+                    self.state_db.upsert_record(rec)
+                    self.state_db.log_sync(clean_rel, "create_dir", "local->remote", "success")
+                    print(f"[SyncEngine] Created remote directory: {clean_rel}")
+
     def _sync_single_local_file(self, rel_path: str) -> None:
         """Uploads a local file or handles its local deletion."""
         if not self.config.server_url or not self.config.username:
             return
 
         local_file = self.config.local_path / rel_path
-        clean_rel = rel_path.replace("\\", "/").lstrip("/")
+        clean_rel = rel_path.replace("\\", "/").strip("/.")
 
         with self._sync_lock:
             if not local_file.exists():
-                # File was deleted locally
-                rec = self.state_db.get_record(clean_rel)
-                if rec:
+                # File or directory was deleted locally
+                if self.state_db.is_tracked(clean_rel):
                     self.set_status(t("status_deleting_remote", file=clean_rel), "syncing")
                     remote_file_path = f"{self.config.remote_path}/{clean_rel}"
                     ok = self.client.delete_resource(remote_file_path)
                     if ok:
-                        self.state_db.delete_record(clean_rel)
+                        self.state_db.delete_record_and_children(clean_rel)
                         self.state_db.log_sync(clean_rel, "delete", "local->remote", "success")
                         print(f"[SyncEngine] Deleted remotely: {clean_rel}")
                     else:
@@ -378,44 +463,150 @@ class SyncEngine:
 
             # 2. Fetch remote tree
             remote_items = self.client.list_recursive(self.config.remote_path)
-            remote_dict: Dict[str, RemoteItem] = {}
+            remote_files: Dict[str, RemoteItem] = {}
+            remote_dirs: Dict[str, RemoteItem] = {}
 
             root_prefix = self.config.remote_path.strip("/")
             for item in remote_items:
                 clean_p = item.path.strip("/")
                 if clean_p.lower().startswith(root_prefix.lower()):
-                    rel = clean_p[len(root_prefix):].lstrip("/")
+                    rel = clean_p[len(root_prefix):].strip("/.")
                 else:
-                    rel = clean_p
+                    rel = clean_p.strip("/.")
                 if not rel or self.is_ignored(rel):
                     continue
 
                 if item.is_dir:
-                    (self.config.local_path / rel).mkdir(parents=True, exist_ok=True)
-                    continue
+                    remote_dirs[rel] = item
+                else:
+                    remote_files[rel] = item
 
-                remote_dict[rel] = item
-
-            # 3. Scan local files and ensure directories exist remotely
-            local_dict: Dict[str, Path] = {}
+            # 3. Scan local filesystem
+            local_dirs: Set[str] = set()
+            local_files: Dict[str, Path] = {}
             if self.config.local_path.exists():
                 for root, dirs, files in os.walk(self.config.local_path):
+                    # Filter ignored directories in-place so os.walk does not descend into them
+                    dirs[:] = [d for d in dirs if not self.is_ignored(Path(root) / d)]
                     for d in dirs:
                         full_d = Path(root) / d
-                        if not self.is_ignored(full_d):
-                            rel_d = str(full_d.relative_to(self.config.local_path)).replace("\\", "/")
-                            self.client.ensure_remote_dir_exists(f"{self.config.remote_path}/{rel_d}")
+                        rel_d = str(full_d.relative_to(self.config.local_path)).replace("\\", "/").strip("/.")
+                        if rel_d:
+                            local_dirs.add(rel_d)
                     for file in files:
                         full_path = Path(root) / file
                         if self.is_ignored(full_path):
                             continue
-                        rel = str(full_path.relative_to(self.config.local_path)).replace("\\", "/")
-                        local_dict[rel] = full_path
+                        rel = str(full_path.relative_to(self.config.local_path)).replace("\\", "/").strip("/.")
+                        if rel:
+                            local_files[rel] = full_path
 
-            # 4. Process all tracked files from State DB
+            # 4. Load state records
             state_records = self.state_db.get_all_records()
+            state_dirs = {r.rel_path: r for r in state_records.values() if r.is_dir}
+            state_files = {r.rel_path: r for r in state_records.values() if not r.is_dir}
 
-            all_rel_paths = set(remote_dict.keys()) | set(local_dict.keys()) | set(state_records.keys())
+            # -----------------------------------------------------------------
+            # PHASE 1: Reconcile Directories (Bidirectional)
+            # -----------------------------------------------------------------
+            deleted_dir_prefixes: Set[str] = set()
+            all_dir_paths = sorted(
+                set(remote_dirs.keys()) | local_dirs | set(state_dirs.keys()),
+                key=lambda p: (len(p.split("/")), p)
+            )
+
+            for d in all_dir_paths:
+                if self._paused or not self._running:
+                    break
+
+                # If parent directory was already deleted, skip child
+                if any(d == p or d.startswith(p + "/") for p in deleted_dir_prefixes):
+                    continue
+
+                in_remote = d in remote_dirs
+                in_local = d in local_dirs
+                in_state = d in state_dirs or self.state_db.is_tracked(d)
+
+                # Case D1: Directory on remote, but NOT on local disk
+                if in_remote and not in_local:
+                    if in_state:
+                        # User deleted directory locally -> delete on remote
+                        self.set_status(t("status_deleting_remote", file=d), "syncing")
+                        remote_dir_path = f"{self.config.remote_path}/{d}"
+                        ok = self.client.delete_resource(remote_dir_path)
+                        if ok:
+                            self.state_db.delete_record_and_children(d)
+                            self.state_db.log_sync(d, "delete", "local->remote", "success", "Directory deleted locally")
+                            deleted_dir_prefixes.add(d)
+                            print(f"[SyncEngine] Deleted remote directory (deleted locally): {d}")
+                        else:
+                            self.state_db.log_sync(d, "delete", "local->remote", "error", "Remote directory delete failed")
+                    else:
+                        # New directory from another computer -> create locally
+                        local_target_dir = self.config.local_path / d
+                        local_target_dir.mkdir(parents=True, exist_ok=True)
+                        rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
+                        self.state_db.upsert_record(rec)
+                        self.state_db.log_sync(d, "create_dir", "remote->local", "success")
+                        print(f"[SyncEngine] Created local directory: {d}")
+
+                # Case D2: Directory on local, but NOT on remote
+                elif in_local and not in_remote:
+                    if in_state:
+                        # Directory was deleted remotely on the server!
+                        local_dir_path = self.config.local_path / d
+                        # Check if local folder contains any untracked (new) files
+                        has_untracked_files = any(
+                            (rel == d or rel.startswith(d + "/")) and rel not in state_records
+                            for rel in local_files.keys()
+                        )
+                        if not has_untracked_files:
+                            # Safe to delete local directory
+                            self.set_status(t("status_deleting_local", file=d), "syncing")
+                            self._suppress(d, duration=5.0)
+                            try:
+                                shutil.rmtree(str(local_dir_path), ignore_errors=True)
+                                self.state_db.delete_record_and_children(d)
+                                self.state_db.log_sync(d, "delete", "remote->local", "success", "Directory deleted remotely")
+                                deleted_dir_prefixes.add(d)
+                                print(f"[SyncEngine] Deleted local directory (deleted remotely): {d}")
+                            except Exception as e:
+                                print(f"[SyncEngine] Error removing local directory {d}: {e}")
+                        else:
+                            # Keep untracked files and re-upload directory to server
+                            remote_dir_path = f"{self.config.remote_path}/{d}"
+                            self.client.create_directory(remote_dir_path)
+                            rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
+                            self.state_db.upsert_record(rec)
+                    else:
+                        # New directory created locally -> create on remote
+                        remote_dir_path = f"{self.config.remote_path}/{d}"
+                        self.client.create_directory(remote_dir_path)
+                        rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
+                        self.state_db.upsert_record(rec)
+                        self.state_db.log_sync(d, "create_dir", "local->remote", "success")
+                        print(f"[SyncEngine] Created remote directory: {d}")
+
+                # Case D3: Directory on both local and remote
+                elif in_local and in_remote:
+                    if d not in state_dirs:
+                        rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
+                        self.state_db.upsert_record(rec)
+
+                # Case D4: Tracked in state_db but exists neither locally nor remotely
+                elif in_state:
+                    self.state_db.delete_record(d)
+
+            # -----------------------------------------------------------------
+            # PHASE 2: Reconcile Files
+            # -----------------------------------------------------------------
+            # Refresh state records after directory phase
+            state_records = self.state_db.get_all_records()
+            state_files = {r.rel_path: r for r in state_records.values() if not r.is_dir}
+
+            all_rel_paths = (
+                set(remote_files.keys()) | set(local_files.keys()) | set(state_files.keys())
+            )
 
             downloads_count = 0
             uploads_count = 0
@@ -424,15 +615,19 @@ class SyncEngine:
                 if self._paused or not self._running:
                     break
 
-                in_remote = rel in remote_dict
-                in_local = rel in local_dict
-                in_state = rel in state_records
+                # If the file belongs to a directory that was deleted in Phase 1, skip it!
+                if any(rel == p or rel.startswith(p + "/") for p in deleted_dir_prefixes):
+                    continue
+
+                in_remote = rel in remote_files
+                in_local = rel in local_files
+                in_state = rel in state_files
 
                 # Case A: File exists both locally and remotely
                 if in_remote and in_local:
-                    r_item = remote_dict[rel]
-                    l_file = local_dict[rel]
-                    rec = state_records.get(rel)
+                    r_item = remote_files[rel]
+                    l_file = local_files[rel]
+                    rec = state_files.get(rel)
 
                     l_stat = l_file.stat()
                     l_mtime = l_stat.st_mtime
@@ -480,8 +675,8 @@ class SyncEngine:
 
                 # Case B: File is on remote, but NOT on local disk
                 elif in_remote and not in_local:
-                    rec = state_records.get(rel)
-                    r_item = remote_dict[rel]
+                    rec = state_files.get(rel)
+                    r_item = remote_files[rel]
 
                     if in_state:
                         # File was previously synced, but user deleted it locally -> Delete remotely
@@ -498,8 +693,8 @@ class SyncEngine:
 
                 # Case C: File is on local, but NOT on remote
                 elif in_local and not in_remote:
-                    rec = state_records.get(rel)
-                    l_file = local_dict[rel]
+                    rec = state_files.get(rel)
+                    l_file = local_files[rel]
 
                     if in_state:
                         # File was deleted remotely on the server -> Delete locally
@@ -554,18 +749,20 @@ class SyncEngine:
             remote_items = self.client.list_recursive(self.config.remote_path)
             root_prefix = self.config.remote_path.strip("/")
 
-            # 1. First pass: ensure all directories exist locally
+            # 1. First pass: ensure all directories exist locally and track them
             for item in remote_items:
                 clean_p = item.path.strip("/")
                 if clean_p.lower().startswith(root_prefix.lower()):
-                    rel = clean_p[len(root_prefix):].lstrip("/")
+                    rel = clean_p[len(root_prefix):].strip("/.")
                 else:
-                    rel = clean_p
+                    rel = clean_p.strip("/.")
                 if not rel or self.is_ignored(rel):
                     continue
 
                 if item.is_dir:
                     (self.config.local_path / rel).mkdir(parents=True, exist_ok=True)
+                    rec = FileRecord(rel_path=rel, is_dir=True, last_sync_time=time.time())
+                    self.state_db.upsert_record(rec)
 
             # 2. Second pass: download missing files or files needing update
             for item in remote_items:
@@ -1097,7 +1294,9 @@ class LocalFolderHandler(FileSystemEventHandler):
         self.engine = engine
 
     def on_created(self, event):
-        if not event.is_directory:
+        if event.is_directory:
+            self.engine.on_local_directory_event(event.src_path, "created")
+        else:
             self.engine.on_local_event(event.src_path, "created")
 
     def on_modified(self, event):
@@ -1105,10 +1304,15 @@ class LocalFolderHandler(FileSystemEventHandler):
             self.engine.on_local_event(event.src_path, "modified")
 
     def on_deleted(self, event):
-        if not event.is_directory:
+        if event.is_directory:
+            self.engine.on_local_directory_event(event.src_path, "deleted")
+        else:
             self.engine.on_local_event(event.src_path, "deleted")
 
     def on_moved(self, event):
-        if not event.is_directory:
+        if event.is_directory:
+            self.engine.on_local_directory_event(event.src_path, "deleted")
+            self.engine.on_local_directory_event(event.dest_path, "created")
+        else:
             self.engine.on_local_event(event.src_path, "deleted")
             self.engine.on_local_event(event.dest_path, "created")
