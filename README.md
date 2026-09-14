@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS%2010.15%2B-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.16-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.17-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
