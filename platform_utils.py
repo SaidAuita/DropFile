@@ -387,8 +387,107 @@ def spawn_settings_process(script_path: Optional[Path | str] = None) -> Optional
         return None
 
 
-def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
-    """Spawns a new independent instance of DropFile and returns."""
+def send_instance_command(cmd: bytes, port: int = 49195, timeout: float = 1.5) -> bool:
+    """Sends a binary command (e.g. b'QUIT\\n', b'SHOW_SETTINGS\\n') to the running DropFile instance via IPC."""
+    import socket
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(("127.0.0.1", port))
+        payload = cmd if cmd.endswith(b"\n") else cmd + b"\n"
+        s.sendall(payload)
+        s.close()
+        return True
+    except Exception:
+        if s:
+            try:
+                s.close()
+            except Exception:
+                pass
+        return False
+
+
+def _force_kill_other_dropfile_processes(port: int = 49195) -> None:
+    """Terminates other running DropFile processes (excluding current process)."""
+    current_pid = os.getpid()
+    if sys.platform == "darwin":
+        import signal
+        try:
+            # 1. Kill any process holding port
+            res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                for p_str in res.stdout.strip().splitlines():
+                    try:
+                        p = int(p_str.strip())
+                        if p != current_pid:
+                            os.kill(p, signal.SIGKILL)
+                    except Exception:
+                        pass
+
+            # 2. Kill other DropFile.pyw processes
+            res2 = subprocess.run(["pgrep", "-f", "DropFile.pyw"], capture_output=True, text=True)
+            if res2.returncode == 0 and res2.stdout.strip():
+                for p_str in res2.stdout.strip().splitlines():
+                    try:
+                        p = int(p_str.strip())
+                        if p != current_pid:
+                            os.kill(p, signal.SIGKILL)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[platform_utils] macOS process cleanup error: {e}")
+
+    elif sys.platform.startswith("win"):
+        try:
+            if getattr(sys, "frozen", False):
+                subprocess.run(
+                    ["taskkill", "/f", "/fi", f"PID ne {current_pid}", "/im", "DropFile.exe"],
+                    capture_output=True,
+                    creationflags=0x08000000,
+                )
+        except Exception:
+            pass
+
+
+def stop_running_instance(port: int = 49195, timeout: float = 3.0) -> bool:
+    """
+    Stops any running DropFile instance gracefully via IPC.
+    Falls back to OS process termination if it does not exit within timeout.
+    """
+    import socket
+    import time
+
+    # 1. Try graceful IPC QUIT
+    send_instance_command(b"QUIT\n", port=port, timeout=1.0)
+
+    # 2. Wait for socket to become free
+    start_t = time.time()
+    while time.time() - start_t < timeout:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.4)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            time.sleep(0.2)
+        except Exception:
+            # Port is free!
+            return True
+
+    # 3. Force kill if still holding the port or running
+    _force_kill_other_dropfile_processes(port=port)
+    time.sleep(0.5)
+    return True
+
+
+def restart_dropfile(script_path: Optional[Path | str] = None, kill_existing: bool = True) -> bool:
+    """
+    Spawns a new independent instance of DropFile.
+    If kill_existing is True, ensures any running background instance is terminated first.
+    """
+    if kill_existing:
+        stop_running_instance()
+
     if sys.platform == "darwin":
         try:
             if getattr(sys, "frozen", False):
@@ -398,12 +497,12 @@ def restart_dropfile(script_path: Optional[Path | str] = None) -> bool:
                         app_bundle = parent
                         break
                 if app_bundle:
-                    subprocess.Popen(["open", "-n", str(app_bundle)])
+                    subprocess.Popen(["open", "-n", str(app_bundle)], close_fds=True)
                 else:
-                    subprocess.Popen([sys.executable])
+                    subprocess.Popen([sys.executable], close_fds=True)
             else:
                 target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
-                subprocess.Popen([sys.executable, str(target)], cwd=str(target.parent))
+                subprocess.Popen([sys.executable, str(target)], cwd=str(target.parent), close_fds=True)
             return True
         except Exception as e:
             print(f"[platform_utils] macOS restart error: {e}")
@@ -500,13 +599,20 @@ def acquire_single_instance_lock() -> bool:
             lock_file = lock_dir / "dropfile.instance.lock"
             f = open(lock_file, "a+")
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                f.seek(0)
+                f.truncate()
+                f.write(f"{os.getpid()}\n")
+                f.flush()
+            except Exception:
+                pass
             _SINGLE_INSTANCE_HANDLE = f
             return True
         except (IOError, BlockingIOError, PermissionError):
             return False
         except Exception as e:
             print(f"[platform_utils] Unix flock lock error: {e}")
-            return True
+            return False
     return True
 
 

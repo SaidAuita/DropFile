@@ -19,6 +19,8 @@ from platform_utils import (
     spawn_settings_process,
     acquire_single_instance_lock,
     release_single_instance_lock,
+    send_instance_command,
+    stop_running_instance,
 )
 
 

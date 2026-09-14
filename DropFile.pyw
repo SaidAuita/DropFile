@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Add project directory to sys.path and set cwd
 BASE_DIR = Path(__file__).resolve().parent
@@ -100,6 +100,7 @@ from version import __version__
 
 SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None
+_CLEANUP_CALLBACK: Optional[Callable[[], None]] = None
 
 
 def release_instance_socket() -> None:
@@ -114,9 +115,41 @@ def release_instance_socket() -> None:
     release_single_instance_lock()
 
 
+def _handle_duplicate_instance() -> None:
+    """Signals existing instance to show settings and terminates the duplicate process immediately."""
+    try:
+        notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        notify_s.settimeout(2.0)
+        notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
+        notify_s.sendall(b"SHOW_SETTINGS\n")
+        notify_s.close()
+    except Exception:
+        # If socket couldn't receive command, spawn settings directly
+        spawn_settings_process()
+
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'display notification "DropFile is already running in the top menu bar." with title "DropFile"',
+                ],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    print("[DropFile] Another instance of DropFile is already running. Exiting duplicate.")
+    sys.exit(0)
+
+
 def _start_instance_command_listener(sock: socket.socket) -> None:
-    """Background listener for commands (e.g. SHOW_SETTINGS) from second instances."""
+    """Background listener for commands (SHOW_SETTINGS, QUIT, RESTART) from other processes."""
     def listener():
+        global _CLEANUP_CALLBACK
         while sock and sock == INSTANCE_SOCKET:
             try:
                 conn, _ = sock.accept()
@@ -124,6 +157,25 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                 conn.close()
                 if b"SHOW_SETTINGS" in data:
                     spawn_settings_process()
+                elif b"QUIT" in data or b"TERMINATE" in data:
+                    print("[DropFile] IPC QUIT received. Shutting down...")
+                    if _CLEANUP_CALLBACK:
+                        try:
+                            _CLEANUP_CALLBACK()
+                        except Exception:
+                            pass
+                    release_instance_socket()
+                    os._exit(0)
+                elif b"RESTART" in data:
+                    print("[DropFile] IPC RESTART received. Restarting...")
+                    if _CLEANUP_CALLBACK:
+                        try:
+                            _CLEANUP_CALLBACK()
+                        except Exception:
+                            pass
+                    release_instance_socket()
+                    restart_dropfile(kill_existing=False)
+                    os._exit(0)
             except Exception:
                 break
 
@@ -133,56 +185,30 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
 
 def ensure_single_instance() -> Optional[socket.socket]:
     """
-    Ensures only one background instance of DropFile runs at a time.
-    Uses Win32 Named Mutex on Windows / fcntl.flock on macOS/Linux for race-free protection,
-    plus a TCP socket listener on localhost:49195 for SHOW_SETTINGS command handover.
+    Ensures strictly one background instance of DropFile runs at a time.
+    Requires BOTH:
+    1. OS-level exclusive lock (Win32 Mutex on Windows / fcntl.flock on macOS/Linux).
+    2. TCP socket bind on localhost:49195.
+    If EITHER fails, another instance is already running -> signal it and exit immediately.
     """
     global INSTANCE_SOCKET
 
     # 1. OS-level atomic single-instance lock
     if not acquire_single_instance_lock():
-        # Another instance is actively running. Notify it to open Settings.
-        try:
-            notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            notify_s.settimeout(2.0)
-            notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
-            notify_s.sendall(b"SHOW_SETTINGS\n")
-            notify_s.close()
-        except Exception:
-            # If socket couldn't receive command, spawn settings directly
-            spawn_settings_process()
+        _handle_duplicate_instance()
 
-        if sys.platform == "darwin":
-            try:
-                import subprocess
-                subprocess.run(
-                    [
-                        "osascript",
-                        "-e",
-                        'display notification "DropFile is already running in the top menu bar." with title "DropFile"',
-                    ],
-                    capture_output=True,
-                    timeout=5,
-                )
-            except Exception:
-                pass
-
-        print("[DropFile] Another instance of DropFile is already running. Showing settings.")
-        sys.exit(0)
-
-    # 2. We are the unique primary instance. Bind IPC command socket listener
+    # 2. Bind IPC command socket listener (strictly exclusive)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if sys.platform != "win32":
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
         s.listen(2)
         INSTANCE_SOCKET = s
         _start_instance_command_listener(s)
         return s
     except Exception as e:
-        print(f"[DropFile] Warning: Could not bind single instance command port ({e}). Primary OS lock is active.")
-        return None
+        print(f"[DropFile] Socket port {SINGLE_INSTANCE_PORT} already bound ({e}). Another instance is running.")
+        release_single_instance_lock()
+        _handle_duplicate_instance()
 
 
 def main():
@@ -200,11 +226,19 @@ def main():
             password=config.password,
         )
         engine = SyncEngine(config=config, state_db=state_db, client=client)
+
+        def on_settings_process_restart():
+            print("[DropFile --settings] Restart requested. Terminating primary instance and launching new...")
+            restart_dropfile(kill_existing=True)
+            os._exit(0)
+
         settings_dialog = SettingsDialog(
             config=config,
             state_db=state_db,
             client=client,
             engine=engine,
+            on_restart_callback=on_settings_process_restart,
+            on_cleanup_callback=None,
         )
         settings_dialog.show()
         sys.exit(0)
@@ -263,11 +297,14 @@ def main():
         except Exception:
             pass
 
+    global _CLEANUP_CALLBACK
+    _CLEANUP_CALLBACK = on_cleanup
+
     # Callback when user clicks Save and Restart
     def on_restart():
         print("[DropFile] Restart requested. Spawning new process...")
         on_cleanup()
-        restart_dropfile()
+        restart_dropfile(kill_existing=False)
         os._exit(0)
 
     # 7. Initialize Settings Dialog

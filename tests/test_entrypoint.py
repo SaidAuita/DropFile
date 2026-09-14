@@ -132,6 +132,47 @@ class TestEntrypoint(unittest.TestCase):
         self.assertTrue(lock3)
         release_single_instance_lock()
 
+    def test_send_instance_command_and_socket_collision(self):
+        import socket
+        from platform_utils import send_instance_command
+        # Test command sending to port where nothing is listening (graceful False)
+        res = send_instance_command(b"TEST\n", port=49199, timeout=0.2)
+        self.assertFalse(res)
+
+        # Test command sending to active listener
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 49199))
+        server.listen(1)
+        try:
+            res2 = send_instance_command(b"HELLO\n", port=49199, timeout=1.0)
+            self.assertTrue(res2)
+            conn, _ = server.accept()
+            data = conn.recv(1024)
+            conn.close()
+            self.assertIn(b"HELLO", data)
+        finally:
+            server.close()
+
+    def test_ensure_single_instance_exits_on_socket_in_use(self):
+        import socket
+        from unittest.mock import patch
+        import DropFile
+
+        # Bind the port so ensure_single_instance encounters an in-use port
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            blocker.bind(("127.0.0.1", DropFile.SINGLE_INSTANCE_PORT))
+            blocker.listen(1)
+
+            # ensure_single_instance must call _handle_duplicate_instance which raises SystemExit
+            with self.assertRaises(SystemExit):
+                with patch("DropFile.acquire_single_instance_lock", return_value=True):
+                    with patch("DropFile.spawn_settings_process"):
+                        DropFile.ensure_single_instance()
+        finally:
+            blocker.close()
+            DropFile.release_single_instance_lock()
+
     def test_dual_server_config(self):
         import tempfile, shutil
         from config import Config
