@@ -129,6 +129,7 @@ fi
         "platform_utils.py",
         "state_db.py",
         "sync_engine.py",
+        "tray.py",
         "updater.py",
         "version.py",
         "win_utils.py",

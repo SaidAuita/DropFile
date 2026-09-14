@@ -441,8 +441,13 @@ def _force_kill_other_dropfile_processes(port: int = 49195) -> None:
     elif sys.platform.startswith("win"):
         try:
             if getattr(sys, "frozen", False):
+                parent_pid = os.getppid() if hasattr(os, "getppid") else 0
+                cmd = ["taskkill", "/f", "/fi", f"PID ne {current_pid}"]
+                if parent_pid and parent_pid > 0:
+                    cmd.extend(["/fi", f"PID ne {parent_pid}"])
+                cmd.extend(["/im", "DropFile.exe"])
                 subprocess.run(
-                    ["taskkill", "/f", "/fi", f"PID ne {current_pid}", "/im", "DropFile.exe"],
+                    cmd,
                     capture_output=True,
                     creationflags=0x08000000,
                 )

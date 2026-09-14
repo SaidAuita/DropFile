@@ -176,13 +176,21 @@ class DropFileTray:
 
     def _open_settings(self, icon=None, item=None) -> None:
         try:
-            if getattr(self, "_settings_proc", None) is not None:
-                if self._settings_proc.poll() is None:
-                    # Settings dialog is already open
-                    return
-                self._settings_proc = None
-
-            self._settings_proc = spawn_settings_process()
+            if sys.platform == "darwin":
+                if getattr(self, "_settings_proc", None) is not None:
+                    if self._settings_proc.poll() is None:
+                        return
+                    self._settings_proc = None
+                self._settings_proc = spawn_settings_process()
+            else:
+                if self.settings_dialog is not None:
+                    threading.Thread(target=self.settings_dialog.show, daemon=True).start()
+                else:
+                    if getattr(self, "_settings_proc", None) is not None:
+                        if self._settings_proc.poll() is None:
+                            return
+                        self._settings_proc = None
+                    self._settings_proc = spawn_settings_process()
         except Exception as e:
             print(f"[Tray] Error opening settings: {e}")
 
@@ -301,6 +309,17 @@ class DropFileTray:
 
         # Start the sync engine
         self.engine.start()
+
+        # Show initial notification that DropFile is active in the tray
+        if self.config.notify_on_sync:
+            def notify_ready():
+                import time
+                time.sleep(1.2)
+                try:
+                    self.send_notification("DropFile", t("tray_running_notify", version=__version__))
+                except Exception:
+                    pass
+            threading.Thread(target=notify_ready, daemon=True).start()
 
         # Run tray loop
         self._icon.run()

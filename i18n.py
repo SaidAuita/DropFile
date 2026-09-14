@@ -228,6 +228,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Coordinator: this computer (Active Leader)",
         "servers_sync_leader_other": "👥 Coordinator: {host} (Follower mode)",
         "servers_sync_leader_none": "⚪ Coordinator: not assigned (idle)",
+        "tray_running_notify": "DropFile v{version} is running in the system tray.",
+        "tray_already_running_notify": "DropFile is already running in the background.",
 
     },
     "ru": {
@@ -429,6 +431,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Координатор: этот компьютер (Лидер)",
         "servers_sync_leader_other": "👥 Координатор: {host} (ведомый режим)",
         "servers_sync_leader_none": "⚪ Координатор: не назначен",
+        "tray_running_notify": "DropFile v{version} запущена и работает в системном трее.",
+        "tray_already_running_notify": "DropFile уже работает в фоновом режиме.",
 
     },
     "de": {
@@ -622,6 +626,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Koordinator: dieser Computer (Leader)",
         "servers_sync_leader_other": "👥 Koordinator: {host} (Follower-Modus)",
         "servers_sync_leader_none": "⚪ Koordinator: nicht zugewiesen",
+        "tray_running_notify": "DropFile v{version} wird in der Taskleiste ausgeführt.",
+        "tray_already_running_notify": "DropFile läuft bereits im Hintergrund.",
 
     },
     "fr": {
@@ -815,6 +821,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Coordinateur : cet ordinateur (Leader)",
         "servers_sync_leader_other": "👥 Coordinateur : {host} (mode suiveur)",
         "servers_sync_leader_none": "⚪ Coordinateur : non assigné",
+        "tray_running_notify": "DropFile v{version} est actif dans la barre d'état système.",
+        "tray_already_running_notify": "DropFile est déjà en cours d'exécution en arrière-plan.",
 
     },
     "es": {
@@ -1008,6 +1016,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Coordinador: este equipo (Líder)",
         "servers_sync_leader_other": "👥 Coordinador: {host} (modo seguidor)",
         "servers_sync_leader_none": "⚪ Coordinador: no asignado",
+        "tray_running_notify": "DropFile v{version} se está ejecutando en la bandeja del sistema.",
+        "tray_already_running_notify": "DropFile ya se está ejecutando en segundo plano.",
 
     },
     "it": {
@@ -1201,6 +1211,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Coordinatore: questo computer (Leader)",
         "servers_sync_leader_other": "👥 Coordinatore: {host} (modalità follower)",
         "servers_sync_leader_none": "⚪ Coordinatore: non assegnato",
+        "tray_running_notify": "DropFile v{version} è in esecuzione nella barra delle applicazioni.",
+        "tray_already_running_notify": "DropFile è già in esecuzione in background.",
 
     },
     "pt": {
@@ -1394,6 +1406,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Coordenador: este computador (Líder)",
         "servers_sync_leader_other": "👥 Coordenador: {host} (modo seguidor)",
         "servers_sync_leader_none": "⚪ Coordenador: não atribuído",
+        "tray_running_notify": "O DropFile v{version} está em execução na bandeja do sistema.",
+        "tray_already_running_notify": "O DropFile já está em execução em segundo plano.",
 
     },
     "pl": {
@@ -1587,6 +1601,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 Koordynator: ten komputer (Lider)",
         "servers_sync_leader_other": "👥 Koordynator: {host} (tryb podrzędny)",
         "servers_sync_leader_none": "⚪ Koordynator: nieprzypisany",
+        "tray_running_notify": "DropFile v{version} działa w zasobniku systemowym.",
+        "tray_already_running_notify": "DropFile już działa w tle.",
 
     },
     "zh": {
@@ -1780,6 +1796,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 协调者：本机（主导 Leader）",
         "servers_sync_leader_other": "👥 协调者：{host}（从属模式）",
         "servers_sync_leader_none": "⚪ 协调者：未分配（空闲）",
+        "tray_running_notify": "DropFile v{version} 正在系统托盘中运行。",
+        "tray_already_running_notify": "DropFile 已在后台运行。",
 
     },
     "ja": {
@@ -1973,6 +1991,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "servers_sync_leader_self": "👑 コーディネーター：このPC（リーダー）",
         "servers_sync_leader_other": "👥 コーディネーター：{host}（フォロワー）",
         "servers_sync_leader_none": "⚪ コーディネーター：未割り当て",
+        "tray_running_notify": "DropFile v{version} はシステムトレイで実行中です。",
+        "tray_already_running_notify": "DropFile はすでにバックグラウンドで実行されています。",
 
     },
 }

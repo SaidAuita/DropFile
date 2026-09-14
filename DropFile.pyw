@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 # Add project directory to sys.path and set cwd
 BASE_DIR = Path(__file__).resolve().parent
@@ -115,6 +115,30 @@ def release_instance_socket() -> None:
     release_single_instance_lock()
 
 
+_SHOW_SETTINGS_FN: Optional[Callable[[], None]] = None
+_ACTIVE_SETTINGS_PROC: Optional[Any] = None
+
+
+def trigger_show_settings() -> None:
+    """Safely opens settings dialog or brings existing one to front without spawning duplicate processes."""
+    global _ACTIVE_SETTINGS_PROC, _SHOW_SETTINGS_FN
+    if sys.platform == "darwin":
+        if _ACTIVE_SETTINGS_PROC is not None:
+            if _ACTIVE_SETTINGS_PROC.poll() is None:
+                return
+            _ACTIVE_SETTINGS_PROC = None
+        _ACTIVE_SETTINGS_PROC = spawn_settings_process()
+    else:
+        if _SHOW_SETTINGS_FN is not None:
+            threading.Thread(target=_SHOW_SETTINGS_FN, daemon=True).start()
+        else:
+            if _ACTIVE_SETTINGS_PROC is not None:
+                if _ACTIVE_SETTINGS_PROC.poll() is None:
+                    return
+                _ACTIVE_SETTINGS_PROC = None
+            _ACTIVE_SETTINGS_PROC = spawn_settings_process()
+
+
 def _handle_duplicate_instance() -> None:
     """Signals existing instance to show settings and terminates the duplicate process immediately."""
     try:
@@ -123,9 +147,8 @@ def _handle_duplicate_instance() -> None:
         notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
         notify_s.sendall(b"SHOW_SETTINGS\n")
         notify_s.close()
-    except Exception:
-        # If socket couldn't receive command, spawn settings directly
-        spawn_settings_process()
+    except Exception as e:
+        print(f"[DropFile] Note: could not send SHOW_SETTINGS to existing instance: {e}")
 
     if sys.platform == "darwin":
         try:
@@ -143,7 +166,10 @@ def _handle_duplicate_instance() -> None:
             pass
 
     print("[DropFile] Another instance of DropFile is already running. Exiting duplicate.")
-    sys.exit(0)
+    if "unittest" in sys.modules or "pytest" in sys.modules:
+        sys.exit(0)
+    else:
+        os._exit(0)
 
 
 def _start_instance_command_listener(sock: socket.socket) -> None:
@@ -156,7 +182,7 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                 data = conn.recv(1024)
                 conn.close()
                 if b"SHOW_SETTINGS" in data:
-                    spawn_settings_process()
+                    trigger_show_settings()
                 elif b"QUIT" in data or b"TERMINATE" in data:
                     print("[DropFile] IPC QUIT received. Shutting down...")
                     if _CLEANUP_CALLBACK:
@@ -321,12 +347,16 @@ def main():
     else:
         settings_dialog = None
 
+    global _SHOW_SETTINGS_FN
+    if settings_dialog is not None:
+        _SHOW_SETTINGS_FN = settings_dialog.show
+
     # Prompt user with settings dialog if server URL or username is not configured
     if not config.server_url or not config.username:
         if SettingsDialog is None:
             _alert_missing_tkinter()
         else:
-            spawn_settings_process()
+            trigger_show_settings()
 
     # 8. Start System Tray
     tray = DropFileTray(

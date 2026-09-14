@@ -2,5 +2,5 @@
 DropFile version definition.
 """
 
-__version__ = "1.17"
+__version__ = "1.18"
 
