@@ -68,6 +68,18 @@ if [ "$HAS_DISPLAY" -eq 1 ]; then
     else
         echo "   -> Tkinter GUI support: OK"
     fi
+
+    # Check Ayatana AppIndicator for native system tray support in GNOME / Ubuntu
+    if ! "$PYTHON_BIN" -c "import gi; gi.require_version('AyatanaAppIndicator3', '0.1')" >/dev/null 2>&1 && \
+       ! "$PYTHON_BIN" -c "import gi; gi.require_version('AppIndicator3', '0.1')" >/dev/null 2>&1; then
+        echo "   ⚠️  Note: AppIndicator library is not installed."
+        echo "      For native system tray icon in Ubuntu/GNOME top panel, run:"
+        echo "      Ubuntu/Debian: sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1"
+        echo "      Fedora:        sudo dnf install -y libappindicator-gtk3 python3-gobject"
+        echo "      Arch Linux:    sudo pacman -S libayatana-appindicator python-gobject"
+    else
+        echo "   -> AppIndicator tray support: OK"
+    fi
 else
     echo "[2/5] Server / headless environment detected (no active DISPLAY). Skipping GUI checks."
 fi
@@ -76,8 +88,8 @@ fi
 echo "[3/5] Setting up Python virtual environment..."
 VENV_DIR="$SCRIPT_DIR/.venv"
 if [ ! -d "$VENV_DIR" ]; then
-    echo "   -> Creating virtual environment in $VENV_DIR..."
-    if ! "$PYTHON_BIN" -m venv "$VENV_DIR" 2>/dev/null; then
+    echo "   -> Creating virtual environment in $VENV_DIR (with system-site-packages)..."
+    if ! "$PYTHON_BIN" -m venv --system-site-packages "$VENV_DIR" 2>/dev/null; then
         echo "   ⚠️  python3-venv package may be missing. Attempting pip install without venv..."
         VENV_PYTHON="$PYTHON_BIN"
     else
@@ -85,6 +97,10 @@ if [ ! -d "$VENV_DIR" ]; then
     fi
 else
     VENV_PYTHON="$VENV_DIR/bin/python3"
+    # Ensure system site packages is enabled in existing pyvenv.cfg
+    if [ -f "$VENV_DIR/pyvenv.cfg" ]; then
+        sed -i 's/include-system-site-packages = false/include-system-site-packages = true/g' "$VENV_DIR/pyvenv.cfg" 2>/dev/null || true
+    fi
 fi
 
 echo "   -> Upgrading pip and installing dependencies..."

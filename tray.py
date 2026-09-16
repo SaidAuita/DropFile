@@ -67,19 +67,45 @@ class DropFileTray:
             name = item_info.get("name", "File")
             self.send_notification(t("notify_file_uploaded"), t("notify_share_ready", name=name))
 
+    def _get_safe_title(self, text: str) -> str:
+        """Returns a safe title string for tray icon, avoiding Latin-1 encoding errors in X11."""
+        # Use standard ASCII hyphen instead of Unicode em-dash (—)
+        title = f"DropFile - {text}"
+        try:
+            # On X11 (pystray._xorg), WM_NAME property is strictly Latin-1 encoded
+            title.encode("latin-1")
+            return title
+        except (UnicodeEncodeError, Exception):
+            # If text contains Cyrillic or non-Latin-1 characters on X11, fallback to ASCII
+            return f"DropFile v{__version__}"
+
     def update_status(self, text: str, state: str) -> None:
         """Called by sync engine to update tray icon and menu status."""
         self.current_status_text = t("tray_status_prefix", text=text)
         self.current_state = state
 
         if self._icon:
+            # 1. Update icon image
             try:
-                self._icon.title = f"DropFile — {text}"
                 self._icon.icon = create_tray_icon(state)
+            except Exception as e:
+                print(f"[Tray] Error updating icon image: {e}")
+
+            # 2. Update title/tooltip safely (never let title encoding block icon/menu update)
+            try:
+                self._icon.title = self._get_safe_title(text)
+            except Exception:
+                try:
+                    self._icon.title = f"DropFile v{__version__}"
+                except Exception:
+                    pass
+
+            # 3. Update menu
+            try:
                 self._icon.menu = self._build_menu()
                 self._icon.update_menu()
             except Exception as e:
-                print(f"[Tray] Error updating icon: {e}")
+                print(f"[Tray] Error updating menu: {e}")
 
     def send_notification(self, title: str, message: str) -> None:
         """Sends native desktop notification via tray icon."""
