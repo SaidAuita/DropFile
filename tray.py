@@ -108,12 +108,29 @@ class DropFileTray:
                 print(f"[Tray] Error updating menu: {e}")
 
     def send_notification(self, title: str, message: str) -> None:
-        """Sends native desktop notification via tray icon."""
-        if self._icon and self.config.notify_on_sync:
+        """Sends native desktop notification via tray icon or notify-send on Linux."""
+        if not self.config.notify_on_sync:
+            return
+
+        # 1. Try pystray built-in notification
+        if self._icon:
             try:
                 self._icon.notify(message, title)
-            except Exception as e:
-                print(f"[Tray] Notification error: {e}")
+                return
+            except Exception:
+                pass
+
+        # 2. Native fallback for Linux via notify-send
+        if sys.platform.startswith("linux"):
+            try:
+                import subprocess
+                subprocess.Popen(
+                    ["notify-send", "-a", "DropFile", title, message],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
 
     def _get_last_item(self) -> Optional[dict]:
         return self.engine.get_last_uploaded_item()
