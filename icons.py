@@ -87,6 +87,15 @@ def create_app_icon_ico(filepath: str | Path = "icon.ico") -> Path:
     return p
 
 
+def create_app_icon_png(filepath: str | Path = "icon.png", size: int = 256) -> Path:
+    """Renders a clean high-resolution PNG icon file for Linux and macOS."""
+    p = Path(filepath)
+    img = create_tray_icon("idle", size=size)
+    img.save(str(p), format="PNG")
+    return p
+
+
 if __name__ == "__main__":
     create_app_icon_ico("icon.ico")
-    print("Generated icon.ico successfully.")
+    create_app_icon_png("icon.png")
+    print("Generated icon.ico and icon.png successfully.")

@@ -122,7 +122,7 @@ fi
 mkdir -p "$SYNC_DIR"
 echo "   -> Local sync folder ready: $SYNC_DIR"
 
-if [ "$HAS_DISPLAY" -eq 1 ]; then
+if [ "$HAS_DISPLAY" -eq 1 ] || [ -d "$HOME/Desktop" ] || [ -d "$HOME/.local/share/applications" ]; then
     # Desktop shortcut
     DESKTOP_PATH="$HOME/Desktop"
     if command -v xdg-user-dir >/dev/null 2>&1; then
@@ -131,17 +131,19 @@ if [ "$HAS_DISPLAY" -eq 1 ]; then
             DESKTOP_PATH="$XDG_DESK"
         fi
     fi
-    if [ -d "$DESKTOP_PATH" ] && [ ! -e "$DESKTOP_PATH/DropFile" ]; then
+    # Local sync folder on Desktop if located elsewhere
+    if [ -d "$DESKTOP_PATH" ] && [ "$SYNC_DIR" != "$DESKTOP_PATH/DropFile" ] && [ ! -e "$DESKTOP_PATH/DropFile" ]; then
         ln -s "$SYNC_DIR" "$DESKTOP_PATH/DropFile" 2>/dev/null || true
-        echo "   -> Desktop symlink created: $DESKTOP_PATH/DropFile"
+        echo "   -> Desktop folder symlink created: $DESKTOP_PATH/DropFile"
     fi
 
     # Application menu entry (.desktop)
     APP_DIR="$HOME/.local/share/applications"
     mkdir -p "$APP_DIR"
-    RUNNER_BIN="$VENV_PYTHON"
-    MAIN_SCRIPT="$SCRIPT_DIR/DropFile.pyw"
-    ICON_PATH="$SCRIPT_DIR/icon.ico"
+    ICON_PATH="$SCRIPT_DIR/icon.png"
+    if [ ! -f "$ICON_PATH" ]; then
+        ICON_PATH="$SCRIPT_DIR/icon.ico"
+    fi
 
     cat > "$APP_DIR/dropfile.desktop" <<EOF
 [Desktop Entry]
@@ -149,7 +151,8 @@ Type=Application
 Name=DropFile
 GenericName=File Synchronization Client
 Comment=Lightweight Dropbox-style sync client for FileBrowser
-Exec=$RUNNER_BIN $MAIN_SCRIPT
+Exec=$SCRIPT_DIR/run_linux.sh
+Path=$SCRIPT_DIR
 Icon=$ICON_PATH
 Terminal=false
 Categories=Utility;FileTools;Network;
@@ -157,6 +160,14 @@ StartupNotify=false
 EOF
     chmod +x "$APP_DIR/dropfile.desktop"
     echo "   -> Application launcher registered: $APP_DIR/dropfile.desktop"
+
+    # Place clickable launcher icon on Desktop
+    if [ -d "$DESKTOP_PATH" ]; then
+        cp "$APP_DIR/dropfile.desktop" "$DESKTOP_PATH/DropFile.desktop"
+        chmod +x "$DESKTOP_PATH/DropFile.desktop"
+        gio set "$DESKTOP_PATH/DropFile.desktop" metadata::trusted true 2>/dev/null || true
+        echo "   -> Desktop application icon created: $DESKTOP_PATH/DropFile.desktop"
+    fi
 fi
 
 # 5. Systemd user service installation
