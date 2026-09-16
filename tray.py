@@ -318,6 +318,12 @@ class DropFileTray:
         else:
             self.engine.pause()
 
+    def _toggle_notifications(self, icon=None, item=None) -> None:
+        """Toggles sync notifications on/off and persists setting."""
+        self.config.notify_on_sync = not self.config.notify_on_sync
+        self.config.save()
+        self.refresh_menu()
+
     def _open_settings(self, icon=None, item=None) -> None:
         try:
             if sys.platform == "darwin":
@@ -432,6 +438,11 @@ class DropFileTray:
             item(
                 lambda text: t("tray_resume") if self.engine.is_paused() else t("tray_pause"),
                 self._toggle_pause,
+            ),
+            item(
+                lambda text: t("tray_notifications"),
+                self._toggle_notifications,
+                checked=lambda item: self.config.notify_on_sync,
             ),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_settings"), self._open_settings),
