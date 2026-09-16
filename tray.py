@@ -51,9 +51,10 @@ class DropFileTray:
         self._lock = threading.Lock()
 
         # Connect engine callbacks
-        self.engine.on_status_change = self.update_status
-        self.engine.on_notify = self.send_notification
-        self.engine.on_share_ready = self._on_share_ready
+        if self.engine is not None:
+            self.engine.on_status_change = self.update_status
+            self.engine.on_notify = self.send_notification
+            self.engine.on_share_ready = self._on_share_ready
 
     def _on_share_ready(self, item_info: dict, notify: bool = True) -> None:
         """Called when a file has just uploaded and its share link is prepared."""
@@ -108,11 +109,18 @@ class DropFileTray:
                 print(f"[Tray] Error updating menu: {e}")
 
     def send_notification(self, title: str, message: str) -> None:
-        """Sends native desktop notification via tray icon or notify-send on Linux."""
+        """Sends native desktop notification via tray icon or native desktop notification system."""
         if not self.config.notify_on_sync:
             return
 
-        # 1. Try pystray built-in notification
+        # On Linux, pystray's built-in notify passes empty app_name and empty hints,
+        # which causes GNOME / KDE to display "Unknown application" / "Неизвестное приложение"
+        # and leaves persistent banners. We handle Linux notifications directly.
+        if sys.platform.startswith("linux"):
+            self._send_linux_notification(title, message)
+            return
+
+        # On Windows / macOS, use pystray's native notification mechanism
         if self._icon:
             try:
                 self._icon.notify(message, title)
@@ -120,27 +128,110 @@ class DropFileTray:
             except Exception:
                 pass
 
-        # 2. Native fallback for Linux via notify-send
-        if sys.platform.startswith("linux"):
-            try:
-                import subprocess
-                from pathlib import Path
-                icon_path = Path(__file__).resolve().parent / "icon.png"
-                cmd = ["notify-send", "-a", "DropFile"]
-                if icon_path.exists():
-                    cmd.extend(["-i", str(icon_path)])
-                cmd.extend([
-                    "-h", "string:desktop-entry:dropfile",
-                    title,
-                    message,
-                ])
-                subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception:
-                pass
+    def _send_linux_notification(self, title: str, message: str) -> None:
+        """Linux native notification with full AppID, DropFile icon and auto-dismiss."""
+        from pathlib import Path
+        icon_path = Path(__file__).resolve().parent / "icon.png"
+
+        # 1. First priority: org.gtk.Notifications (native GNOME Shell / Ubuntu / Fedora)
+        # Guarantees application name 'DropFile' and proper icon without 'Unknown App' glitch.
+        try:
+            import gi
+            gi.require_version("Gio", "2.0")
+            from gi.repository import GLib, Gio
+
+            conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                conn,
+                0,
+                None,
+                "org.gtk.Notifications",
+                "/org/gtk/Notifications",
+                "org.gtk.Notifications",
+                None,
+            )
+            notif_dict = {
+                "title": GLib.Variant("s", title),
+                "body": GLib.Variant("s", message),
+                "priority": GLib.Variant("s", "normal"),
+            }
+            if icon_path.exists():
+                gicon = Gio.FileIcon.new(Gio.File.new_for_path(str(icon_path)))
+                notif_dict["icon"] = gicon.serialize()
+
+            proxy.call_sync(
+                "AddNotification",
+                GLib.Variant("(ssa{sv})", ("com.dropfile.DropFile", "sync_notification", notif_dict)),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None,
+            )
+            return
+        except Exception:
+            pass
+
+        # 2. Second priority: org.freedesktop.Notifications DBus (KDE Plasma, XFCE, etc.)
+        try:
+            import gi
+            gi.require_version("Gio", "2.0")
+            from gi.repository import GLib, Gio
+
+            conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                conn,
+                0,
+                None,
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+                None,
+            )
+            icon_str = str(icon_path) if icon_path.exists() else "dropfile"
+            hints = {
+                "desktop-entry": GLib.Variant("s", "com.dropfile.DropFile"),
+                "urgency": GLib.Variant("y", 1),
+            }
+            proxy.call_sync(
+                "Notify",
+                GLib.Variant(
+                    "(susssasa{sv}i)",
+                    (
+                        "DropFile",
+                        0,
+                        icon_str,
+                        title,
+                        message,
+                        [],
+                        hints,
+                        5000,
+                    ),
+                ),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                None,
+            )
+            return
+        except Exception:
+            pass
+
+        # 3. Third priority: notify-send CLI fallback
+        try:
+            import subprocess
+            cmd = ["notify-send", "-a", "DropFile", "-t", "5000"]
+            if icon_path.exists():
+                cmd.extend(["-i", str(icon_path)])
+            cmd.extend([
+                "-h", "string:desktop-entry:com.dropfile.DropFile",
+                title,
+                message,
+            ])
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
 
     def _get_last_item(self) -> Optional[dict]:
         return self.engine.get_last_uploaded_item()

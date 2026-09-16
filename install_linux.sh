@@ -57,6 +57,8 @@ if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
     HAS_DISPLAY=1
 fi
 
+if [ "$HAS_DISPLAY" -eq 1 ]; then
+    echo "[2/5] Checking Desktop GUI dependencies (Tkinter, AppIndicator)..."
     MISSING_PKGS=""
     if ! "$PYTHON_BIN" -c "import tkinter" >/dev/null 2>&1; then
         echo "   ⚠️  Note: Python Tkinter (_tkinter) is not installed."
@@ -150,12 +152,28 @@ if [ "$HAS_DISPLAY" -eq 1 ] || [ -d "$HOME/Desktop" ] || [ -d "$HOME/.local/shar
     # Application menu entry (.desktop)
     APP_DIR="$HOME/.local/share/applications"
     mkdir -p "$APP_DIR"
+    ICON_THEME_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+    mkdir -p "$ICON_THEME_DIR"
+
+    # Generate high-resolution icon.png if missing
+    if [ ! -f "$SCRIPT_DIR/icon.png" ]; then
+        "$VENV_PYTHON" -c "import sys; sys.path.insert(0, '$SCRIPT_DIR'); import icons; icons.create_app_icon_png('$SCRIPT_DIR/icon.png')" 2>/dev/null || true
+    fi
+
     ICON_PATH="$SCRIPT_DIR/icon.png"
     if [ ! -f "$ICON_PATH" ]; then
         ICON_PATH="$SCRIPT_DIR/icon.ico"
+    else
+        cp "$ICON_PATH" "$ICON_THEME_DIR/com.dropfile.DropFile.png" 2>/dev/null || true
+        cp "$ICON_PATH" "$ICON_THEME_DIR/dropfile.png" 2>/dev/null || true
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+        fi
     fi
 
-    cat > "$APP_DIR/dropfile.desktop" <<EOF
+    # Standard reverse-DNS desktop entry required by modern GNOME / FreeDesktop
+    rm -f "$APP_DIR/com.dropfile.DropFile.desktop" "$APP_DIR/dropfile.desktop" "$APP_DIR/DropFile.desktop"
+    cat > "$APP_DIR/com.dropfile.DropFile.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=DropFile
@@ -168,13 +186,18 @@ Terminal=false
 Categories=Utility;FileTools;Network;
 StartupNotify=false
 EOF
-    chmod +x "$APP_DIR/dropfile.desktop"
-    ln -sf "$APP_DIR/dropfile.desktop" "$APP_DIR/DropFile.desktop"
-    echo "   -> Application launcher registered: $APP_DIR/dropfile.desktop"
+    chmod +x "$APP_DIR/com.dropfile.DropFile.desktop"
+    rm -f "$APP_DIR/dropfile.desktop" "$APP_DIR/DropFile.desktop"
+    ln -s "$APP_DIR/com.dropfile.DropFile.desktop" "$APP_DIR/dropfile.desktop"
+    ln -s "$APP_DIR/com.dropfile.DropFile.desktop" "$APP_DIR/DropFile.desktop"
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$APP_DIR" 2>/dev/null || true
+    fi
+    echo "   -> Application launcher registered: $APP_DIR/com.dropfile.DropFile.desktop"
 
     # Place clickable launcher icon on Desktop
     if [ -d "$DESKTOP_PATH" ]; then
-        cp "$APP_DIR/dropfile.desktop" "$DESKTOP_PATH/DropFile.desktop"
+        cp "$APP_DIR/com.dropfile.DropFile.desktop" "$DESKTOP_PATH/DropFile.desktop"
         chmod +x "$DESKTOP_PATH/DropFile.desktop"
         gio set "$DESKTOP_PATH/DropFile.desktop" metadata::trusted true 2>/dev/null || true
         echo "   -> Desktop application icon created: $DESKTOP_PATH/DropFile.desktop"
