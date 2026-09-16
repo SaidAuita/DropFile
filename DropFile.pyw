@@ -36,9 +36,11 @@ from platform_utils import (
     acquire_single_instance_lock,
     create_desktop_shortcut,
     ensure_macos_tk_compatibility,
+    install_systemd_user_service,
     release_single_instance_lock,
     restart_dropfile,
     spawn_settings_process,
+    uninstall_systemd_user_service,
 )
 
 # Ensure macOS Tkinter [NSApp macOSVersion] selector compatibility
@@ -85,22 +87,22 @@ def _alert_missing_tkinter() -> None:
 
 try:
     from gui_settings import SettingsDialog
-except ModuleNotFoundError as _tk_err:
-    if "_tkinter" in str(_tk_err) or "tkinter" in str(_tk_err):
-        SettingsDialog = None
-    else:
-        raise
 except Exception:
     SettingsDialog = None
 
 from state_db import StateDatabase
 from sync_engine import SyncEngine
-from tray import DropFileTray
+try:
+    from tray import DropFileTray
+except Exception:
+    DropFileTray = None
 from version import __version__
 
 SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None
 _CLEANUP_CALLBACK: Optional[Callable[[], None]] = None
+_ENGINE_REF: Optional[Any] = None
+_CURRENT_STATUS: str = "Ready"
 
 
 def release_instance_socket() -> None:
@@ -139,6 +141,27 @@ def trigger_show_settings() -> None:
             _ACTIVE_SETTINGS_PROC = spawn_settings_process()
 
 
+def send_ipc_query(cmd: str, timeout: float = 2.0) -> Optional[str]:
+    """Sends an IPC command to the running DropFile instance and returns the reply string."""
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
+        payload = cmd.encode("utf-8") if cmd.endswith("\n") else (cmd + "\n").encode("utf-8")
+        s.sendall(payload)
+        response = s.recv(2048).decode("utf-8", errors="ignore").strip()
+        s.close()
+        return response
+    except Exception:
+        if s:
+            try:
+                s.close()
+            except Exception:
+                pass
+        return None
+
+
 def _handle_duplicate_instance() -> None:
     """Signals existing instance to show settings and terminates the duplicate process immediately."""
     try:
@@ -173,18 +196,35 @@ def _handle_duplicate_instance() -> None:
 
 
 def _start_instance_command_listener(sock: socket.socket) -> None:
-    """Background listener for commands (SHOW_SETTINGS, QUIT, RESTART) from other processes."""
+    """Background listener for IPC commands (SHOW_SETTINGS, STATUS, SYNC_NOW, PAUSE, RESUME, QUIT, RESTART)."""
     def listener():
-        global _CLEANUP_CALLBACK
+        global _CLEANUP_CALLBACK, _ENGINE_REF, _CURRENT_STATUS
         while sock and sock == INSTANCE_SOCKET:
             try:
                 conn, _ = sock.accept()
                 data = conn.recv(1024)
-                conn.close()
-                if b"SHOW_SETTINGS" in data:
+                if not data:
+                    conn.close()
+                    continue
+
+                cmd = data.strip().decode("utf-8", errors="ignore")
+
+                if cmd == "SHOW_SETTINGS":
                     trigger_show_settings()
-                elif b"QUIT" in data or b"TERMINATE" in data:
+                    try:
+                        conn.sendall(b"OK: Settings triggered\n")
+                    except Exception:
+                        pass
+                elif cmd in ("QUIT", "TERMINATE", "STOP"):
                     print("[DropFile] IPC QUIT received. Shutting down...")
+                    try:
+                        conn.sendall(b"OK: Shutting down\n")
+                    except Exception:
+                        pass
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
                     if _CLEANUP_CALLBACK:
                         try:
                             _CLEANUP_CALLBACK()
@@ -192,8 +232,16 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                             pass
                     release_instance_socket()
                     os._exit(0)
-                elif b"RESTART" in data:
+                elif cmd == "RESTART":
                     print("[DropFile] IPC RESTART received. Restarting...")
+                    try:
+                        conn.sendall(b"OK: Restarting\n")
+                    except Exception:
+                        pass
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
                     if _CLEANUP_CALLBACK:
                         try:
                             _CLEANUP_CALLBACK()
@@ -202,11 +250,86 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     release_instance_socket()
                     restart_dropfile(kill_existing=False)
                     os._exit(0)
+                elif cmd == "STATUS":
+                    state = _ENGINE_REF.current_state if _ENGINE_REF else "idle"
+                    reply = f"DropFile v{__version__} [{state}]: {_CURRENT_STATUS}\n"
+                    try:
+                        conn.sendall(reply.encode("utf-8"))
+                    except Exception:
+                        pass
+                elif cmd == "SYNC_NOW":
+                    if _ENGINE_REF:
+                        _ENGINE_REF.trigger_sync_now()
+                        try:
+                            conn.sendall(b"OK: Sync triggered\n")
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            conn.sendall(b"ERR: Engine not active\n")
+                        except Exception:
+                            pass
+                elif cmd == "PAUSE":
+                    if _ENGINE_REF:
+                        _ENGINE_REF.pause()
+                        try:
+                            conn.sendall(b"OK: Sync paused\n")
+                        except Exception:
+                            pass
+                elif cmd == "RESUME":
+                    if _ENGINE_REF:
+                        _ENGINE_REF.resume()
+                        try:
+                            conn.sendall(b"OK: Sync resumed\n")
+                        except Exception:
+                            pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             except Exception:
                 break
 
     t = threading.Thread(target=listener, daemon=True)
     t.start()
+
+
+def run_headless(config: Config, engine: SyncEngine) -> None:
+    """Runs the sync engine in headless / daemon mode without any GUI or system tray."""
+    import signal
+
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] DropFile v{__version__} running in headless daemon mode")
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Server URL:   {config.server_url or '(not configured)'}")
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Local Folder:  {config.local_path}")
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Remote Folder: {config.remote_path}")
+
+    stop_event = threading.Event()
+
+    def _sig_handler(sig, frame):
+        sig_name = "SIGTERM" if getattr(signal, "SIGTERM", None) == sig else "SIGINT"
+        print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Received {sig_name}. Stopping engine gracefully...")
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, _sig_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _sig_handler)
+
+    engine.start()
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Sync engine active. Press Ctrl+C or send SIGTERM/SIGINT to stop.")
+
+    try:
+        while not stop_event.is_set():
+            stop_event.wait(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Shutting down sync engine...")
+        try:
+            engine.stop()
+        except Exception:
+            pass
+        release_instance_socket()
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] DropFile daemon stopped cleanly.")
 
 
 def ensure_single_instance() -> Optional[socket.socket]:
@@ -238,6 +361,96 @@ def ensure_single_instance() -> Optional[socket.socket]:
 
 
 def main():
+    # 0. Handle CLI utility arguments
+    args = sys.argv[1:]
+    if "--help" in args or "-h" in args:
+        print(f"DropFile v{__version__} — Dropbox-style synchronization for FileBrowser\n")
+        print("Usage:")
+        print("  python3 DropFile.pyw [options]\n")
+        print("Options:")
+        print("  --headless, --daemon      Run as background daemon (no GUI / no system tray)")
+        print("  --settings                Open GUI Settings dialog")
+        print("  --status                  Query status of running background instance")
+        print("  --sync-now                Trigger immediate synchronization")
+        print("  --pause                   Pause synchronization")
+        print("  --resume                  Resume synchronization")
+        print("  --stop, --quit            Stop running background instance")
+        print("  --install-service         Install and enable systemd user service (Linux)")
+        print("  --uninstall-service       Uninstall systemd user service (Linux)")
+        print("  --version, -v             Display version and exit")
+        print("  --help, -h                Display this help message")
+        sys.exit(0)
+
+    if "--version" in args or "-v" in args:
+        print(f"DropFile v{__version__}")
+        sys.exit(0)
+
+    if "--status" in args:
+        res = send_ipc_query("STATUS")
+        if res:
+            print(res)
+            sys.exit(0)
+        else:
+            print("DropFile is not currently running.")
+            sys.exit(1)
+
+    if "--sync-now" in args:
+        res = send_ipc_query("SYNC_NOW")
+        if res:
+            print(res)
+            sys.exit(0)
+        else:
+            print("Error: DropFile is not running.")
+            sys.exit(1)
+
+    if "--pause" in args:
+        res = send_ipc_query("PAUSE")
+        if res:
+            print(res)
+            sys.exit(0)
+        else:
+            print("Error: DropFile is not running.")
+            sys.exit(1)
+
+    if "--resume" in args:
+        res = send_ipc_query("RESUME")
+        if res:
+            print(res)
+            sys.exit(0)
+        else:
+            print("Error: DropFile is not running.")
+            sys.exit(1)
+
+    if "--stop" in args or "--quit" in args:
+        res = send_ipc_query("QUIT")
+        if res:
+            print(res)
+            sys.exit(0)
+        else:
+            print("DropFile is not running.")
+            sys.exit(0)
+
+    if "--install-service" in args:
+        if sys.platform.startswith("linux"):
+            if install_systemd_user_service():
+                print("To start the service now, run:")
+                print("  systemctl --user start dropfile.service")
+                print("To view live logs:")
+                print("  journalctl --user -u dropfile.service -f")
+                sys.exit(0)
+            sys.exit(1)
+        else:
+            print("--install-service is only supported on Linux (systemd).")
+            sys.exit(1)
+
+    if "--uninstall-service" in args:
+        if sys.platform.startswith("linux"):
+            uninstall_systemd_user_service()
+            sys.exit(0)
+        else:
+            print("--uninstall-service is only supported on Linux (systemd).")
+            sys.exit(1)
+
     # If invoked with --settings, open Settings UI directly on the main thread
     if "--settings" in sys.argv:
         if SettingsDialog is None:
@@ -269,6 +482,17 @@ def main():
         settings_dialog.show()
         sys.exit(0)
 
+    # Detect headless mode (explicit flag or Linux server without DISPLAY)
+    is_headless = (
+        "--headless" in args
+        or "--daemon" in args
+        or (
+            sys.platform.startswith("linux")
+            and not os.environ.get("DISPLAY")
+            and not os.environ.get("WAYLAND_DISPLAY")
+        )
+    )
+
     # 1. Single instance lock
     _instance_sock = ensure_single_instance()
 
@@ -278,7 +502,7 @@ def main():
     # 3. Ensure local sync folder and optional desktop shortcut exist
     local_folder = config.local_path
     local_folder.mkdir(parents=True, exist_ok=True)
-    if config.desktop_shortcut:
+    if config.desktop_shortcut and not is_headless:
         create_desktop_shortcut(local_folder)
 
     # 4. Initialize Database
@@ -298,6 +522,16 @@ def main():
         state_db=state_db,
         client=client,
     )
+    global _ENGINE_REF
+    _ENGINE_REF = engine
+
+    def on_status_change(text: str, state: str):
+        global _CURRENT_STATUS
+        _CURRENT_STATUS = text
+        if is_headless:
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{state.upper()}] {text}")
+
+    engine.on_status_change = on_status_change
 
     # Callback when user updates settings in GUI
     def on_settings_saved():
@@ -305,7 +539,8 @@ def main():
         client.login()
         engine.trigger_sync_now()
         try:
-            tray.refresh_menu()
+            if 'tray' in locals() and tray:
+                tray.refresh_menu()
         except Exception:
             pass
 
@@ -318,7 +553,7 @@ def main():
         except Exception:
             pass
         try:
-            if 'tray' in locals() and tray._icon:
+            if 'tray' in locals() and tray and tray._icon:
                 tray._icon.stop()
         except Exception:
             pass
@@ -332,6 +567,11 @@ def main():
         on_cleanup()
         restart_dropfile(kill_existing=False)
         os._exit(0)
+
+    # If headless mode, run daemon directly without GUI or tray
+    if is_headless:
+        run_headless(config, engine)
+        sys.exit(0)
 
     # 7. Initialize Settings Dialog
     if SettingsDialog is not None:
@@ -358,6 +598,11 @@ def main():
         else:
             trigger_show_settings()
 
+    if DropFileTray is None:
+        print("[DropFile] Tray module not available. Running in headless daemon mode...")
+        run_headless(config, engine)
+        sys.exit(0)
+
     # 8. Start System Tray
     tray = DropFileTray(
         config=config,
@@ -370,6 +615,9 @@ def main():
         tray.run()
     except KeyboardInterrupt:
         engine.stop()
+    except Exception as e:
+        print(f"[DropFile] Tray encountered error ({e}). Falling back to headless daemon mode...")
+        run_headless(config, engine)
 
 
 def _handle_fatal_exception(exc: BaseException) -> None:
@@ -410,6 +658,16 @@ def _handle_fatal_exception(exc: BaseException) -> None:
                 f"DropFile encountered a fatal startup error:\n\n{str(exc)[:300]}\n\nLog: {crash_log}",
                 "DropFile Error",
                 0x10,
+            )
+        except Exception:
+            pass
+    elif sys.platform.startswith("linux"):
+        try:
+            msg_short = str(exc).replace('"', '\\"').replace("'", "")[:200]
+            subprocess.run(
+                ["notify-send", "-u", "critical", "DropFile Error", f"DropFile could not start:\n\n{msg_short}"],
+                capture_output=True,
+                timeout=5,
             )
         except Exception:
             pass

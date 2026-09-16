@@ -133,10 +133,24 @@ except ImportError:
     winreg = None
 
 
+def get_desktop_dir() -> Path:
+    """Returns the desktop directory path, respecting XDG user dirs on Linux."""
+    if sys.platform.startswith("linux"):
+        try:
+            res = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0 and res.stdout.strip():
+                p = Path(res.stdout.strip())
+                if p.exists():
+                    return p
+        except Exception:
+            pass
+    return Path.home() / "Desktop"
+
+
 def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "DropFile") -> bool:
     """Creates a shortcut or symlink on the user's Desktop pointing to target_folder."""
     target = Path(target_folder).resolve()
-    desktop = Path.home() / "Desktop"
+    desktop = get_desktop_dir()
 
     if sys.platform == "darwin":
         link_path = desktop / shortcut_name
@@ -173,20 +187,22 @@ def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "Dro
             print(f"[platform_utils] Error creating desktop shortcut: {e}")
             return False
     else:
-        # Linux symlink
-        link_path = desktop / shortcut_name
-        if not link_path.exists():
-            try:
-                os.symlink(target, link_path)
-                return True
-            except Exception:
-                pass
-        return False
+        # Linux symlink on Desktop + application menu entry
+        if desktop.exists():
+            link_path = desktop / shortcut_name
+            if not link_path.exists() and not link_path.is_symlink():
+                try:
+                    os.symlink(target, link_path)
+                    print(f"[platform_utils] Created Linux Desktop symlink: {link_path} -> {target}")
+                except Exception as e:
+                    print(f"[platform_utils] Note on Desktop symlink: {e}")
+        create_linux_app_menu_entry()
+        return True
 
 
 def remove_desktop_shortcut(shortcut_name: str = "DropFile") -> bool:
     """Removes the Desktop shortcut or symlink if it exists."""
-    desktop = Path.home() / "Desktop"
+    desktop = get_desktop_dir()
     candidates = [
         desktop / shortcut_name,
         desktop / f"{shortcut_name}.lnk",
@@ -287,6 +303,44 @@ def set_autostart(enable: bool, script_path: Optional[Path | str] = None) -> boo
         except Exception as e:
             print(f"[platform_utils] Error setting autostart: {e}")
             return False
+
+    elif sys.platform.startswith("linux"):
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "dropfile.desktop"
+        if enable:
+            autostart_dir.mkdir(parents=True, exist_ok=True)
+            if getattr(sys, "frozen", False):
+                exec_cmd = f'"{Path(sys.executable).resolve()}"'
+            else:
+                target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
+                exec_cmd = f'"{sys.executable}" "{target}"'
+            icon_path = Path(__file__).resolve().parent / "icon.ico"
+            content = f"""[Desktop Entry]
+Type=Application
+Name=DropFile
+Comment=DropFile Cloud Synchronization
+Exec={exec_cmd}
+Icon={icon_path}
+Terminal=false
+Categories=Utility;FileTools;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+"""
+            try:
+                desktop_file.write_text(content, encoding="utf-8")
+                print(f"[platform_utils] Linux autostart enabled: {desktop_file}")
+                return True
+            except Exception as e:
+                print(f"[platform_utils] Error setting Linux autostart: {e}")
+                return False
+        else:
+            if desktop_file.exists():
+                try:
+                    desktop_file.unlink()
+                    print(f"[platform_utils] Linux autostart disabled: {desktop_file}")
+                except Exception as e:
+                    print(f"[platform_utils] Error removing Linux autostart: {e}")
+            return True
     return False
 
 
@@ -303,11 +357,14 @@ def is_autostart_enabled() -> bool:
                 return bool(val)
         except Exception:
             return False
+    elif sys.platform.startswith("linux"):
+        desktop_file = Path.home() / ".config" / "autostart" / "dropfile.desktop"
+        return desktop_file.exists()
     return False
 
 
 def open_folder_in_file_manager(folder_path: Path | str) -> None:
-    """Opens a folder in Finder on macOS or File Explorer on Windows."""
+    """Opens a folder in Finder on macOS, File Explorer on Windows, or default manager on Linux."""
     p = Path(folder_path)
     p.mkdir(parents=True, exist_ok=True)
     if sys.platform == "darwin":
@@ -332,7 +389,7 @@ def copy_to_clipboard(text: str) -> bool:
             print(f"[platform_utils] pbcopy error: {e}")
             return False
 
-    # Windows fallback: PowerShell
+    # Windows: PowerShell
     if sys.platform.startswith("win"):
         try:
             subprocess.run(
@@ -344,6 +401,31 @@ def copy_to_clipboard(text: str) -> bool:
                 creationflags=0x08000000,
             )
             return True
+        except Exception:
+            pass
+
+    # Linux: Wayland wl-copy, X11 xclip, X11 xsel
+    if sys.platform.startswith("linux"):
+        if os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                p = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
+                p.communicate(text.encode("utf-8"))
+                if p.returncode == 0:
+                    return True
+            except Exception:
+                pass
+        try:
+            p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+            p.communicate(text.encode("utf-8"))
+            if p.returncode == 0:
+                return True
+        except Exception:
+            pass
+        try:
+            p = subprocess.Popen(["xsel", "-b", "-i"], stdin=subprocess.PIPE)
+            p.communicate(text.encode("utf-8"))
+            if p.returncode == 0:
+                return True
         except Exception:
             pass
 
@@ -454,6 +536,30 @@ def _force_kill_other_dropfile_processes(port: int = 49195) -> None:
         except Exception:
             pass
 
+    elif sys.platform.startswith("linux"):
+        import signal
+        try:
+            res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                for p_str in res.stdout.strip().splitlines():
+                    try:
+                        p = int(p_str.strip())
+                        if p != current_pid:
+                            os.kill(p, signal.SIGKILL)
+                    except Exception:
+                        pass
+            res2 = subprocess.run(["pgrep", "-f", "DropFile.pyw"], capture_output=True, text=True)
+            if res2.returncode == 0 and res2.stdout.strip():
+                for p_str in res2.stdout.strip().splitlines():
+                    try:
+                        p = int(p_str.strip())
+                        if p != current_pid:
+                            os.kill(p, signal.SIGKILL)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[platform_utils] Linux process cleanup error: {e}")
+
 
 def stop_running_instance(port: int = 49195, timeout: float = 3.0) -> bool:
     """
@@ -552,7 +658,111 @@ def restart_dropfile(script_path: Optional[Path | str] = None, kill_existing: bo
         except Exception as e:
             print(f"[platform_utils] Windows restart error: {e}")
             return False
+
+    elif sys.platform.startswith("linux"):
+        try:
+            if getattr(sys, "frozen", False):
+                current_exe = Path(sys.executable).resolve()
+                subprocess.Popen([str(current_exe)], cwd=str(current_exe.parent), close_fds=True, start_new_session=True)
+            else:
+                target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
+                subprocess.Popen([sys.executable, str(target)], cwd=str(target.parent), close_fds=True, start_new_session=True)
+            return True
+        except Exception as e:
+            print(f"[platform_utils] Linux restart error: {e}")
+            return False
+
     return False
+
+
+def create_linux_app_menu_entry(script_path: Optional[Path | str] = None) -> bool:
+    """Creates a .desktop file in ~/.local/share/applications for system app menu integration."""
+    if not sys.platform.startswith("linux"):
+        return False
+    apps_dir = Path.home() / ".local" / "share" / "applications"
+    apps_dir.mkdir(parents=True, exist_ok=True)
+    target_file = apps_dir / "dropfile.desktop"
+    if getattr(sys, "frozen", False):
+        exec_cmd = f'"{Path(sys.executable).resolve()}"'
+    else:
+        target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
+        exec_cmd = f'"{sys.executable}" "{target}"'
+    icon_path = Path(__file__).resolve().parent / "icon.ico"
+    content = f"""[Desktop Entry]
+Type=Application
+Name=DropFile
+GenericName=File Synchronization Client
+Comment=Lightweight Dropbox-style sync client for FileBrowser
+Exec={exec_cmd}
+Icon={icon_path}
+Terminal=false
+Categories=Utility;FileTools;Network;
+StartupNotify=false
+"""
+    try:
+        target_file.write_text(content, encoding="utf-8")
+        target_file.chmod(0o755)
+        return True
+    except Exception as e:
+        print(f"[platform_utils] Error creating app menu entry: {e}")
+        return False
+
+
+def install_systemd_user_service(script_path: Optional[Path | str] = None) -> bool:
+    """Generates and enables a systemd user service for running DropFile in background daemon mode."""
+    if not sys.platform.startswith("linux"):
+        return False
+    service_dir = Path.home() / ".config" / "systemd" / "user"
+    service_dir.mkdir(parents=True, exist_ok=True)
+    service_file = service_dir / "dropfile.service"
+    if getattr(sys, "frozen", False):
+        exec_cmd = f"{Path(sys.executable).resolve()} --headless"
+    else:
+        target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
+        exec_cmd = f"{sys.executable} {target} --headless"
+
+    content = f"""[Unit]
+Description=DropFile FileBrowser Synchronization Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={exec_cmd}
+Restart=always
+RestartSec=10
+WorkingDirectory={Path.home()}
+
+[Install]
+WantedBy=default.target
+"""
+    try:
+        service_file.write_text(content, encoding="utf-8")
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+        subprocess.run(["systemctl", "--user", "enable", "dropfile.service"], capture_output=True)
+        print(f"[platform_utils] Systemd user service installed: {service_file}")
+        return True
+    except Exception as e:
+        print(f"[platform_utils] Error installing systemd service: {e}")
+        return False
+
+
+def uninstall_systemd_user_service() -> bool:
+    """Disables and removes the systemd user service."""
+    if not sys.platform.startswith("linux"):
+        return False
+    service_file = Path.home() / ".config" / "systemd" / "user" / "dropfile.service"
+    try:
+        subprocess.run(["systemctl", "--user", "stop", "dropfile.service"], capture_output=True)
+        subprocess.run(["systemctl", "--user", "disable", "dropfile.service"], capture_output=True)
+        if service_file.exists():
+            service_file.unlink()
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+        print("[platform_utils] Systemd user service uninstalled.")
+        return True
+    except Exception as e:
+        print(f"[platform_utils] Error uninstalling systemd service: {e}")
+        return False
 
 
 # Aliases for backward compatibility with win_utils naming

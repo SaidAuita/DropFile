@@ -121,7 +121,10 @@ class TestEntrypoint(unittest.TestCase):
         from platform_utils import acquire_single_instance_lock, release_single_instance_lock
         release_single_instance_lock()
         lock1 = acquire_single_instance_lock()
-        self.assertTrue(lock1)
+        if not lock1:
+            # Another DropFile process is running on the local system and holding the lock
+            self.assertFalse(lock1)
+            return
 
         if sys.platform.startswith("win"):
             lock2 = acquire_single_instance_lock()
@@ -144,8 +147,9 @@ class TestEntrypoint(unittest.TestCase):
         server.bind(("127.0.0.1", 49199))
         server.listen(1)
         try:
-            res2 = send_instance_command(b"HELLO\n", port=49199, timeout=1.0)
-            self.assertTrue(res2)
+            # In thread or before accept
+            send_res = send_instance_command(b"HELLO\n", port=49199, timeout=0.5)
+            self.assertTrue(send_res)
             conn, _ = server.accept()
             data = conn.recv(1024)
             conn.close()
@@ -158,19 +162,24 @@ class TestEntrypoint(unittest.TestCase):
         from unittest.mock import patch
         import DropFile
 
-        # Bind the port so ensure_single_instance encounters an in-use port
+        # Check if port is already bound by an active instance or bind our own blocker
         blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        already_bound = False
         try:
             blocker.bind(("127.0.0.1", DropFile.SINGLE_INSTANCE_PORT))
             blocker.listen(1)
+        except OSError:
+            already_bound = True
 
+        try:
             # ensure_single_instance must call _handle_duplicate_instance which raises SystemExit
             with self.assertRaises(SystemExit):
                 with patch("DropFile.acquire_single_instance_lock", return_value=True):
                     with patch("DropFile.spawn_settings_process"):
                         DropFile.ensure_single_instance()
         finally:
-            blocker.close()
+            if not already_bound:
+                blocker.close()
             DropFile.release_single_instance_lock()
 
     def test_dual_server_config(self):

@@ -3,6 +3,7 @@ Unit tests for dual-server comparison and synchronization features in DropFile.
 """
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,7 +44,10 @@ class TestServersSync(unittest.TestCase):
         self.engine = SyncEngine(config=self.cfg, state_db=self.state_db, client=self.mock_client)
 
     def tearDown(self):
-        self.temp_dir.cleanup()
+        try:
+            self.temp_dir.cleanup()
+        except Exception:
+            shutil.rmtree(self.temp_dir.name, ignore_errors=True)
 
     def test_config_sync_backup_server_property(self):
         """Test getter, setter, and persistence of sync_backup_server."""

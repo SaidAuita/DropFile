@@ -1,0 +1,5 @@
+# DropFile Python Dependencies for Linux
+requests>=2.28.0
+watchdog>=3.0.0
+pillow>=9.0.0
+pystray>=0.19.4

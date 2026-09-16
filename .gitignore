@@ -37,6 +37,8 @@ config.json
 
 # Local documentation / task notes containing private info
 .doc/
+GEMINI.md
+.agents/
 
 # Logs & temporary files
 *.log

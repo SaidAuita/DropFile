@@ -203,15 +203,33 @@ class SettingsDialog:
                 candidate = Path(sys._MEIPASS) / "icon.ico"
                 if candidate.exists():
                     ico_path = candidate
-        if ico_path.exists() and sys.platform.startswith("win"):
-            try:
-                self.window.iconbitmap(str(ico_path))
-            except Exception:
-                pass
+        if ico_path.exists():
+            if sys.platform.startswith("win"):
+                try:
+                    self.window.iconbitmap(str(ico_path))
+                except Exception:
+                    pass
+            else:
+                try:
+                    from PIL import Image, ImageTk
+                    img = Image.open(ico_path)
+                    photo = ImageTk.PhotoImage(img)
+                    self.window.iconphoto(True, photo)
+                except Exception:
+                    pass
 
-        # Apply native visual style (aqua on macOS, vista/winnative on Windows)
+        # Apply native visual style (aqua on macOS, vista/winnative on Windows, clam on Linux)
         style = ttk.Style()
-        theme_candidates = ("aqua", "clam") if sys.platform == "darwin" else ("vista", "winnative", "clam")
+        if sys.platform == "darwin":
+            theme_candidates = ("aqua", "clam")
+            font_family = "Helvetica Neue"
+        elif sys.platform.startswith("win"):
+            theme_candidates = ("vista", "winnative", "clam")
+            font_family = "Segoe UI"
+        else:
+            theme_candidates = ("clam", "default")
+            font_family = "DejaVu Sans"
+
         for theme_name in theme_candidates:
             if theme_name in style.theme_names():
                 try:
@@ -230,7 +248,6 @@ class SettingsDialog:
         self.window.configure(bg=bg_window)
 
         # Typography configuration
-        font_family = "Helvetica Neue" if sys.platform == "darwin" else "Segoe UI"
         style.configure("TNotebook", background=bg_window)
         style.configure("TNotebook.Tab", padding=[16, 7], font=(font_family, 9))
         style.configure("TFrame", background=bg_window)

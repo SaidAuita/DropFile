@@ -2,12 +2,12 @@
 
 # 📂 DropFile
 
-**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows & macOS.**
+**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows, macOS & Linux.**
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS%2010.15%2B-blue.svg)](#)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.17-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.19-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -25,7 +25,7 @@
 [FileBrowser](https://github.com/filebrowser/filebrowser) is an immensely popular, powerful self-hosted web file manager for personal servers, NAS devices, home mini-PCs, and Docker containers. However, FileBrowser lacks an official desktop client that automatically synchronizes a local folder on your PC like Dropbox, OneDrive, or Google Drive.
 
 **DropFile** bridges this gap:
-- Runs silently in the background via the **Windows System Tray**.
+- Runs silently in the background (**Windows System Tray**, **macOS Menu Bar**, **Linux Desktop Tray**, or **Linux Headless Server Daemon**).
 - Creates a dedicated sync folder on your Desktop (or any chosen location).
 - Instantly uploads local changes to your FileBrowser instance and automatically downloads remote changes.
 - Requires no WebDAV, SMB, or third-party cloud services: everything communicates over the standard **HTTPS / HTTP REST API** of FileBrowser.
@@ -53,7 +53,7 @@
   - Automatic suppression prevents download echo loops.
   - Event debouncing ensures files are completely written before upload begins.
   - Conflicted copy creation `(Conflict PC YYYY-MM-DD)` protects your data if files are modified concurrently on different machines.
-- 🕒 **Informative System Tray**:
+- 🕒 **Informative System Tray & Status Indicator**:
   - 🟢 **Idle / Up to date**: All files are synchronized.
   - 🔄 **Syncing**: Transferring files to or from the server.
   - 🔴 **Error**: Network or authentication issue.
@@ -71,19 +71,20 @@
   - One-click Desktop shortcut creation.
   - Configurable poll intervals and customizable ignore patterns (`~$*`, `*.tmp`, etc.).
   - Detailed synchronization activity log with filterable actions.
-- 📦 **Standalone Windows Executable (`DropFile.exe`)**:
-  - Single self-contained `.exe` binary: zero setup, no Python or Git required for end users.
-  - Built-in multi-resolution icon and silent windowless execution.
+- 💻 **Complete Cross-Platform Support (Windows, macOS & Linux)**:
+  - **Windows 10/11**: Standalone single-file `.exe` binary, Windows System Tray integration, and Registry autostart.
+  - **macOS (10.15 ... 15+)**: Native `/Applications/DropFile.app` status bar application (`LSUIElement=1`, zero Dock clutter), LaunchAgent autostart.
+  - **Linux**: Desktop AppIndicator tray, Headless Server Daemon with `systemd` user service, XDG Autostart, full CLI management (`--status`, `--sync-now`, `--pause`, `--stop`), and standalone PyInstaller binary.
 - 🔄 **In-App Auto-Update & Update Checker**:
-  - Check for updates anytime with one click in Settings (`[🔍 Check for Updates]`) or via the System Tray context menu.
+  - Check for updates anytime with one click in Settings (`[🔍 Check for Updates]`) or via the System Tray / Menu Bar context menu.
   - Automated binary hot-swap and seamless background restart for `.exe` builds, or `git pull` for source installs.
 - 🧹 **Automatic File & Log Cleanup**:
   - Configurable auto-cleanup for files older than *N* days (default: 30 days, or 0 = keep forever) to keep storage clean.
   - Manual one-click file cleanup on demand directly from settings.
   - History log retention policy and one-click log clearing with confirmation.
-- 🚀 **Silent Windows Startup**:
-  - Clean background execution via `DropFile.exe` or `DropFile.pyw` without flashing console windows.
-  - One-click autostart toggle with Windows registry integration.
+- 🚀 **Silent Background Execution**:
+  - Clean background execution without flashing console windows.
+  - One-click autostart toggle on all supported operating systems.
 
 ---
 
@@ -123,60 +124,122 @@ DropFile easily scales from a single user to an entire department or company. De
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation & Quick Start
 
-### Option 1: Standalone Executable (Recommended for Clients & Team Members)
-*Zero installation — no Python or Git required!*
-1. Download `DropFile.exe` from the latest [GitHub Release](https://github.com/SaidAuita/DropFile/releases).
+DropFile is available for **Windows**, **macOS**, and **Linux**. Choose your platform:
+
+### 🪟 1. Windows Setup (10 & 11)
+
+#### Method A: Standalone Executable (Recommended for Clients & End-Users)
+*Zero setup — no Python or Git required!*
+1. Download **`DropFile.exe`** from the latest [GitHub Release](https://github.com/SaidAuita/DropFile/releases).
 2. Run `DropFile.exe`.
-3. On first run, the Settings dialog opens automatically:
+3. On first launch, the Settings dialog opens automatically:
    - **Server URL**: Your FileBrowser address (e.g., `https://files.yourdomain.com` or `http://10.0.0.10:8080`).
-   - **Username** & **Password**: Your FileBrowser login credentials.
+   - **Username** & **Password**: Your FileBrowser credentials.
    - **Local Folder**: Folder on your PC (defaults to `Desktop\DropFile`).
-   - **Remote Folder**: Target folder in FileBrowser (defaults to `/DropFile`).
-   - **Interface Language**: Select your language (10 locales available).
+   - **Remote Folder**: Target directory in FileBrowser (defaults to `/DropFile`).
+   - **Language**: Select interface language (10 languages available).
 4. Click **"⚡ Test Connection"**, then click **"Save and Apply"**.
-5. DropFile will run silently in your System Tray and begin syncing!
+5. DropFile will run silently in your System Tray and begin syncing automatically!
 
-### Option 2: Run from Source / Build from Source (Windows)
-#### Prerequisites
-* Windows 10 or 11 (64-bit)
-* Python 3.10 or newer
-* A running [FileBrowser](https://github.com/filebrowser/filebrowser) server
-
-#### Setup
+#### Method B: Run or Build from Source (Windows)
 ```bash
 git clone https://github.com/SaidAuita/DropFile.git
 cd DropFile
 pip install -r requirements.txt
+python DropFile.pyw    # or double-click run.bat
 ```
-Launch with `python DropFile.pyw` or double-click `run.bat`.
-
-#### Compiling Standalone `.exe`
-Double-click `build_exe.bat` or execute:
+To compile your own standalone executable:
 ```bash
-python build_exe.py
+python build_exe.py    # or double-click build_exe.bat
 ```
-The compiled single-file binary will be placed at `dist\DropFile.exe`.
+The compiled binary will be placed at `dist\DropFile.exe`.
 
 ---
 
-### Option 3: macOS Installation (Catalina 10.15 ... Sequoia / Tahoe)
-*Quick 1-click installer for macOS:*
+### 🍏 2. macOS Setup (Catalina 10.15 ... Sequoia / Tahoe)
+
+*Automated 1-click installer for macOS:*
+1. Clone the repository into your home directory:
+   ```bash
+   cd ~
+   git clone https://github.com/SaidAuita/DropFile.git
+   cd DropFile
+   ```
+   *(Or download the ZIP archive from GitHub and unzip it into `~/DropFile`)*
+2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
+   - Automatically configures an isolated virtual environment (`.venv`) and installs required packages (including native PyObjC Cocoa support).
+   - Builds and installs **`/Applications/DropFile.app`** with `LSUIElement=1` (runs natively in the top menu bar near the clock without Dock clutter).
+   - Creates a Desktop sync shortcut (`~/Desktop/DropFile`).
+3. Click the DropFile cloud icon in your top macOS menu bar -> select **"Settings"** to enter your server credentials.
+
+> 📖 **Full macOS Installation Guide**: See [`doc/mac_install.md`](doc/mac_install.md) for step-by-step commands to install Python 3 via curl or Homebrew, LaunchAgent autostart setup, and troubleshooting.
+
+---
+
+### 🐧 3. Linux Setup (Ubuntu, Debian, Mint, Fedora, Arch)
+
+DropFile supports Linux both on **Desktop workstations** (with system tray & GUI) and **Headless Servers / NAS / mini-PCs** (running as a background systemd daemon).
+
+#### Method A: Automated Script Installer (Desktop & Server)
 1. Clone the repository:
    ```bash
    cd ~
    git clone https://github.com/SaidAuita/DropFile.git
    cd DropFile
    ```
-   *(Or download the ZIP archive from [github.com/SaidAuita/DropFile](https://github.com/SaidAuita/DropFile) and unzip it into your home directory)*
-2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
-   - Automatically configures a clean virtual environment (`.venv`) and installs dependencies (including native PyObjC Cocoa menu bar support).
-   - Packages a native `DropFile.app` into `/Applications/DropFile.app` with `LSUIElement=1` (runs as a top menu bar status app without Dock clutter).
-   - Creates a Desktop sync shortcut (`~/Desktop/DropFile`).
-3. DropFile icon appears in your top macOS menu bar and begins synchronizing!
+2. Run the automated Linux installer:
+   ```bash
+   chmod +x install_linux.sh run_linux.sh
+   ./install_linux.sh
+   ```
+   - Creates an isolated `.venv` and installs all dependencies (`requirements-linux.txt`).
+   - Prepares the sync folder (`~/Desktop/DropFile` or `~/DropFile`).
+   - On Desktop: creates Desktop shortcut and registers application launcher in `~/.local/share/applications/dropfile.desktop`.
+   - On Server: creates systemd user service (`~/.config/systemd/user/dropfile.service`).
 
-> 📖 **Full macOS Installation Guide**: See [`doc/mac_install.md`](doc/mac_install.md) for terminal commands to verify/install Python 3 (via curl or Homebrew), LaunchAgent autostart setup, and troubleshooting.
+3. Start DropFile:
+   ```bash
+   ./run_linux.sh              # Desktop GUI mode (runs in system tray)
+   ./run_linux.sh --settings   # Open GUI Settings dialog
+   ./run_linux.sh --headless   # Server / Headless mode (runs sync daemon)
+   ```
+
+#### Method B: Headless Server Daemon with `systemd` (Recommended for Servers)
+To run DropFile continuously as a background service on your server or mini-PC:
+```bash
+# Enable on system boot and start service immediately:
+systemctl --user enable --now dropfile.service
+
+# Check service status:
+systemctl --user status dropfile.service
+
+# View live synchronization logs:
+journalctl --user -u dropfile.service -f
+
+# Stop service:
+systemctl --user stop dropfile.service
+```
+
+#### Method C: Command-Line Management (CLI)
+Control a running DropFile background instance from any terminal:
+```bash
+./run_linux.sh --status       # Query sync status via IPC socket
+./run_linux.sh --sync-now     # Trigger instant file check and sync
+./run_linux.sh --pause        # Pause file synchronization
+./run_linux.sh --resume       # Resume file synchronization
+./run_linux.sh --stop         # Stop running background instance
+./run_linux.sh --help         # Show all command-line options
+```
+
+#### Method D: Standalone Linux Executable (PyInstaller)
+Compile DropFile into a single standalone binary `dist/dropfile` that requires zero setup or Python packages:
+```bash
+pip install pyinstaller
+python3 build_linux.py
+```
+> 📖 **Full Linux Guide**: See [`README_LINUX.md`](README_LINUX.md) for complete details.
 
 ---
 
@@ -227,28 +290,43 @@ docker run -d \
 
 ```text
 DropFile/
-├── DropFile.pyw         # Main entry point (silent background launcher)
-├── config.py            # Configuration manager (portable config.json & %APPDATA%)
+├── DropFile.pyw         # Main entry point (silent background launcher, CLI & headless daemon)
+├── config.py            # Configuration manager (portable config.json, %APPDATA%, macOS & Linux)
 ├── config.example.json  # Configuration template
 ├── fb_client.py         # FileBrowser REST API client (JWT auth, listings, upload/download)
-├── sync_engine.py       # Bidirectional sync engine, debounce & echo suppression
+├── sync_engine.py       # Bidirectional sync engine, inotify/watchdog, debounce & echo suppression
 ├── updater.py           # Auto-updater (GitHub Releases API, semver, hot-swap & restart)
 ├── i18n.py              # Internationalization module (10 languages)
 ├── state_db.py          # SQLite database (state.db) tracking hashes & history
-├── gui_settings.py      # Modern Tkinter settings & log viewer
-├── tray.py              # Windows system tray integration (pystray)
+├── gui_settings.py      # Modern Tkinter settings & log viewer (Windows, macOS, Linux)
+├── tray.py              # System tray integration (pystray for Windows, macOS & Linux)
+├── platform_utils.py    # Cross-platform utilities (autostart, single instance lock, shortcuts)
 ├── icons.py             # Dynamic tray status icon & multi-res .ico generator
-├── win_utils.py         # Windows integration (registry autostart, desktop shortcuts, hot restart)
 ├── version.py           # Application version definition
+│
+├── # 🪟 Windows Build & Launch:
 ├── build_exe.py         # PyInstaller standalone .exe builder
 ├── build_exe.bat        # One-click Windows .exe compilation script
-├── icon.ico             # Embedded multi-resolution application icon (16-256px)
 ├── run.bat              # Quick launch batch script
-├── update.bat           # Self-updater batch script
 ├── start_silent.vbs     # Silent background VBS launcher
-├── requirements.txt     # Python dependencies
+│
+├── # 🍏 macOS Build & Launch:
+├── install_mac.command  # 1-click installer: creates .venv and /Applications/DropFile.app
+├── run_mac.command      # Portable macOS runner
+├── package_mac_app.py   # Native macOS .app bundle packager (LSUIElement status bar)
+├── doc/mac_install.md   # Detailed macOS installation guide
+│
+├── # 🐧 Linux Build & Launch:
+├── install_linux.sh     # 1-click Linux installer: sets up .venv, desktop entry & systemd unit
+├── run_linux.sh         # Portable Linux runner (GUI, CLI & headless daemon)
+├── dropfile.service     # Systemd user service unit template
+├── build_linux.py       # PyInstaller standalone Linux binary builder
+├── requirements-linux.txt # Linux Python dependencies
+├── README_LINUX.md      # Comprehensive Linux installation & service guide
+│
+├── requirements.txt     # Windows Python dependencies
 ├── LICENSE              # MIT License
-└── tests/               # Unit test suite (27 tests)
+└── tests/               # Cross-platform unit test suite
     ├── test_entrypoint.py
     ├── test_fb_client.py
     ├── test_i18n.py
@@ -284,10 +362,10 @@ python -m unittest discover tests
 [FileBrowser](https://github.com/filebrowser/filebrowser) — популярный веб-менеджер файлов для личных серверов, NAS, домашних мини-ПК и Docker. Однако у FileBrowser нет официального десктопного клиента, который автоматически синхронизировал бы локальную папку на компьютере по принципу Dropbox или OneDrive.
 
 **DropFile** закрывает эту потребность:
-- Работает в фоне без лишних окон (в системном трее Windows).
-- Создает удобную папку обмена на Рабочем столе.
-- Мгновенно выгружает добавленные локально файлы на сервер FileBrowser и скачивает удаленные изменения.
-- Не требует WebDAV, SMB или сторонних облачных сервисов: обмен идет через стандартный **HTTPS/HTTP REST API** самого FileBrowser.
+- Работает незаметно в фоне (**системный трей Windows**, **строка меню macOS**, **трей Linux** или **серверный headless-демон systemd**).
+- Создает удобную папку обмена на Рабочем столе (или в любом указанном каталоге).
+- Мгновенно выгружает локальные файлы на сервер FileBrowser и автоматически скачивает удаленные изменения.
+- Не требует WebDAV, SMB или сторонних облачных сервисов: обмен идет через стандартный **HTTPS / HTTP REST API** самого FileBrowser.
 - Успешно работает через любые корпоративные фаерволы (порт 443), прокси (Nginx, Caddy, Traefik), туннели (Cloudflare Tunnel, Keenetic Cloud, Tailscale) или прямое подключение по белому/локальному IP.
 
 ### 🌟 Основные возможности
@@ -309,6 +387,10 @@ python -m unittest discover tests
 - 🛡️ **Защита от зацикливания и конфликтов**: дебаунсинг записи, подавление эхо и создание копий `(Conflict PC YYYY-MM-DD)`.
 - 🕒 **Информативный трей**: цветовая индикация (зеленый / синий / красный / желтый) и контекстное меню.
 - ⚙️ **Графический интерфейс настроек**: проверка соединения в один клик, выбор папок, создание ярлыка, настройка исключений и журнал событий.
+- 💻 **Полная кроссплатформенность (Windows, macOS и Linux)**:
+  - **Windows 10/11**: Автономный `.exe` без необходимости ставить Python, интеграция с системным треем и автозагрузка через реестр.
+  - **macOS (10.15 ... 15+)**: Нативное приложение `/Applications/DropFile.app` для строки меню (`LSUIElement=1`, без иконки в Dock), автозагрузка через LaunchAgent.
+  - **Linux**: Трей AppIndicator для десктопов, серверный headless-демон со службой `systemd`, XDG Autostart, консольное управление (CLI: `--status`, `--sync-now`, `--pause`, `--stop`) и автономный бинарник PyInstaller.
 - 📦 **Автономная сборка Windows (`DropFile.exe`)**:
   - Единый исполняемый `.exe` файл без необходимости ставить Python или Git на рабочих местах пользователей.
   - Встроенная мультииконка высокого разрешения и работа в фоне без консольных окон.
@@ -357,52 +439,134 @@ DropFile отлично подходит как для личного испол
    - **Встроенная дедупликация в 1 клик**: кнопка *«🔍 Очистить дубликаты»* в Настройках сканирует папку и удаляет избыточные файлы конфликтов, чей хэш на 100% совпадает с оригиналом.
    - **Автоматическая гигиена диска**: включите на компьютерах опцию **«Автоочистка файлов старше 30 дней»**, чтобы завершенные рабочие обмены не забивали диск до бесконечности.
 
-### 🚀 Быстрый старт
+---
 
-#### Вариант 1: Готовый `.exe` (Рекомендуется для пользователей)
-1. Скачайте файл `DropFile.exe` из раздела [GitHub Releases](https://github.com/SaidAuita/DropFile/releases).
-2. Запустите `DropFile.exe` (установка Python или Git не требуется).
-3. В появившемся окне настроек укажите адрес сервера FileBrowser, логин и пароль, затем нажмите **«Сохранить и применить»**.
-4. Программа свернется в системный трей и начнет синхронизацию.
+### 🚀 Установка и быстрый старт
 
-#### Вариант 2: Запуск из исходников и самостоятельная сборка `.exe` (Windows)
+DropFile доступен для **Windows**, **macOS** и **Linux**. Выберите вашу систему:
+
+### 🪟 1. Установка на Windows (10 и 11)
+
+#### Способ A: Готовый автономный .exe (Рекомендуется для пользователей)
+*Установка Python или Git не требуется!*
+1. Скачайте файл **`DropFile.exe`** из раздела [GitHub Releases](https://github.com/SaidAuita/DropFile/releases).
+2. Запустите `DropFile.exe`.
+3. При первом запуске откроется окно настроек:
+   - **URL сервера**: адрес FileBrowser (например, `https://files.yourdomain.com` или `http://192.168.1.10:8080`).
+   - **Логин** и **Пароль**: учетные данные FileBrowser.
+   - **Локальная папка**: каталог на компьютере (по умолчанию `Рабочий стол\DropFile`).
+   - **Удаленная папка**: целевая папка в FileBrowser (по умолчанию `/DropFile`).
+   - **Язык**: выбор языка интерфейса (доступно 10 языков).
+4. Нажмите кнопку **«⚡ Проверить соединение»**, затем **«Сохранить и применить»**.
+5. Программа свернется в системный трей и начнет синхронизацию.
+
+#### Способ B: Запуск из исходников и самостоятельная сборка .exe (Windows)
 ```bash
 git clone https://github.com/SaidAuita/DropFile.git
 cd DropFile
 pip install -r requirements.txt
+python DropFile.pyw    # или дважды кликните run.bat
 ```
-Запуск: `python DropFile.pyw` (или скрипт `run.bat`).
-
 Для сборки автономного исполняемого файла дважды кликните `build_exe.bat` или выполните:
 ```bash
 python build_exe.py
 ```
 Готовый автономный файл появится в каталоге `dist\DropFile.exe`.
 
-#### Вариант 3: Установка на macOS (Catalina 10.15 ... Sequoia / Tahoe)
+---
+
+### 🍏 2. Установка на macOS (Catalina 10.15 ... Sequoia / Tahoe)
+
 *Быстрая автоматическая установка в 1 клик:*
-1. Склонируйте репозиторий в Терминале:
+1. Склонируйте репозиторий в домашнюю папку в Терминале:
    ```bash
    cd ~
    git clone https://github.com/SaidAuita/DropFile.git
    cd DropFile
    ```
-   *(Либо скачайте ZIP-архив с GitHub и распакуйте в домашнюю папку)*
+   *(Либо скачайте ZIP-архив с GitHub и распакуйте в `~/DropFile`)*
 2. Дважды кликните по файлу **`install_mac.command`** в Finder (или выполните `./install_mac.command` в Терминале):
    - Установщик автоматически создаст изолированное виртуальное окружение (`.venv`) и установит зависимости (включая нативный Cocoa / PyObjC).
-   - Соберёт и установит приложение **`/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает как агент в верхнем статус-баре около часов, без лишней иконки в Dock).
+   - Соберёт и установит приложение **`/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает в верхнем статус-баре около часов, без лишней иконки в Dock).
    - Создаст удобный ярлык рабочей папки на Рабочем столе (`~/Desktop/DropFile`).
 3. В строке меню macOS (вверху экрана около часов) появится иконка облака DropFile. Нажмите её, выберите **«Параметры»**, введите адрес сервера FileBrowser, логин и пароль.
 
 > 📖 **Полное пошаговое руководство по macOS**: см. файл [`doc/mac_install.md`](doc/mac_install.md) (быстрые команды установки Python 3 через `curl` или Homebrew, проверка работы Tkinter, автозапуск через LaunchAgent и решение возможных проблем).
 
-#### 🔄 Обновление
+---
 
-##### Способ 1: Автоматическое обновление из программы (в 1 клик)
+### 🐧 3. Установка на Linux (Ubuntu, Debian, Mint, Fedora, Arch)
+
+DropFile поддерживает Linux как на **рабочих станциях Desktop** (с иконкой в системном трее и графическим интерфейсом), так и на **серверах, NAS и мини-ПК** (в виде фонового headless-демона systemd).
+
+#### Способ A: Автоматический скрипт-установщик (Десктоп и Сервер)
+1. Склонируйте репозиторий:
+   ```bash
+   cd ~
+   git clone https://github.com/SaidAuita/DropFile.git
+   cd DropFile
+   ```
+2. Запустите автоматический установщик:
+   ```bash
+   chmod +x install_linux.sh run_linux.sh
+   ./install_linux.sh
+   ```
+   - Создает виртуальное окружение `.venv` и устанавливает зависимости (`requirements-linux.txt`).
+   - Создает папку обмена (`~/Desktop/DropFile` или `~/DropFile`).
+   - На Desktop: создает ярлык на Рабочем столе и регистрирует приложение в системном меню (`~/.local/share/applications/dropfile.desktop`).
+   - На Сервере: регистрирует пользовательскую службу systemd (`~/.config/systemd/user/dropfile.service`).
+
+3. Запустите DropFile:
+   ```bash
+   ./run_linux.sh              # Режим Desktop с системным треем
+   ./run_linux.sh --settings   # Открыть окно настроек
+   ./run_linux.sh --headless   # Фоновый серверный режим (без GUI)
+   ```
+
+#### Способ B: Фоновый серверный демон systemd (Рекомендуется для серверов)
+Для непрерывной фоновой синхронизации на сервере или мини-ПК:
+```bash
+# Включить автозапуск при старте системы и запустить службу прямо сейчас:
+systemctl --user enable --now dropfile.service
+
+# Проверить статус службы:
+systemctl --user status dropfile.service
+
+# Просмотр журнала синхронизации в реальном времени:
+journalctl --user -u dropfile.service -f
+
+# Остановить службу:
+systemctl --user stop dropfile.service
+```
+
+#### Способ C: Управление через командную строку (CLI)
+Управляйте работающим фоновым процессом DropFile из любого терминала или bash-скрипта:
+```bash
+./run_linux.sh --status       # Запрос статуса синхронизации через IPC сокет
+./run_linux.sh --sync-now     # Мгновенно проверить и синхронизировать файлы
+./run_linux.sh --pause        # Приостановить синхронизацию
+./run_linux.sh --resume       # Возобновить синхронизацию
+./run_linux.sh --stop         # Корректно остановить фоновый процесс
+./run_linux.sh --help         # Справка по всем доступным параметрам
+```
+
+#### Способ D: Автономный исполняемый файл Linux (PyInstaller)
+Скомпилируйте единый бинарный файл `dist/dropfile`, не требующий установки Python и библиотек у пользователей:
+```bash
+pip install pyinstaller
+python3 build_linux.py
+```
+> 📖 **Полная документация по Linux**: см. подробное руководство в [`README_LINUX.md`](README_LINUX.md).
+
+---
+
+### 🔄 Обновление
+
+#### Способ 1: Автоматическое обновление из программы (в 1 клик)
 - Нажмите кнопку **«🔍 Проверить обновления»** в шапке окна настроек или пункт **«🔄 Проверить обновления...»** в меню системного трея / строки меню macOS.
 - При наличии новой версии DropFile скачает обновление, выполнит безопасную замену файлов и автоматически перезапустится в фоне.
 
-##### Способ 2: Ручное обновление через Терминал (macOS, Linux и запуск из исходников)
+#### Способ 2: Ручное обновление через Терминал (macOS, Linux и запуск из исходников)
 Если вы устанавливали DropFile через `git clone`, обновиться можно в любой момент прямо в Терминале:
 ```bash
 cd ~/DropFile

@@ -1,0 +1,15 @@
+[Unit]
+Description=DropFile FileBrowser Synchronization Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust path to your python / virtual environment and DropFile repository
+ExecStart=/usr/bin/python3 %h/DropFile/DropFile.pyw --headless
+Restart=always
+RestartSec=10
+WorkingDirectory=%h
+
+[Install]
+WantedBy=default.target
