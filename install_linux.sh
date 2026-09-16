@@ -169,6 +169,7 @@ Categories=Utility;FileTools;Network;
 StartupNotify=false
 EOF
     chmod +x "$APP_DIR/dropfile.desktop"
+    ln -sf "$APP_DIR/dropfile.desktop" "$APP_DIR/DropFile.desktop"
     echo "   -> Application launcher registered: $APP_DIR/dropfile.desktop"
 
     # Place clickable launcher icon on Desktop

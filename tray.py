@@ -124,8 +124,18 @@ class DropFileTray:
         if sys.platform.startswith("linux"):
             try:
                 import subprocess
+                from pathlib import Path
+                icon_path = Path(__file__).resolve().parent / "icon.png"
+                cmd = ["notify-send", "-a", "DropFile"]
+                if icon_path.exists():
+                    cmd.extend(["-i", str(icon_path)])
+                cmd.extend([
+                    "-h", "string:desktop-entry:dropfile",
+                    title,
+                    message,
+                ])
                 subprocess.Popen(
-                    ["notify-send", "-a", "DropFile", title, message],
+                    cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
