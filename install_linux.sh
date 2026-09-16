@@ -57,14 +57,10 @@ if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
     HAS_DISPLAY=1
 fi
 
-if [ "$HAS_DISPLAY" -eq 1 ]; then
-    echo "[2/5] Checking desktop GUI components..."
+    MISSING_PKGS=""
     if ! "$PYTHON_BIN" -c "import tkinter" >/dev/null 2>&1; then
         echo "   ⚠️  Note: Python Tkinter (_tkinter) is not installed."
-        echo "      To enable GUI Settings dialog, run:"
-        echo "      Ubuntu/Debian: sudo apt install -y python3-tk"
-        echo "      Fedora:        sudo dnf install -y python3-tkinter"
-        echo "      Arch Linux:    sudo pacman -S tk"
+        MISSING_PKGS="$MISSING_PKGS python3-tk"
     else
         echo "   -> Tkinter GUI support: OK"
     fi
@@ -73,12 +69,26 @@ if [ "$HAS_DISPLAY" -eq 1 ]; then
     if ! "$PYTHON_BIN" -c "import gi; gi.require_version('AyatanaAppIndicator3', '0.1')" >/dev/null 2>&1 && \
        ! "$PYTHON_BIN" -c "import gi; gi.require_version('AppIndicator3', '0.1')" >/dev/null 2>&1; then
         echo "   ⚠️  Note: AppIndicator library is not installed."
-        echo "      For native system tray icon in Ubuntu/GNOME top panel, run:"
-        echo "      Ubuntu/Debian: sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1"
-        echo "      Fedora:        sudo dnf install -y libappindicator-gtk3 python3-gobject"
-        echo "      Arch Linux:    sudo pacman -S libayatana-appindicator python-gobject"
+        MISSING_PKGS="$MISSING_PKGS python3-gi gir1.2-ayatanaappindicator3-0.1"
     else
         echo "   -> AppIndicator tray support: OK"
+    fi
+
+    # Offer automatic package installation on Debian/Ubuntu if interactive
+    if [ -n "$MISSING_PKGS" ]; then
+        if command -v apt-get >/dev/null 2>&1 && [ -t 0 ]; then
+            echo ""
+            echo "   💡 Would you like to automatically install missing GUI packages?"
+            read -r -p "      Run 'sudo apt install -y$MISSING_PKGS'? [Y/n] " answer
+            if [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]; then
+                sudo apt-get update -qq && sudo apt-get install -y $MISSING_PKGS || true
+            fi
+        else
+            echo "      To install manually, run:"
+            echo "      Ubuntu/Debian: sudo apt install -y$MISSING_PKGS"
+            echo "      Fedora:        sudo dnf install -y python3-tkinter libappindicator-gtk3 python3-gobject"
+            echo "      Arch Linux:    sudo pacman -S tk libayatana-appindicator python-gobject"
+        fi
     fi
 else
     echo "[2/5] Server / headless environment detected (no active DISPLAY). Skipping GUI checks."
@@ -205,10 +215,12 @@ echo "=================================================================="
 echo "          DropFile installation complete!                        "
 echo "=================================================================="
 echo ""
-echo "▶ To run DropFile now:"
-if [ "$HAS_DISPLAY" -eq 1 ]; then
-    echo "  ./run_linux.sh                  (launches in system tray)"
-    echo "  ./run_linux.sh --settings       (opens Settings dialog)"
+echo "▶ To launch DropFile:"
+if [ "$HAS_DISPLAY" -eq 1 ] || [ -d "$HOME/Desktop" ]; then
+    echo "  1. Double-click the 'DropFile' icon on your Desktop"
+    echo "  2. Or find 'DropFile' in your Applications menu (Super / Win key)"
+    echo "  3. Or launch via terminal: ./run_linux.sh"
+    echo "     (To open Settings dialog: ./run_linux.sh --settings)"
 else
     echo "  ./run_linux.sh --headless       (runs background sync daemon)"
     echo "  systemctl --user start dropfile (starts via systemd)"
