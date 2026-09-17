@@ -258,6 +258,7 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     if _ENGINE_REF:
                         try:
                             _ENGINE_REF.config.load()
+                            _ENGINE_REF.apply_server_connection(_ENGINE_REF.active_server_index)
                             print("[DropFile] Config reloaded via IPC.")
                             conn.sendall(b"OK: Config reloaded\n")
                         except Exception as e:

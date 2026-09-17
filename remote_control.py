@@ -188,70 +188,120 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 class RemoteControlManager:
     """
     Coordinates remote control polling, device registration, and command exchange
-    via FileBrowser REST API.
+    via FileBrowser REST API across one or more configured server routes.
     """
-    def __init__(self, client: FileBrowserClient, remote_path: str):
+    def __init__(
+        self,
+        client: FileBrowserClient,
+        remote_path: str,
+        secondary_routes: Optional[List[Tuple[FileBrowserClient, str]]] = None,
+    ):
         self.client = client
         self.remote_path = remote_path
+        self._secondary_routes = list(secondary_routes or [])
         self._last_heartbeat_time = 0.0
+        self._executed_cmd_cache: Dict[str, Dict[str, Any]] = {}
 
     @property
     def control_dir(self) -> str:
         return get_control_remote_dir(self.remote_path)
 
+    @property
+    def routes(self) -> List[Tuple[FileBrowserClient, str]]:
+        """Returns all configured routes [(client, remote_path), ...]."""
+        res = []
+        if self.client and self.remote_path:
+            res.append((self.client, self.remote_path))
+        for c, p in self._secondary_routes:
+            if c and p and not any(r[0] == c and r[1] == p for r in res):
+                res.append((c, p))
+        return res
+
+    def set_routes(self, routes: List[Tuple[FileBrowserClient, str]]) -> None:
+        """Updates primary and secondary routes."""
+        if routes:
+            self.client, self.remote_path = routes[0]
+            self._secondary_routes = list(routes[1:])
+        else:
+            self._secondary_routes = []
+
     def ensure_control_dir(self) -> bool:
-        """Ensures that the remote .dropfile_control directory exists."""
-        try:
-            return self.client.ensure_remote_dir_exists(self.control_dir)
-        except Exception:
-            return False
+        """Ensures that the remote .dropfile_control directory exists on all available routes."""
+        ok_any = False
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                if client.ensure_remote_dir_exists(ctrl_dir):
+                    ok_any = True
+            except Exception:
+                pass
+        return ok_any
 
     def publish_heartbeat(self, device_info: Dict[str, Any]) -> bool:
         """
-        Publishes device presence heartbeat in .dropfile_control/device_{name}.json.
+        Publishes device presence heartbeat in .dropfile_control/device_{name}.json
+        across all configured server routes.
         """
-        try:
-            name = device_info.get("device_name", "").strip()
-            if not name:
-                return False
-            self.ensure_control_dir()
-            filename = f"device_{name.lower()}.json"
-            remote_file = f"{self.control_dir}/{filename}"
-            payload = dict(device_info)
-            payload["last_seen"] = time.time()
-            payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
-            ok = self.client.write_text_file(remote_file, payload_str)
-            if ok:
-                self._last_heartbeat_time = time.time()
-            return ok
-        except Exception as e:
-            print(f"[RemoteControl] Heartbeat publish error: {e}")
+        name = device_info.get("device_name", "").strip()
+        if not name:
             return False
+
+        filename = f"device_{name.lower()}.json"
+        payload = dict(device_info)
+        payload["last_seen"] = time.time()
+        payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
+
+        success_count = 0
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                client.ensure_remote_dir_exists(ctrl_dir)
+                remote_file = f"{ctrl_dir}/{filename}"
+                if client.write_text_file(remote_file, payload_str):
+                    success_count += 1
+            except Exception as e:
+                print(f"[RemoteControl] Heartbeat error for route {getattr(client, 'base_url', '')}: {e}")
+
+        if success_count > 0:
+            self._last_heartbeat_time = time.time()
+            return True
+        return False
 
     def get_online_devices(self) -> List[Dict[str, Any]]:
         """
-        Fetches all registered devices from .dropfile_control/device_*.json.
-        Filters out devices not seen within 5 minutes.
+        Fetches all registered devices from .dropfile_control/device_*.json across all routes.
+        Merges results and marks device online if seen within 5 minutes on any route.
         """
-        devices = []
-        try:
-            items = self.client.list_recursive(self.control_dir)
-            now = time.time()
-            for it in items:
-                if it.name.startswith("device_") and it.name.endswith(".json"):
-                    raw = self.client.read_text_file(it.path)
-                    if raw:
-                        try:
-                            info = json.loads(raw)
-                            last_seen = float(info.get("last_seen", 0.0))
-                            is_online = (now - last_seen) < 300.0  # online if seen in last 5m
-                            info["is_online"] = is_online
-                            devices.append(info)
-                        except Exception:
-                            pass
-        except Exception as e:
-            print(f"[RemoteControl] Error listing online devices: {e}")
-        return devices
+        devices_by_name: Dict[str, Dict[str, Any]] = {}
+        now = time.time()
+
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                items = client.list_recursive(ctrl_dir)
+                for it in items:
+                    if it.name.startswith("device_") and it.name.endswith(".json"):
+                        raw = client.read_text_file(it.path)
+                        if raw:
+                            try:
+                                info = json.loads(raw)
+                                dev_name = str(info.get("device_name", "")).strip().lower()
+                                if not dev_name:
+                                    continue
+                                last_seen = float(info.get("last_seen", 0.0))
+                                is_online = (now - last_seen) < 300.0
+
+                                if dev_name not in devices_by_name or last_seen > devices_by_name[dev_name].get("last_seen", 0.0):
+                                    info["is_online"] = is_online
+                                    devices_by_name[dev_name] = info
+                                elif is_online:
+                                    devices_by_name[dev_name]["is_online"] = True
+                            except Exception:
+                                pass
+            except Exception as e:
+                print(f"[RemoteControl] Error listing online devices from {getattr(client, 'base_url', '')}: {e}")
+
+        return list(devices_by_name.values())
 
     def poll_and_dispatch(
         self,
@@ -263,85 +313,110 @@ class RemoteControlManager:
         strict_whitelist: bool,
     ) -> List[Dict[str, Any]]:
         """
-        Target machine check: scans .dropfile_control/ for cmd_{local_device_name}_*.json,
-        validates, executes, writes res_{local_device_name}_*.json, and cleans up cmd file.
+        Target machine check: scans .dropfile_control/ across all routes for cmd_{local_device_name}_*.json,
+        validates, executes (deduplicating across routes so an action is run once),
+        writes response to all routes, and cleans up the command file.
         Returns list of executed command results.
         """
         executed_results = []
         if not local_device_name or not local_pin:
             return executed_results
 
-        try:
-            items = self.client.list_recursive(self.control_dir)
-            target_prefix = f"cmd_{local_device_name.lower()}_"
+        # Clean old cached command results older than 5 minutes
+        now = time.time()
+        self._executed_cmd_cache = {
+            k: v for k, v in self._executed_cmd_cache.items()
+            if now - v.get("timestamp", 0.0) < 300.0
+        }
 
-            for it in items:
-                if it.is_dir:
-                    continue
-                file_lower = it.name.lower()
-                if file_lower.startswith(target_prefix) and file_lower.endswith(".json"):
-                    raw = self.client.read_text_file(it.path)
-                    if not raw:
+        target_prefix = f"cmd_{local_device_name.lower()}_"
+
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                items = client.list_recursive(ctrl_dir)
+
+                for it in items:
+                    if it.is_dir:
                         continue
+                    file_lower = it.name.lower()
+                    if file_lower.startswith(target_prefix) and file_lower.endswith(".json"):
+                        raw = client.read_text_file(it.path)
+                        if not raw:
+                            continue
 
-                    try:
-                        packet = json.loads(raw)
-                    except Exception:
-                        self.client.delete_resource(it.path)
-                        continue
+                        try:
+                            packet = json.loads(raw)
+                        except Exception:
+                            client.delete_resource(it.path)
+                            continue
 
-                    cmd_id = packet.get("id", "unknown")
-                    sender = packet.get("sender", "unknown")
-                    action = packet.get("action", "unknown")
+                        cmd_id = packet.get("id", "unknown")
+                        sender = packet.get("sender", "unknown")
+                        action = packet.get("action", "unknown")
+                        res_filename = f"res_{local_device_name.lower()}_{cmd_id}.json"
 
-                    is_valid, err_msg = verify_command_packet(
-                        packet=packet,
-                        local_device_name=local_device_name,
-                        local_pin=local_pin,
-                        allow_reboot=allow_reboot,
-                        allow_process_list=allow_process_list,
-                        whitelist=whitelist,
-                        strict_whitelist=strict_whitelist,
-                    )
+                        # Check if already executed on another route during this or recent polling cycle
+                        if cmd_id in self._executed_cmd_cache:
+                            cached_res = self._executed_cmd_cache[cmd_id]
+                            try:
+                                client.write_text_file(f"{ctrl_dir}/{res_filename}", json.dumps(cached_res, indent=2))
+                                client.delete_resource(it.path)
+                            except Exception:
+                                pass
+                            continue
 
-                    res_file = f"{self.control_dir}/res_{local_device_name.lower()}_{cmd_id}.json"
+                        is_valid, err_msg = verify_command_packet(
+                            packet=packet,
+                            local_device_name=local_device_name,
+                            local_pin=local_pin,
+                            allow_reboot=allow_reboot,
+                            allow_process_list=allow_process_list,
+                            whitelist=whitelist,
+                            strict_whitelist=strict_whitelist,
+                        )
 
-                    if not is_valid:
-                        result_packet = {
-                            "id": cmd_id,
-                            "target": local_device_name,
-                            "sender": sender,
-                            "action": action,
-                            "success": False,
-                            "error": err_msg,
-                            "timestamp": time.time(),
-                        }
-                        self.client.write_text_file(res_file, json.dumps(result_packet, indent=2))
-                        self.client.delete_resource(it.path)
+                        if not is_valid:
+                            result_packet = {
+                                "id": cmd_id,
+                                "target": local_device_name,
+                                "sender": sender,
+                                "action": action,
+                                "success": False,
+                                "error": err_msg,
+                                "timestamp": time.time(),
+                            }
+                        else:
+                            result_data = execute_action(action, packet.get("payload", {}))
+                            result_packet = {
+                                "id": cmd_id,
+                                "target": local_device_name,
+                                "sender": sender,
+                                "action": action,
+                                "timestamp": time.time(),
+                                **result_data,
+                            }
+
+                        self._executed_cmd_cache[cmd_id] = result_packet
+
+                        # Broadcast response to ALL available routes
+                        for r_client, r_rem in self.routes:
+                            try:
+                                r_ctrl = get_control_remote_dir(r_rem)
+                                r_client.ensure_remote_dir_exists(r_ctrl)
+                                r_client.write_text_file(f"{r_ctrl}/{res_filename}", json.dumps(result_packet, indent=2))
+                            except Exception:
+                                pass
+
+                        # Remove command file from current route
+                        try:
+                            client.delete_resource(it.path)
+                        except Exception:
+                            pass
                         executed_results.append(result_packet)
-                        continue
 
-                    # If valid, execute action
-                    result_data = execute_action(action, packet.get("payload", {}))
-                    result_packet = {
-                        "id": cmd_id,
-                        "target": local_device_name,
-                        "sender": sender,
-                        "action": action,
-                        "timestamp": time.time(),
-                        **result_data,
-                    }
-
-                    # Write response file first
-                    self.client.write_text_file(res_file, json.dumps(result_packet, indent=2))
-
-                    # Remove command file so it does not repeat
-                    self.client.delete_resource(it.path)
-
-                    executed_results.append(result_packet)
-
-        except Exception as e:
-            print(f"[RemoteControl] poll_and_dispatch error: {e}")
+            except Exception as e:
+                print(f"[RemoteControl] poll_and_dispatch error for route {getattr(client, 'base_url', '')}: {e}")
 
         return executed_results
 
@@ -352,12 +427,13 @@ class RemoteControlManager:
         action: str,
         payload: Dict[str, Any],
         secret_pin: str,
-        timeout_seconds: int = 30,
+        timeout_seconds: int = 60,
         status_callback: Optional[Callable[[str], None]] = None,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """
-        Sender machine: writes cmd_{target}_{id}.json, waits for res_{target}_{id}.json,
-        parses result, deletes res file, and returns (success: bool, message: str, result_dict: dict).
+        Sender machine: writes cmd_{target}_{id}.json across ALL configured server routes,
+        waits for res_{target}_{id}.json across ALL routes, parses result,
+        cleans up cmd/res files from all routes, and returns (success, msg, res_dict).
         """
         packet = create_command_packet(
             target_device=target_device,
@@ -367,20 +443,31 @@ class RemoteControlManager:
             secret_pin=secret_pin,
         )
         cmd_id = packet["id"]
-
-        self.ensure_control_dir()
-        cmd_file = f"{self.control_dir}/cmd_{target_device.lower()}_{cmd_id}.json"
-        res_file = f"{self.control_dir}/res_{target_device.lower()}_{cmd_id}.json"
+        cmd_filename = f"cmd_{target_device.lower()}_{cmd_id}.json"
+        res_filename = f"res_{target_device.lower()}_{cmd_id}.json"
 
         if status_callback:
-            status_callback("Uploading command...")
+            status_callback("Uploading command across available routes...")
 
         cmd_json = json.dumps(packet, indent=2)
-        if not self.client.write_text_file(cmd_file, cmd_json):
-            return False, "Failed to send command to server.", {}
+        routes_written: List[Tuple[FileBrowserClient, str]] = []
+
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                client.ensure_remote_dir_exists(ctrl_dir)
+                cmd_file = f"{ctrl_dir}/{cmd_filename}"
+                if client.write_text_file(cmd_file, cmd_json):
+                    routes_written.append((client, remote_path))
+            except Exception as e:
+                print(f"[RemoteControl] Failed to upload command to route {getattr(client, 'base_url', '')}: {e}")
+
+        if not routes_written:
+            return False, "Failed to send command to any configured server.", {}
 
         if status_callback:
-            status_callback(f"Command sent. Waiting for response from '{target_device}'...")
+            count = len(routes_written)
+            status_callback(f"Command sent via {count} route(s). Waiting for '{target_device}'...")
 
         start_time = time.time()
         poll_interval = 1.5
@@ -389,25 +476,40 @@ class RemoteControlManager:
             time.sleep(poll_interval)
             elapsed = int(time.time() - start_time)
             if status_callback:
-                status_callback(f"Waiting for '{target_device}'... ({elapsed}s)")
+                status_callback(f"Waiting for '{target_device}'... ({elapsed}s / {timeout_seconds}s)")
 
-            raw_res = self.client.read_text_file(res_file)
-            if raw_res:
+            # Check for response across ALL routes
+            for client, remote_path in self.routes:
                 try:
-                    res_packet = json.loads(raw_res)
-                    # Clean up result file
-                    self.client.delete_resource(res_file)
+                    ctrl_dir = get_control_remote_dir(remote_path)
+                    res_file = f"{ctrl_dir}/{res_filename}"
+                    raw_res = client.read_text_file(res_file)
+                    if raw_res:
+                        try:
+                            res_packet = json.loads(raw_res)
+                            # Response found! Clean up result and command files across all routes
+                            for r_client, r_rem in self.routes:
+                                try:
+                                    r_ctrl = get_control_remote_dir(r_rem)
+                                    r_client.delete_resource(f"{r_ctrl}/{res_filename}")
+                                    r_client.delete_resource(f"{r_ctrl}/{cmd_filename}")
+                                except Exception:
+                                    pass
 
-                    success = bool(res_packet.get("success", False))
-                    msg = res_packet.get("message") or res_packet.get("error", "No message")
-                    return success, msg, res_packet
-                except Exception as e:
-                    return False, f"Failed to parse response from remote PC: {e}", {}
+                            success = bool(res_packet.get("success", False))
+                            msg = res_packet.get("message") or res_packet.get("error", "No message")
+                            return success, msg, res_packet
+                        except Exception as e:
+                            return False, f"Failed to parse response from remote PC: {e}", {}
+                except Exception:
+                    pass
 
-        # Timeout reached: clean up orphaned command file if still exists
-        try:
-            self.client.delete_resource(cmd_file)
-        except Exception:
-            pass
+        # Timeout reached: clean up orphaned command files from all routes
+        for client, remote_path in self.routes:
+            try:
+                ctrl_dir = get_control_remote_dir(remote_path)
+                client.delete_resource(f"{ctrl_dir}/{cmd_filename}")
+            except Exception:
+                pass
 
-        return False, f"Timeout: Remote computer '{target_device}' did not respond within {timeout_seconds} seconds.", {}
+        return False, f"Timeout: Remote computer '{target_device}' did not respond within {timeout_seconds} seconds across any server.", {}

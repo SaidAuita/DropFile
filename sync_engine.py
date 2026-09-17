@@ -79,8 +79,13 @@ class SyncEngine:
         self.is_sync_leader = False
         self.leader_info: Dict[str, Any] = {}
 
-        # Remote control & emergency actions
-        self.remote_control = RemoteControlManager(self.client, self.active_remote_path)
+        # Remote control & emergency actions across all server routes
+        rc_routes = self._get_all_remote_control_routes()
+        self.remote_control = RemoteControlManager(
+            client=self.client,
+            remote_path=self.active_remote_path,
+            secondary_routes=rc_routes[1:] if len(rc_routes) > 1 else None,
+        )
         self._last_rc_poll: float = 0.0
         self._last_rc_heartbeat: float = 0.0
 
@@ -125,6 +130,42 @@ class SyncEngine:
             return None
         timeout = self.client.timeout if self.client else 15
         return FileBrowserClient(base_url=url, username=user, password=pwd, timeout=timeout), rem
+
+    def _get_all_remote_control_routes(self) -> List[Tuple[FileBrowserClient, str]]:
+        """Returns (client, remote_path) pairs for all configured and accessible servers."""
+        routes: List[Tuple[FileBrowserClient, str]] = []
+        timeout = self.client.timeout if self.client else 15
+        # Route for Server 1
+        if self.config.server_url and self.config.username:
+            if self.client and self.client.base_url == self.config.server_url:
+                c1 = self.client
+            else:
+                c1 = FileBrowserClient(
+                    base_url=self.config.server_url,
+                    username=self.config.username,
+                    password=self.config.password,
+                    timeout=timeout,
+                )
+            routes.append((c1, self.config.remote_path))
+
+        # Route for Server 2 (backup)
+        if self.config.backup_server_enabled and self.config.backup_server_url:
+            b_user = self.config.backup_username or self.config.username
+            b_pwd = self.config.backup_password or self.config.password
+            if self.client and self.client.base_url == self.config.backup_server_url:
+                c2 = self.client
+            else:
+                c2 = FileBrowserClient(
+                    base_url=self.config.backup_server_url,
+                    username=b_user,
+                    password=b_pwd,
+                    timeout=timeout,
+                )
+            routes.append((c2, self.config.backup_remote_path))
+
+        if not routes and self.client:
+            routes.append((self.client, self.active_remote_path))
+        return routes
 
     @property
     def leader_lock_remote_path(self) -> str:
@@ -214,6 +255,7 @@ class SyncEngine:
         if hasattr(self, "remote_control") and self.remote_control:
             self.remote_control.client = self.client
             self.remote_control.remote_path = self.active_remote_path
+            self.remote_control.set_routes(self._get_all_remote_control_routes())
 
     def compare_servers_status(self) -> Dict[str, Any]:
         """
@@ -827,7 +869,7 @@ class SyncEngine:
         action: str,
         payload: Dict[str, Any],
         pin: str,
-        timeout: int = 30,
+        timeout: int = 60,
         status_callback: Optional[Callable[[str], None]] = None,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         """Sends a remote command to target_device and waits for execution response."""

@@ -1851,20 +1851,52 @@ class SettingsDialog:
         ttk.Button(btn_row, text="Add Selected", style="Accent.TButton", command=on_select).pack(side="right")
         ttk.Button(btn_row, text="Cancel", command=top.destroy).pack(side="right", padx=(0, 8))
 
+    def _get_fallback_rc_manager(self):
+        """Creates a standalone RemoteControlManager configured with all available server routes."""
+        from remote_control import RemoteControlManager
+        routes = []
+        timeout = 8
+        if self.config.server_url and self.config.username:
+            c1 = FileBrowserClient(
+                base_url=self.config.server_url,
+                username=self.config.username,
+                password=self.config.password,
+                timeout=timeout,
+            )
+            routes.append((c1, self.config.remote_path))
+        if self.config.backup_server_enabled and self.config.backup_server_url:
+            b_user = self.config.backup_username or self.config.username
+            b_pwd = self.config.backup_password or self.config.password
+            c2 = FileBrowserClient(
+                base_url=self.config.backup_server_url,
+                username=b_user,
+                password=b_pwd,
+                timeout=timeout,
+            )
+            routes.append((c2, self.config.backup_remote_path))
+
+        if not routes:
+            c = FileBrowserClient(
+                base_url=self.config.server_url,
+                username=self.config.username,
+                password=self.config.password,
+                timeout=timeout,
+            )
+            routes.append((c, self.config.remote_path))
+
+        return RemoteControlManager(
+            client=routes[0][0],
+            remote_path=routes[0][1],
+            secondary_routes=routes[1:] if len(routes) > 1 else None,
+        )
+
     def _refresh_remote_devices(self) -> None:
         try:
             devices = []
             if self.engine:
                 devices = self.engine.get_remote_devices()
             else:
-                from remote_control import RemoteControlManager
-                c = FileBrowserClient(
-                    base_url=self.config.server_url,
-                    username=self.config.username,
-                    password=self.config.password,
-                    timeout=8,
-                )
-                rc = RemoteControlManager(c, self.config.remote_path)
+                rc = self._get_fallback_rc_manager()
                 devices = rc.get_online_devices()
 
             my_name = self.config.remote_control_device_name.lower()
@@ -1945,25 +1977,18 @@ class SettingsDialog:
                         action=action,
                         payload=payload,
                         pin=pin,
-                        timeout=35,
+                        timeout=60,
                         status_callback=status_cb,
                     )
                 else:
-                    from remote_control import RemoteControlManager
-                    c = FileBrowserClient(
-                        base_url=self.config.server_url,
-                        username=self.config.username,
-                        password=self.config.password,
-                        timeout=15,
-                    )
-                    rc = RemoteControlManager(c, self.config.remote_path)
+                    rc = self._get_fallback_rc_manager()
                     ok, msg, res_dict = rc.send_command_and_wait(
                         target_device=target,
                         sender_device=self.config.remote_control_device_name,
                         action=action,
                         payload=payload,
                         secret_pin=pin,
-                        timeout_seconds=35,
+                        timeout_seconds=60,
                         status_callback=status_cb,
                     )
 
@@ -2090,24 +2115,17 @@ class SettingsDialog:
                         action="kill_process",
                         payload={"process_name": p_name},
                         pin=target_pin,
-                        timeout=30,
+                        timeout=60,
                     )
                 else:
-                    from remote_control import RemoteControlManager
-                    c = FileBrowserClient(
-                        base_url=self.config.server_url,
-                        username=self.config.username,
-                        password=self.config.password,
-                        timeout=15,
-                    )
-                    rc = RemoteControlManager(c, self.config.remote_path)
+                    rc = self._get_fallback_rc_manager()
                     ok, msg, _ = rc.send_command_and_wait(
                         target_device=target_pc,
                         sender_device=self.config.remote_control_device_name,
                         action="kill_process",
                         payload={"process_name": p_name},
                         secret_pin=target_pin,
-                        timeout_seconds=30,
+                        timeout_seconds=60,
                     )
 
                 def _apply_kill_result():

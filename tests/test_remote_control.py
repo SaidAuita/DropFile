@@ -307,6 +307,106 @@ class TestRemoteControlManager(unittest.TestCase):
         self.assertIn("Process happ.exe terminated", msg)
         self.assertTrue(res.get("success"))
 
+    def test_multi_route_send_and_receive_from_secondary(self):
+        mock_primary = MagicMock()
+        mock_secondary = MagicMock()
+
+        # Primary route fails on read (e.g. broken connection / tunnel)
+        mock_primary.write_text_file.return_value = True
+        mock_primary.read_text_file.side_effect = Exception("Tunnel reset")
+        mock_primary.delete_resource.return_value = True
+
+        # Secondary route succeeds
+        mock_secondary.write_text_file.return_value = True
+        res_payload = {
+            "id": "multi_123",
+            "target": "Office-PC",
+            "success": True,
+            "message": "Emergency action executed via secondary route.",
+        }
+        mock_secondary.read_text_file.return_value = json.dumps(res_payload)
+        mock_secondary.delete_resource.return_value = True
+
+        dual_manager = RemoteControlManager(
+            client=mock_primary,
+            remote_path="/DropFile",
+            secondary_routes=[(mock_secondary, "/BackupDropFile")],
+        )
+
+        ok, msg, res = dual_manager.send_command_and_wait(
+            target_device="Office-PC",
+            sender_device="Home-PC",
+            action=ACTION_KILL_PROCESS,
+            payload={"process_name": "happ.exe"},
+            secret_pin=self.pin,
+            timeout_seconds=5,
+        )
+
+        self.assertTrue(ok)
+        self.assertIn("Emergency action executed via secondary route.", msg)
+        # Both routes should have had command uploaded
+        mock_primary.write_text_file.assert_called()
+        mock_secondary.write_text_file.assert_called()
+
+    def test_multi_route_poll_and_dispatch_deduplication(self):
+        mock_primary = MagicMock()
+        mock_secondary = MagicMock()
+
+        packet = create_command_packet(
+            target_device=self.local_pc,
+            sender_device="Home-PC",
+            action=ACTION_KILL_PROCESS,
+            payload={"process_name": "happ.exe"},
+            secret_pin=self.pin,
+        )
+        cmd_id = packet["id"]
+        cmd_filename = f"cmd_{self.local_pc.lower()}_{cmd_id}.json"
+
+        item_p = MagicMock()
+        item_p.name = cmd_filename
+        item_p.path = f"/DropFile/.dropfile_control/{cmd_filename}"
+        item_p.is_dir = False
+
+        item_s = MagicMock()
+        item_s.name = cmd_filename
+        item_s.path = f"/BackupDropFile/.dropfile_control/{cmd_filename}"
+        item_s.is_dir = False
+
+        mock_primary.list_recursive.return_value = [item_p]
+        mock_primary.read_text_file.return_value = json.dumps(packet)
+        mock_primary.write_text_file.return_value = True
+        mock_primary.delete_resource.return_value = True
+
+        mock_secondary.list_recursive.return_value = [item_s]
+        mock_secondary.read_text_file.return_value = json.dumps(packet)
+        mock_secondary.write_text_file.return_value = True
+        mock_secondary.delete_resource.return_value = True
+
+        dual_manager = RemoteControlManager(
+            client=mock_primary,
+            remote_path="/DropFile",
+            secondary_routes=[(mock_secondary, "/BackupDropFile")],
+        )
+
+        with patch("remote_control.kill_process_by_name", return_value=(True, "happ.exe terminated")) as mock_kill:
+            results = dual_manager.poll_and_dispatch(
+                local_device_name=self.local_pc,
+                local_pin=self.pin,
+                allow_reboot=True,
+                allow_process_list=True,
+                whitelist=["happ.exe"],
+                strict_whitelist=False,
+            )
+
+            # Action must be executed exactly ONCE despite command appearing on both routes
+            self.assertEqual(mock_kill.call_count, 1)
+
+        # Both routes received response packet and had command deleted
+        mock_primary.write_text_file.assert_called()
+        mock_secondary.write_text_file.assert_called()
+        mock_primary.delete_resource.assert_called_with(item_p.path)
+        mock_secondary.delete_resource.assert_called_with(item_s.path)
+
 
 if __name__ == "__main__":
     unittest.main()
