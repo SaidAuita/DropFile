@@ -1944,28 +1944,17 @@ class SettingsDialog:
     def _add_launch_app_dialog(self) -> None:
         top = tk.Toplevel(self.window)
         top.title(t("remote_app_add_title"))
-        top.geometry("520x240")
-        top.resizable(False, False)
+        top.geometry("580x250")
+        top.minsize(540, 230)
         top.transient(self.window)
         top.grab_set()
 
         frm = tk.Frame(top, padx=16, pady=16)
         frm.pack(fill="both", expand=True)
 
-        # Name row
-        row1 = tk.Frame(frm)
-        row1.pack(fill="x", pady=(0, 10))
-        ttk.Label(row1, text=t("remote_app_name_lbl"), width=24, anchor="w").pack(side="left")
-        ent_name = ttk.Entry(row1)
-        ent_name.pack(side="left", fill="x", expand=True)
-        ent_name.focus_set()
-
-        # Path row
-        row2 = tk.Frame(frm)
-        row2.pack(fill="x", pady=(0, 10))
-        ttk.Label(row2, text=t("remote_app_path_lbl"), width=24, anchor="w").pack(side="left")
-        ent_path = ttk.Entry(row2)
-        ent_path.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        grid = ttk.Frame(frm)
+        grid.pack(fill="both", expand=True)
+        grid.columnconfigure(1, weight=1)
 
         def browse_path():
             import sys
@@ -1984,14 +1973,26 @@ class SettingsDialog:
                     stem = os.path.splitext(base)[0]
                     ent_name.insert(0, stem)
 
-        ttk.Button(row2, text=t("remote_app_browse_btn"), command=browse_path).pack(side="right")
+        # Row 0: App Name
+        lbl_name = ttk.Label(grid, text=t("remote_app_name_lbl"))
+        lbl_name.grid(row=0, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
+        ent_name = ttk.Entry(grid)
+        ent_name.grid(row=0, column=1, columnspan=2, sticky="ew", pady=(0, 10))
+        ent_name.focus_set()
 
-        # Args row
-        row3 = tk.Frame(frm)
-        row3.pack(fill="x", pady=(0, 16))
-        ttk.Label(row3, text=t("remote_app_args_lbl"), width=24, anchor="w").pack(side="left")
-        ent_args = ttk.Entry(row3)
-        ent_args.pack(side="left", fill="x", expand=True)
+        # Row 1: Executable Path + Browse Button
+        lbl_path = ttk.Label(grid, text=t("remote_app_path_lbl"))
+        lbl_path.grid(row=1, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
+        ent_path = ttk.Entry(grid)
+        ent_path.grid(row=1, column=1, sticky="ew", pady=(0, 10), padx=(0, 6))
+        btn_browse = ttk.Button(grid, text=t("remote_app_browse_btn"), command=browse_path)
+        btn_browse.grid(row=1, column=2, sticky="e", pady=(0, 10))
+
+        # Row 2: Arguments
+        lbl_args = ttk.Label(grid, text=t("remote_app_args_lbl"))
+        lbl_args.grid(row=2, column=0, sticky="w", pady=(0, 16), padx=(0, 10))
+        ent_args = ttk.Entry(grid)
+        ent_args.grid(row=2, column=1, columnspan=2, sticky="ew", pady=(0, 16))
 
         # Buttons
         btn_row = tk.Frame(frm)
