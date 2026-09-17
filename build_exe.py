@@ -74,20 +74,14 @@ def build():
         print("=" * 60)
 
         # Also deploy to parent directory (e.g. C:\_CODE\Utilites\DropFile.exe)
-        parent_target = root.parent / "DropFile.exe"
-        try:
-            shutil.copy2(dist_exe, parent_target)
-            print(f"Copied updated binary to: {parent_target}")
-        except Exception as e:
-            print(f"File locked or busy ({e}), terminating running instances...")
-            subprocess.run(["taskkill", "/f", "/im", "DropFile.exe"], capture_output=True)
-            import time
-            time.sleep(1.0)
-            try:
-                shutil.copy2(dist_exe, parent_target)
-                print(f"Copied updated binary to: {parent_target}")
-            except Exception as e2:
-                print(f"Warning: Could not copy to {parent_target}: {e2}")
+        for deploy_target in [root.parent / "DropFile.exe", Path("D:/DropFile_exe/DropFile.exe")]:
+            if deploy_target.parent.exists():
+                try:
+                    shutil.copy2(dist_exe, deploy_target)
+                    print(f"Copied updated binary to: {deploy_target}")
+                except Exception as e:
+                    print(f"File locked ({deploy_target}): {e}")
+
     else:
         print("Build completed, but dist/DropFile.exe was not found!")
         sys.exit(1)

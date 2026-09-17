@@ -119,6 +119,8 @@ def release_instance_socket() -> None:
 
 _SHOW_SETTINGS_FN: Optional[Callable[[], None]] = None
 _ACTIVE_SETTINGS_PROC: Optional[Any] = None
+_TRAY_REF: Optional[Any] = None
+
 
 
 def trigger_show_settings(tab: Optional[str] = None) -> None:
@@ -163,15 +165,29 @@ def send_ipc_query(cmd: str, timeout: float = 2.0) -> Optional[str]:
 
 
 def _handle_duplicate_instance() -> None:
-    """Signals existing instance to show settings and terminates the duplicate process immediately."""
+    """Signals existing instance and terminates the duplicate process immediately."""
     try:
         notify_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         notify_s.settimeout(2.0)
         notify_s.connect(("127.0.0.1", SINGLE_INSTANCE_PORT))
-        notify_s.sendall(b"SHOW_SETTINGS\n")
+        if "--settings" in sys.argv:
+            tab = None
+            if "--tab" in sys.argv:
+                try:
+                    idx = sys.argv.index("--tab")
+                    if idx + 1 < len(sys.argv):
+                        tab = sys.argv[idx + 1]
+                except Exception:
+                    pass
+            payload = f"SHOW_SETTINGS:{tab}\n" if tab else "SHOW_SETTINGS\n"
+            notify_s.sendall(payload.encode("utf-8"))
+        elif "--folder" in sys.argv or "--open" in sys.argv:
+            notify_s.sendall(b"OPEN_FOLDER\n")
+        else:
+            notify_s.sendall(b"LAUNCH_ACTION\n")
         notify_s.close()
     except Exception as e:
-        print(f"[DropFile] Note: could not send SHOW_SETTINGS to existing instance: {e}")
+        print(f"[DropFile] Note: could not send notification to existing instance: {e}")
 
     if sys.platform == "darwin":
         try:
@@ -218,6 +234,22 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                         conn.sendall(b"OK: Settings triggered\n")
                     except Exception:
                         pass
+                elif cmd == "LAUNCH_ACTION":
+                    if not _ENGINE_REF or not _ENGINE_REF.config.server_url or not _ENGINE_REF.config.username:
+                        trigger_show_settings()
+                    else:
+                        open_folder_in_file_manager(_ENGINE_REF.config.local_path)
+                    try:
+                        conn.sendall(b"OK: Launch handled\n")
+                    except Exception:
+                        pass
+                elif cmd == "OPEN_FOLDER":
+                    if _ENGINE_REF:
+                        open_folder_in_file_manager(_ENGINE_REF.config.local_path)
+                    try:
+                        conn.sendall(b"OK: Folder opened\n")
+                    except Exception:
+                        pass
                 elif cmd == "RELOAD_CONFIG":
                     if _ENGINE_REF:
                         try:
@@ -245,6 +277,7 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                             pass
                     release_instance_socket()
                     os._exit(0)
+
                 elif cmd == "RESTART":
                     print("[DropFile] IPC RESTART received. Restarting...")
                     try:
@@ -355,22 +388,40 @@ def ensure_single_instance() -> Optional[socket.socket]:
     """
     global INSTANCE_SOCKET
 
-    # 1. OS-level atomic single-instance lock
-    if not acquire_single_instance_lock():
+    # 1. OS-level atomic single-instance lock with retry (to allow cleanly restarting parent to exit)
+    locked = False
+    for _ in range(4):
+        if acquire_single_instance_lock():
+            locked = True
+            break
+        time.sleep(0.2)
+
+    if not locked:
         _handle_duplicate_instance()
 
-    # 2. Bind IPC command socket listener (strictly exclusive)
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
-        s.listen(2)
-        INSTANCE_SOCKET = s
-        _start_instance_command_listener(s)
-        return s
-    except Exception as e:
-        print(f"[DropFile] Socket port {SINGLE_INSTANCE_PORT} already bound ({e}). Another instance is running.")
-        release_single_instance_lock()
-        _handle_duplicate_instance()
+    # 2. Bind IPC command socket listener (strictly exclusive) with retry
+    s = None
+    for _ in range(4):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+            s.listen(2)
+            INSTANCE_SOCKET = s
+            _start_instance_command_listener(s)
+            return s
+        except Exception:
+            if s:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+            time.sleep(0.2)
+
+    print(f"[DropFile] Socket port {SINGLE_INSTANCE_PORT} already bound. Another instance is running.")
+    release_single_instance_lock()
+    _handle_duplicate_instance()
+
 
 
 def main():
@@ -490,8 +541,13 @@ def main():
 
         def on_settings_process_save():
             # Notify running background instance via IPC to reload config and trigger sync
-            send_ipc_query("RELOAD_CONFIG", timeout=1.0)
-            send_ipc_query("SYNC_NOW", timeout=1.0)
+            res = send_ipc_query("RELOAD_CONFIG", timeout=1.5)
+            if res:
+                send_ipc_query("SYNC_NOW", timeout=1.5)
+            else:
+                # Primary daemon was not running! Start it in background now!
+                print("[DropFile --settings] Primary background instance not running. Starting DropFile in background...")
+                restart_dropfile(kill_existing=False)
 
         def on_settings_process_restart():
             print("[DropFile --settings] Restart requested. Terminating primary instance and launching new...")
@@ -508,7 +564,15 @@ def main():
             on_cleanup_callback=None,
         )
         settings_dialog.show(initial_tab=initial_tab)
+
+        # After settings window closes, ensure primary background instance is running
+        st = send_ipc_query("STATUS", timeout=0.8)
+        if not st:
+            print("[DropFile --settings] Primary instance not running after settings closed. Starting DropFile in background...")
+            restart_dropfile(kill_existing=False)
+
         sys.exit(0)
+
 
     # Detect headless mode (explicit flag or Linux server without DISPLAY)
     is_headless = (
@@ -550,7 +614,7 @@ def main():
         state_db=state_db,
         client=client,
     )
-    global _ENGINE_REF
+    global _ENGINE_REF, _CLEANUP_CALLBACK, _TRAY_REF
     _ENGINE_REF = engine
 
     def on_status_change(text: str, state: str):
@@ -564,11 +628,16 @@ def main():
     # Callback when user updates settings in GUI
     def on_settings_saved():
         print("[DropFile] Settings updated. Re-authenticating and triggering sync...")
-        client.login()
-        engine.trigger_sync_now()
+        def _bg_auth_and_sync():
+            try:
+                client.login()
+                engine.trigger_sync_now()
+            except Exception as e:
+                print(f"[DropFile] Re-authentication failed: {e}")
+        threading.Thread(target=_bg_auth_and_sync, daemon=True).start()
         try:
-            if 'tray' in locals() and tray:
-                tray.refresh_menu()
+            if _TRAY_REF:
+                _TRAY_REF.refresh_menu()
         except Exception:
             pass
 
@@ -581,18 +650,18 @@ def main():
         except Exception:
             pass
         try:
-            if 'tray' in locals() and tray and tray._icon:
-                tray._icon.stop()
+            if _TRAY_REF and _TRAY_REF._icon:
+                _TRAY_REF._icon.stop()
         except Exception:
             pass
 
-    global _CLEANUP_CALLBACK
     _CLEANUP_CALLBACK = on_cleanup
 
     # Callback when user clicks Save and Restart
     def on_restart():
         print("[DropFile] Restart requested. Spawning new process...")
         on_cleanup()
+        time.sleep(0.3)
         restart_dropfile(kill_existing=False)
         os._exit(0)
 
@@ -638,6 +707,8 @@ def main():
         settings_dialog=settings_dialog,
         on_cleanup_callback=on_cleanup,
     )
+    _TRAY_REF = tray
+
 
     try:
         tray.run()

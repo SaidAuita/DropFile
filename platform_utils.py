@@ -147,7 +147,7 @@ def get_desktop_dir() -> Path:
     return Path.home() / "Desktop"
 
 
-def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "DropFile") -> bool:
+def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "DropFile", force: bool = False) -> bool:
     """Creates a shortcut or symlink on the user's Desktop pointing to target_folder."""
     target = Path(target_folder).resolve()
     desktop = get_desktop_dir()
@@ -167,6 +167,8 @@ def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "Dro
     elif sys.platform.startswith("win"):
         lnk_name = f"{shortcut_name}.lnk" if not shortcut_name.endswith(".lnk") else shortcut_name
         shortcut_path = desktop / lnk_name
+        if not force and shortcut_path.exists():
+            return True
         ps_script = f"""
         $WshShell = New-Object -ComObject WScript.Shell
         $Shortcut = $WshShell.CreateShortcut('{str(shortcut_path)}')
@@ -175,6 +177,7 @@ def create_desktop_shortcut(target_folder: Path | str, shortcut_name: str = "Dro
         $Shortcut.Description = 'DropFile Sync Folder'
         $Shortcut.Save()
         """
+
         try:
             subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
@@ -582,17 +585,18 @@ def stop_running_instance(port: int = 49195, timeout: float = 3.0) -> bool:
     while time.time() - start_t < timeout:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.4)
+            s.settimeout(0.3)
             s.connect(("127.0.0.1", port))
             s.close()
-            time.sleep(0.2)
+            time.sleep(0.15)
         except Exception:
-            # Port is free!
+            # Port is free! Allow brief settling time for OS mutex/flock handles
+            time.sleep(0.3)
             return True
 
     # 3. Force kill if still holding the port or running
     _force_kill_other_dropfile_processes(port=port)
-    time.sleep(0.5)
+    time.sleep(0.4)
     return True
 
 
@@ -603,6 +607,7 @@ def restart_dropfile(script_path: Optional[Path | str] = None, kill_existing: bo
     """
     if kill_existing:
         stop_running_instance()
+        time.sleep(0.3)
 
     if sys.platform == "darwin":
         try:
@@ -666,18 +671,34 @@ def restart_dropfile(script_path: Optional[Path | str] = None, kill_existing: bo
 
     elif sys.platform.startswith("linux"):
         try:
+            env = os.environ.copy()
             if getattr(sys, "frozen", False):
                 current_exe = Path(sys.executable).resolve()
-                subprocess.Popen([str(current_exe)], cwd=str(current_exe.parent), close_fds=True, start_new_session=True)
+                subprocess.Popen(
+                    [str(current_exe)],
+                    cwd=str(current_exe.parent),
+                    env=env,
+                    close_fds=True,
+                    start_new_session=True,
+                )
             else:
                 target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
-                subprocess.Popen([sys.executable, str(target)], cwd=str(target.parent), close_fds=True, start_new_session=True)
+                venv_py = target.parent / ".venv" / "bin" / "python3"
+                py_runner = str(venv_py) if venv_py.exists() else sys.executable
+                subprocess.Popen(
+                    [py_runner, str(target)],
+                    cwd=str(target.parent),
+                    env=env,
+                    close_fds=True,
+                    start_new_session=True,
+                )
             return True
         except Exception as e:
             print(f"[platform_utils] Linux restart error: {e}")
             return False
 
     return False
+
 
 
 def create_linux_app_menu_entry(script_path: Optional[Path | str] = None) -> bool:

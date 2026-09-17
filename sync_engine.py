@@ -364,11 +364,34 @@ class SyncEngine:
         return res
 
     def get_last_servers_sync_status(self) -> Dict[str, Any]:
-        """Returns the cached server sync comparison or executes a check if not yet available."""
+        """Returns the cached server sync comparison without blocking. If not yet available, returns placeholder."""
         cached = getattr(self, "_last_servers_sync_status", None)
-        if not cached:
-            return self.compare_servers_status()
-        return cached
+        if cached:
+            return cached
+
+        if not self.config.backup_server_enabled:
+            return {
+                "enabled": False,
+                "state": "disabled",
+                "badge": "⚪ " + t("servers_sync_disabled"),
+                "summary": t("servers_sync_disabled"),
+                "server1": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
+                "server2": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
+                "leader": {"is_self": False, "hostname": "", "client_id": "", "expires_at": 0.0},
+                "last_checked": 0.0,
+            }
+
+        return {
+            "enabled": True,
+            "state": "checking",
+            "badge": "⏳ " + t("servers_sync_status_title"),
+            "summary": t("servers_sync_status_title"),
+            "server1": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
+            "server2": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
+            "leader": {"is_self": False, "hostname": "", "client_id": "", "expires_at": 0.0},
+            "last_checked": 0.0,
+        }
+
 
     def sync_servers_mirror(self) -> Tuple[int, int]:
         """
