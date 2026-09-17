@@ -99,3 +99,35 @@ python3 build_linux.py
 ```
 
 Результат: бинарник `dist/dropfile`, готовый к распространению.
+
+---
+
+## 🚀 Удаленный запуск доверенных приложений (Remote Control)
+
+DropFile позволяет настроить список доверенных приложений на Linux-компьютере, которые можно удаленно запускать или перезапускать с других компьютеров через DropFile (например, при зависании программы):
+
+### Примеры заполнения в «Настройки ➔ Удаленное управление»:
+
+| Приложение | Название (ID) | Путь к исполняемому файлу | Параметры (необязательно) |
+|---|---|---|---|
+| **RustDesk** | `RustDesk` | `/usr/bin/rustdesk` *(или `rustdesk`)* | *(пусто)* или `--minimized` *(в трей)* |
+| **GNOME Календарь** | `Calendar` *(или `Календарь`)* | `/usr/bin/gnome-calendar` | *(пусто)* |
+| **KDE Календарь** | `Calendar` | `/usr/bin/korganizer` | *(пусто)* |
+| **Telegram Desktop** | `Telegram` | `/usr/bin/telegram-desktop` | `-startintray` |
+| **Flatpak-приложение** | `Calendar` | `/usr/bin/flatpak` | `run org.gnome.Calendar` |
+
+### 💡 Как быстро найти точный путь к программе в Linux:
+
+```bash
+# 1. Поиск через which или type:
+which rustdesk
+# -> /usr/bin/rustdesk
+
+which gnome-calendar
+# -> /usr/bin/gnome-calendar
+
+# 2. Узнать точную команду из системного .desktop ярлыка:
+grep -E '^Exec=' /usr/share/applications/*calendar*.desktop
+# -> Exec=gnome-calendar %U
+```
+

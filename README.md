@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.19-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.26.1-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -82,6 +82,12 @@
   - Configurable auto-cleanup for files older than *N* days (default: 30 days, or 0 = keep forever) to keep storage clean.
   - Manual one-click file cleanup on demand directly from settings.
   - History log retention policy and one-click log clearing with confirmation.
+- ⚡ **Remote Control & Emergency Actions**:
+  - Remote process list viewer with real-time memory usage and application grouping.
+  - Emergency process termination (with strict whitelist enforcement option).
+  - Pre-defined application launcher with no arbitrary shell command access.
+  - Seamless "Kill hung app -> Quick re-launch" workflow with automatic status refresh.
+  - Remote PC reboot with cryptographic HMAC-SHA256 PIN authentication.
 - 🚀 **Silent Background Execution**:
   - Clean background execution without flashing console windows.
   - One-click autostart toggle on all supported operating systems.
@@ -121,6 +127,49 @@ DropFile easily scales from a single user to an entire department or company. De
     - **Simultaneous Edit Protection**: If two team members genuinely modify a file with different content, DropFile protects both versions: `filename (Conflict ComputerName YYYY-MM-DD_HH-MM-SS).ext` (or choose *Newer file wins* in Settings).
     - **One-Click Deduplication**: The built-in *🔍 Deduplicate Copies* tool scans the sync folder and removes redundant conflict files whose SHA-256 matches the original file.
     - **Disk Space Management**: Set **Auto-cleanup files older than 30 days** in Settings across team PCs so temporary exchange files do not consume infinite disk space.
+
+---
+
+## ⚡ Remote Control & Emergency Management
+
+DropFile includes a secure out-of-band remote management system that operates over the standard FileBrowser REST API. It requires no open inbound firewall ports, no VPNs, and no dynamic DNS — commands are delivered via encrypted, HMAC-SHA256 signed control packets (`.dropfile_control/`) with a strict 3-minute freshness window.
+
+### 🌟 Key Capabilities:
+- 📋 **Remote Process Viewer**: List all running processes on a remote machine with CPU/Memory stats and intelligent grouping.
+- 🛑 **Remote Process Termination**: Terminate hung applications (e.g. `happ.exe`, `rustdesk`) remotely, with optional strict whitelist enforcement.
+- 🚀 **Pre-defined Remote Application Launching**: Launch pre-configured applications remotely without giving the controller arbitrary shell command access.
+- 🔄 **Remote Reboot**: Trigger an orderly system reboot of remote machines with PIN confirmation.
+- 🔄 **Kill & Restart Workflow**: Terminate a frozen application and immediately re-launch it directly within the Remote Processes dialog — the process list automatically refreshes 2 seconds later to verify the restart.
+
+### 🛡️ Security Architecture
+- **No Arbitrary Command / Shell Execution**: Senders never specify file paths or command lines. They only send registered application names (e.g., `RustDesk`, `Calendar`).
+- **Target-Managed Executable Whitelist**: Only applications explicitly registered on the target computer in `Settings -> Remote Control` can be launched.
+- **HMAC-SHA256 Authorization**: Every action packet requires the target computer's secret PIN and is protected against tampering and replay attacks.
+
+### 🐧 Note for Linux: How to Find Executable Paths & Command Names
+On Linux, executable binaries and scripts are typically located in `/usr/bin/`, `/usr/local/bin/`, or managed via Flatpak/Snap. When adding an application to the Remote Launch list on a Linux machine:
+
+| Application | Name (Identifier) | Executable Path | Arguments (Optional) |
+|---|---|---|---|
+| **RustDesk** | `RustDesk` | `/usr/bin/rustdesk` *(or `rustdesk`)* | *(empty)* or `--minimized` |
+| **GNOME Calendar** | `Calendar` | `/usr/bin/gnome-calendar` | *(empty)* |
+| **KDE Calendar** | `Calendar` | `/usr/bin/korganizer` | *(empty)* |
+| **Telegram Desktop** | `Telegram` | `/usr/bin/telegram-desktop` | `-startintray` |
+| **Flatpak App** | `Calendar` | `/usr/bin/flatpak` | `run org.gnome.Calendar` |
+
+**Useful terminal commands to find any application's path on Linux:**
+```bash
+# 1. Find binary location via which or type:
+which rustdesk
+# Output: /usr/bin/rustdesk
+
+which gnome-calendar
+# Output: /usr/bin/gnome-calendar
+
+# 2. Inspect command from desktop launcher (.desktop):
+grep -E '^Exec=' /usr/share/applications/*calendar*.desktop
+# Output: Exec=gnome-calendar %U
+```
 
 ---
 
@@ -401,6 +450,12 @@ python -m unittest discover tests
   - Автоматическое удаление файлов старше *N* дней (по умолчанию 30 дней, 0 = отключено), защищающее диск от переполнения.
   - Кнопка ручной очистки устаревших файлов по требованию прямо из настроек.
   - Настройка срока хранения истории и кнопка быстрой очистки журнала с подтверждением.
+- ⚡ **Удаленное управление и аварийные действия**:
+  - Диспетчер процессов удаленного ПК с группировкой и мониторингом памяти.
+  - Аварийное снятие зависших процессов и программ (с опцией строгого белого списка).
+  - Удаленный запуск доверенных приложений без риска выполнения произвольных shell-команд.
+  - Быстрый сценарий «Снять процесс -> Перезапустить» прямо из окна процессов с автообновлением.
+  - Удаленная перезагрузка компьютера с авторизацией по PIN-коду и HMAC-SHA256 подписью.
 - 🚀 **Бесшумный автозапуск**: скрытый запуск без мигающих черных окон и автозагрузка вместе с Windows.
 
 ---
@@ -438,6 +493,49 @@ DropFile отлично подходит как для личного испол
    - **Защита от реальных конфликтов**: если двое сотрудников внесли разные изменения в один и тот же файл, DropFile сохранит обе версии: `Имя (Conflict ИмяПК ГГГГ-ММ-ДД_ЧЧ-ММ-СС).расширение` (или можно выбрать *«Побеждает более новый»* в Настройках).
    - **Встроенная дедупликация в 1 клик**: кнопка *«🔍 Очистить дубликаты»* в Настройках сканирует папку и удаляет избыточные файлы конфликтов, чей хэш на 100% совпадает с оригиналом.
    - **Автоматическая гигиена диска**: включите на компьютерах опцию **«Автоочистка файлов старше 30 дней»**, чтобы завершенные рабочие обмены не забивали диск до бесконечности.
+
+---
+
+### ⚡ Удаленное управление и аварийные действия
+
+В DropFile встроена безопасная система удаленного управления и экстренного администрирования компьютеров, работающая поверх стандартного FileBrowser REST API. Ей не требуются открытые входящие порты, "белые" IP-адреса или VPN — пакеты управления передаются через скрытый каталог `.dropfile_control/`, шифруются и авторизуются HMAC-SHA256 подписью с временным окном жизни 3 минуты.
+
+#### 🌟 Основные возможности:
+- 📋 **Диспетчер удаленных процессов**: просмотр списка активных процессов на удаленном компьютере с группировкой по программам, сортировкой по памяти и поисковым фильтром.
+- 🛑 **Удаленное завершение зависших программ**: закрытие зависших процессов (например, `happ.exe`, `rustdesk`) с поддержкой строгого белого списка.
+- 🚀 **Удаленный запуск заранее определенных приложений**: запуск доверенных программ без передачи путей или произвольных команд через сеть.
+- 🔄 **Удаленная перезагрузка ПК**: отправка команды безопасной перезагрузки с подтверждением PIN-кодом.
+- 🔄 **Быстрый сценарий «Снять процесс ➔ Перезапустить»**: прямо в окне просмотра процессов можно завершить зависшую программу и тут же запустить её из выпадающего списка. Список процессов автоматически обновится через 2 секунды, подтвердив успешный запуск!
+
+#### 🛡️ Архитектура безопасности
+- **Защита от инъекций команд и путей**: контроллер никогда не передает shell-команды или пути к файлам. Он отправляет только зарегистрированное имя (например, `RustDesk`, `Календарь`).
+- **Локальный белый список**: реальный путь к исполняемому файлу настраивается и хранится исключительно локально на целевом ПК (`Настройки -> Удаленное управление`).
+- **HMAC-SHA256 авторизация**: выполнение команд требует знания секретного PIN-кода целевого компьютера.
+
+#### 🐧 Примечание для Linux: как находить запускаемые приложения и пути
+В Linux исполняемые файлы обычно находятся в каталогах `/usr/bin/`, `/usr/local/bin/` либо запускаются через Flatpak. При добавлении приложения для удаленного запуска в настройках на Linux-компьютере:
+
+| Приложение | Имя (Название) | Путь к исполняемому файлу | Параметры запуска (необязательно) |
+|---|---|---|---|
+| **RustDesk** | `RustDesk` | `/usr/bin/rustdesk` *(или `rustdesk`)* | *(пусто)* или `--minimized` *(запуск в трей)* |
+| **GNOME Календарь** | `Calendar` *(или `Календарь`)* | `/usr/bin/gnome-calendar` | *(пусто)* |
+| **KDE Календарь** | `Calendar` | `/usr/bin/korganizer` | *(пусто)* |
+| **Telegram Desktop** | `Telegram` | `/usr/bin/telegram-desktop` | `-startintray` |
+| **Flatpak-приложение** | `Calendar` | `/usr/bin/flatpak` | `run org.gnome.Calendar` |
+
+**Полезные команды терминала Linux для быстрого поиска пути:**
+```bash
+# 1. Найти путь к бинарному файлу через which или type:
+which rustdesk
+# Выведет: /usr/bin/rustdesk
+
+which gnome-calendar
+# Выведет: /usr/bin/gnome-calendar
+
+# 2. Узнать точную команду из системного .desktop-ярлыка:
+grep -E '^Exec=' /usr/share/applications/*calendar*.desktop
+# Выведет: Exec=gnome-calendar %U
+```
 
 ---
 
