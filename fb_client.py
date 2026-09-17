@@ -25,7 +25,7 @@ class RemoteItem:
 
 
 class FileBrowserClient:
-    def __init__(self, base_url: str, username: str = "", password: str = "", timeout: int = 20):
+    def __init__(self, base_url: str, username: str = "", password: str = "", timeout: Any = 20):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
@@ -36,6 +36,20 @@ class FileBrowserClient:
             "User-Agent": "DropFile-Sync/1.0",
             "Accept": "application/json, text/plain, */*",
         })
+
+    def _effective_timeout(self, multiplier: float = 1.0) -> Tuple[float, float]:
+        """
+        Returns (connect_timeout, read_timeout).
+        Guarantees connect timeout is capped at 2.5 seconds so unreachable servers fail fast.
+        """
+        if isinstance(self.timeout, (tuple, list)):
+            return (float(self.timeout[0]), float(self.timeout[1]) * multiplier)
+        t = float(self.timeout) if self.timeout else 15.0
+        return (min(t, 2.5), t * multiplier)
+
+    @property
+    def effective_timeout(self) -> Tuple[float, float]:
+        return self._effective_timeout(1.0)
 
     def _encode_path(self, path: str) -> str:
         """Encodes remote path for URL, preserving slashes."""
@@ -55,7 +69,7 @@ class FileBrowserClient:
         payload = {"username": user, "password": pwd}
 
         try:
-            resp = self.session.post(url, json=payload, timeout=self.timeout)
+            resp = self.session.post(url, json=payload, timeout=self.effective_timeout)
             if resp.status_code == 200:
                 self.token = resp.text.strip().strip('"')
                 self.session.headers["X-Auth"] = self.token
@@ -92,7 +106,7 @@ class FileBrowserClient:
         payload = {"username": self.username, "password": self.password}
 
         try:
-            resp = self.session.post(url, json=payload, timeout=self.timeout)
+            resp = self.session.post(url, json=payload, timeout=self.effective_timeout)
             if resp.status_code == 200:
                 self.token = resp.text.strip().strip('"')
                 self.session.headers["X-Auth"] = self.token
@@ -123,11 +137,11 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/resources{encoded}"
 
         try:
-            resp = self.session.get(url, timeout=self.timeout)
+            resp = self.session.get(url, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 # Token may have expired, retry once
                 if self.login():
-                    resp = self.session.get(url, timeout=self.timeout)
+                    resp = self.session.get(url, timeout=self.effective_timeout)
 
             if resp.status_code == 200:
                 return resp.json()
@@ -152,10 +166,10 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/resources/recursive{encoded}"
 
         try:
-            resp = self.session.get(url, timeout=self.timeout)
+            resp = self.session.get(url, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.get(url, timeout=self.timeout)
+                    resp = self.session.get(url, timeout=self.effective_timeout)
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -246,10 +260,10 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/resources{encoded}"
 
         try:
-            resp = self.session.post(url, timeout=self.timeout)
+            resp = self.session.post(url, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.post(url, timeout=self.timeout)
+                    resp = self.session.post(url, timeout=self.effective_timeout)
             return resp.status_code in (200, 201)
         except Exception as e:
             print(f"[FileBrowserClient] create_directory error: {e}")
@@ -286,10 +300,10 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/raw{encoded}"
 
         try:
-            with self.session.get(url, stream=True, timeout=self.timeout * 2) as resp:
+            with self.session.get(url, stream=True, timeout=self._effective_timeout(2)) as resp:
                 if resp.status_code in (401, 403):
                     if self.login():
-                        with self.session.get(url, stream=True, timeout=self.timeout * 2) as resp2:
+                        with self.session.get(url, stream=True, timeout=self._effective_timeout(2)) as resp2:
                             resp = resp2
                 if resp.status_code != 200:
                     print(f"[FileBrowserClient] download {remote_path} status: {resp.status_code}")
@@ -333,12 +347,12 @@ class FileBrowserClient:
 
         try:
             with open(src, "rb") as f:
-                resp = self.session.post(url, data=f, timeout=self.timeout * 3)
+                resp = self.session.post(url, data=f, timeout=self._effective_timeout(3))
 
             if resp.status_code in (401, 403):
                 if self.login():
                     with open(src, "rb") as f:
-                        resp = self.session.post(url, data=f, timeout=self.timeout * 3)
+                        resp = self.session.post(url, data=f, timeout=self._effective_timeout(3))
 
             return resp.status_code in (200, 201)
         except Exception as e:
@@ -356,10 +370,10 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/resources{encoded}"
 
         try:
-            resp = self.session.delete(url, timeout=self.timeout)
+            resp = self.session.delete(url, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.delete(url, timeout=self.timeout)
+                    resp = self.session.delete(url, timeout=self.effective_timeout)
             return resp.status_code in (200, 204, 404)
         except Exception as e:
             print(f"[FileBrowserClient] delete error for {remote_path}: {e}")
@@ -379,7 +393,7 @@ class FileBrowserClient:
         # 1. Check if public share link already exists
         url_get = f"{self.base_url}/api/share{encoded}"
         try:
-            resp = self.session.get(url_get, timeout=self.timeout)
+            resp = self.session.get(url_get, timeout=self.effective_timeout)
             if resp.status_code == 200:
                 shares = resp.json()
                 if isinstance(shares, list) and len(shares) > 0:
@@ -392,10 +406,10 @@ class FileBrowserClient:
         # 2. Create new public share link
         url_post = f"{self.base_url}/api/share{encoded}"
         try:
-            resp = self.session.post(url_post, json={}, timeout=self.timeout)
+            resp = self.session.post(url_post, json={}, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.post(url_post, json={}, timeout=self.timeout)
+                    resp = self.session.post(url_post, json={}, timeout=self.effective_timeout)
 
             if resp.status_code in (200, 201):
                 data = resp.json()
@@ -414,10 +428,10 @@ class FileBrowserClient:
         encoded = self._encode_path(remote_path)
         url = f"{self.base_url}/api/raw{encoded}"
         try:
-            resp = self.session.get(url, timeout=self.timeout)
+            resp = self.session.get(url, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.get(url, timeout=self.timeout)
+                    resp = self.session.get(url, timeout=self.effective_timeout)
             if resp.status_code == 200:
                 return resp.text
         except Exception as e:
@@ -435,10 +449,10 @@ class FileBrowserClient:
         url = f"{self.base_url}/api/resources{encoded}?override=true"
         try:
             payload = text_content.encode("utf-8")
-            resp = self.session.post(url, data=payload, timeout=self.timeout)
+            resp = self.session.post(url, data=payload, timeout=self.effective_timeout)
             if resp.status_code in (401, 403):
                 if self.login():
-                    resp = self.session.post(url, data=payload, timeout=self.timeout)
+                    resp = self.session.post(url, data=payload, timeout=self.effective_timeout)
             return resp.status_code in (200, 201)
         except Exception as e:
             print(f"[FileBrowserClient] write_text_file error: {e}")

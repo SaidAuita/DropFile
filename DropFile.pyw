@@ -120,6 +120,7 @@ def release_instance_socket() -> None:
 _SHOW_SETTINGS_FN: Optional[Callable[[], None]] = None
 _ACTIVE_SETTINGS_PROC: Optional[Any] = None
 _TRAY_REF: Optional[Any] = None
+_IS_HEADLESS: bool = False
 
 
 
@@ -301,6 +302,12 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     release_instance_socket()
                     restart_dropfile(kill_existing=False)
                     os._exit(0)
+                elif cmd == "HAS_TRAY":
+                    reply = "NO\n" if _IS_HEADLESS else "YES\n"
+                    try:
+                        conn.sendall(reply.encode("utf-8"))
+                    except Exception:
+                        pass
                 elif cmd == "STATUS":
                     state = _ENGINE_REF.current_state if _ENGINE_REF else "idle"
                     reply = f"DropFile v{__version__} [{state}]: {_CURRENT_STATUS}\n"
@@ -384,17 +391,19 @@ def run_headless(config: Config, engine: SyncEngine) -> None:
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] DropFile daemon stopped cleanly.")
 
 
-def ensure_single_instance() -> Optional[socket.socket]:
+def ensure_single_instance(is_headless: bool = False) -> Optional[socket.socket]:
     """
     Ensures strictly one background instance of DropFile runs at a time.
     Requires BOTH:
     1. OS-level exclusive lock (Win32 Mutex on Windows / fcntl.flock on macOS/Linux).
     2. TCP socket bind on localhost:49195.
-    If EITHER fails, another instance is already running -> signal it and exit immediately.
+    If EITHER fails, another instance is already running.
+    If current process is interactive GUI (not is_headless) and existing instance has NO tray,
+    the headless daemon is terminated so the GUI can take over.
     """
     global INSTANCE_SOCKET
 
-    # 1. OS-level atomic single-instance lock with retry (to allow cleanly restarting parent to exit)
+    # 1. OS-level atomic single-instance lock with retry
     locked = False
     for _ in range(4):
         if acquire_single_instance_lock():
@@ -403,7 +412,19 @@ def ensure_single_instance() -> Optional[socket.socket]:
         time.sleep(0.2)
 
     if not locked:
-        _handle_duplicate_instance()
+        if not is_headless:
+            tray_status = send_ipc_query("HAS_TRAY", timeout=1.0)
+            if tray_status != "YES":
+                print("[DropFile] Existing instance is headless or missing tray. Terminating it to start GUI tray...")
+                send_ipc_query("QUIT", timeout=1.5)
+                time.sleep(0.4)
+                for _ in range(5):
+                    if acquire_single_instance_lock():
+                        locked = True
+                        break
+                    time.sleep(0.2)
+        if not locked:
+            _handle_duplicate_instance()
 
     # 2. Bind IPC command socket listener (strictly exclusive) with retry
     s = None
@@ -423,6 +444,29 @@ def ensure_single_instance() -> Optional[socket.socket]:
                 except Exception:
                     pass
             time.sleep(0.2)
+
+    if not is_headless:
+        tray_status = send_ipc_query("HAS_TRAY", timeout=1.0)
+        if tray_status != "YES":
+            print("[DropFile] Port bound by headless daemon. Terminating it to take over as GUI...")
+            send_ipc_query("QUIT", timeout=1.5)
+            time.sleep(0.4)
+            for _ in range(5):
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+                    s.listen(2)
+                    INSTANCE_SOCKET = s
+                    _start_instance_command_listener(s)
+                    return s
+                except Exception:
+                    if s:
+                        try:
+                            s.close()
+                        except Exception:
+                            pass
+                    time.sleep(0.2)
 
     print(f"[DropFile] Socket port {SINGLE_INSTANCE_PORT} already bound. Another instance is running.")
     release_single_instance_lock()
@@ -521,6 +565,19 @@ def main():
             print("--uninstall-service is only supported on Linux (systemd).")
             sys.exit(1)
 
+    # Detect headless mode (explicit flag or Linux server without DISPLAY)
+    global _IS_HEADLESS
+    is_headless = (
+        "--headless" in args
+        or "--daemon" in args
+        or (
+            sys.platform.startswith("linux")
+            and not os.environ.get("DISPLAY")
+            and not os.environ.get("WAYLAND_DISPLAY")
+        )
+    )
+    _IS_HEADLESS = is_headless
+
     # If invoked with --settings, open Settings UI directly on the main thread
     if "--settings" in sys.argv:
         if SettingsDialog is None:
@@ -548,12 +605,13 @@ def main():
         def on_settings_process_save():
             # Notify running background instance via IPC to reload config and trigger sync
             res = send_ipc_query("RELOAD_CONFIG", timeout=1.5)
-            if res:
+            has_tray = send_ipc_query("HAS_TRAY", timeout=1.0)
+            if res and has_tray == "YES":
                 send_ipc_query("SYNC_NOW", timeout=1.5)
             else:
-                # Primary daemon was not running! Start it in background now!
-                print("[DropFile --settings] Primary background instance not running. Starting DropFile in background...")
-                restart_dropfile(kill_existing=False)
+                # Primary daemon was either not running or running without tray! Start/restart full GUI!
+                print("[DropFile --settings] No active tray instance detected. Starting DropFile GUI...")
+                restart_dropfile(kill_existing=True)
 
         def on_settings_process_restart():
             print("[DropFile --settings] Restart requested. Terminating primary instance and launching new...")
@@ -571,28 +629,16 @@ def main():
         )
         settings_dialog.show(initial_tab=initial_tab)
 
-        # After settings window closes, ensure primary background instance is running
-        st = send_ipc_query("STATUS", timeout=0.8)
-        if not st:
-            print("[DropFile --settings] Primary instance not running after settings closed. Starting DropFile in background...")
-            restart_dropfile(kill_existing=False)
+        # After settings window closes, ensure primary background instance is running with tray
+        has_tray = send_ipc_query("HAS_TRAY", timeout=0.8)
+        if has_tray != "YES":
+            print("[DropFile --settings] Active tray instance not running after settings closed. Starting DropFile GUI...")
+            restart_dropfile(kill_existing=True)
 
         sys.exit(0)
 
-
-    # Detect headless mode (explicit flag or Linux server without DISPLAY)
-    is_headless = (
-        "--headless" in args
-        or "--daemon" in args
-        or (
-            sys.platform.startswith("linux")
-            and not os.environ.get("DISPLAY")
-            and not os.environ.get("WAYLAND_DISPLAY")
-        )
-    )
-
-    # 1. Single instance lock
-    _instance_sock = ensure_single_instance()
+    # 1. Single instance lock (with headless handover to GUI)
+    _instance_sock = ensure_single_instance(is_headless=is_headless)
 
     # 2. Load configuration
     config = Config()
@@ -716,12 +762,21 @@ def main():
     _TRAY_REF = tray
 
 
-    try:
-        tray.run()
-    except KeyboardInterrupt:
-        engine.stop()
-    except Exception as e:
-        print(f"[DropFile] Tray encountered error ({e}). Falling back to headless daemon mode...")
+    tray_started = False
+    for attempt in range(3):
+        try:
+            tray.run()
+            tray_started = True
+            break
+        except KeyboardInterrupt:
+            engine.stop()
+            sys.exit(0)
+        except Exception as e:
+            print(f"[DropFile] Tray run attempt {attempt+1}/3 failed ({e}). Retrying in 1.2s...")
+            time.sleep(1.2)
+
+    if not tray_started:
+        print("[DropFile] Tray failed after 3 attempts. Falling back to headless daemon mode...")
         run_headless(config, engine)
 
 

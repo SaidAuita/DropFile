@@ -14,6 +14,7 @@ Security:
 - Configurable process whitelist and optional strict whitelist mode.
 """
 
+import concurrent.futures
 import hashlib
 import hmac
 import json
@@ -275,7 +276,9 @@ class RemoteControlManager:
         devices_by_name: Dict[str, Dict[str, Any]] = {}
         now = time.time()
 
-        for client, remote_path in self.routes:
+        def _fetch_route_devices(route: Tuple[FileBrowserClient, str]) -> List[Dict[str, Any]]:
+            client, remote_path = route
+            route_devs = []
             try:
                 ctrl_dir = get_control_remote_dir(remote_path)
                 items = client.list_recursive(ctrl_dir)
@@ -285,21 +288,36 @@ class RemoteControlManager:
                         if raw:
                             try:
                                 info = json.loads(raw)
-                                dev_name = str(info.get("device_name", "")).strip().lower()
-                                if not dev_name:
-                                    continue
-                                last_seen = float(info.get("last_seen", 0.0))
-                                is_online = (now - last_seen) < 300.0
-
-                                if dev_name not in devices_by_name or last_seen > devices_by_name[dev_name].get("last_seen", 0.0):
-                                    info["is_online"] = is_online
-                                    devices_by_name[dev_name] = info
-                                elif is_online:
-                                    devices_by_name[dev_name]["is_online"] = True
+                                if info.get("device_name"):
+                                    route_devs.append(info)
                             except Exception:
                                 pass
             except Exception as e:
                 print(f"[RemoteControl] Error listing online devices from {getattr(client, 'base_url', '')}: {e}")
+            return route_devs
+
+        routes = self.routes
+        if not routes:
+            return []
+
+        if len(routes) == 1:
+            all_dev_lists = [_fetch_route_devices(routes[0])]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(routes)) as executor:
+                all_dev_lists = list(executor.map(_fetch_route_devices, routes))
+
+        for dev_list in all_dev_lists:
+            for info in dev_list:
+                dev_name = str(info.get("device_name", "")).strip().lower()
+                if not dev_name:
+                    continue
+                last_seen = float(info.get("last_seen", 0.0))
+                is_online = (now - last_seen) < 300.0
+                if dev_name not in devices_by_name or last_seen > devices_by_name[dev_name].get("last_seen", 0.0):
+                    info["is_online"] = is_online
+                    devices_by_name[dev_name] = info
+                elif is_online:
+                    devices_by_name[dev_name]["is_online"] = True
 
         return list(devices_by_name.values())
 

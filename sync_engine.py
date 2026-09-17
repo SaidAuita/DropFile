@@ -4,6 +4,7 @@ Coordinates local watchdog filesystem events with remote FileBrowser polling.
 Implements bidirectional sync, loop prevention, debouncing, and conflict handling.
 """
 
+import concurrent.futures
 import fnmatch
 import json
 import os
@@ -69,6 +70,8 @@ class SyncEngine:
         self.status_message = t("status_ready")
 
         self.active_server_index = self.config.primary_server_index
+        if self.active_server_index != 1 and self.config.backup_server_enabled:
+            self.apply_server_connection(self.active_server_index)
         self._last_primary_probe_time: float = 0.0
 
         self._last_servers_sync_status: Dict[str, Any] = {}
@@ -284,51 +287,36 @@ class SyncEngine:
             except Exception:
                 return 0.0
 
-        # Inspect Server 1
-        url1, u1, p1, r1 = self.get_server_credentials(1)
-        s1_info = {"online": False, "url": url1, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""}
-        if url1 and u1:
-            try:
-                c1 = FileBrowserClient(base_url=url1, username=u1, password=p1, timeout=8)
-                ok1, msg1 = c1.test_connection()
-                if ok1:
-                    s1_info["online"] = True
-                    items1 = c1.list_recursive(r1)
-                    files1 = [it for it in items1 if not it.is_dir and not self.is_ignored(it.path)]
-                    s1_info["file_count"] = len(files1)
-                    if files1:
-                        newest1 = max(files1, key=lambda it: parse_iso_mtime(it.modified))
-                        s1_info["latest_mtime"] = parse_iso_mtime(newest1.modified)
-                        s1_info["latest_file"] = newest1.name
-                        if s1_info["latest_mtime"] > 0:
-                            s1_info["latest_time_str"] = datetime.fromtimestamp(s1_info["latest_mtime"]).strftime("%d.%m.%Y %H:%M")
-                else:
-                    s1_info["error"] = msg1
-            except Exception as e:
-                s1_info["error"] = str(e)
+        def _inspect_server(idx: int) -> Dict[str, Any]:
+            url, u, p, r = self.get_server_credentials(idx)
+            info = {"online": False, "url": url, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""}
+            if url and u:
+                try:
+                    c = FileBrowserClient(base_url=url, username=u, password=p, timeout=(2.0, 5.0))
+                    ok, msg = c.test_connection()
+                    if ok:
+                        info["online"] = True
+                        items = c.list_recursive(r)
+                        files = [it for it in items if not it.is_dir and not self.is_ignored(it.path)]
+                        info["file_count"] = len(files)
+                        if files:
+                            newest = max(files, key=lambda it: parse_iso_mtime(it.modified))
+                            info["latest_mtime"] = parse_iso_mtime(newest.modified)
+                            info["latest_file"] = newest.name
+                            if info["latest_mtime"] > 0:
+                                info["latest_time_str"] = datetime.fromtimestamp(info["latest_mtime"]).strftime("%d.%m.%Y %H:%M")
+                    else:
+                        info["error"] = msg
+                except Exception as e:
+                    info["error"] = str(e)
+            return info
 
-        # Inspect Server 2
-        url2, u2, p2, r2 = self.get_server_credentials(2)
-        s2_info = {"online": False, "url": url2, "file_count": 0, "latest_file": "", "latest_mtime": 0.0, "latest_time_str": "", "error": ""}
-        if url2 and u2:
-            try:
-                c2 = FileBrowserClient(base_url=url2, username=u2, password=p2, timeout=8)
-                ok2, msg2 = c2.test_connection()
-                if ok2:
-                    s2_info["online"] = True
-                    items2 = c2.list_recursive(r2)
-                    files2 = [it for it in items2 if not it.is_dir and not self.is_ignored(it.path)]
-                    s2_info["file_count"] = len(files2)
-                    if files2:
-                        newest2 = max(files2, key=lambda it: parse_iso_mtime(it.modified))
-                        s2_info["latest_mtime"] = parse_iso_mtime(newest2.modified)
-                        s2_info["latest_file"] = newest2.name
-                        if s2_info["latest_mtime"] > 0:
-                            s2_info["latest_time_str"] = datetime.fromtimestamp(s2_info["latest_mtime"]).strftime("%d.%m.%Y %H:%M")
-                else:
-                    s2_info["error"] = msg2
-            except Exception as e:
-                s2_info["error"] = str(e)
+        # Inspect Server 1 and Server 2 concurrently in background threads
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            fut1 = executor.submit(_inspect_server, 1)
+            fut2 = executor.submit(_inspect_server, 2)
+            s1_info = fut1.result()
+            s2_info = fut2.result()
 
         # Determine comparison state
         if not s1_info["online"] and not s2_info["online"]:

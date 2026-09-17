@@ -800,9 +800,10 @@ class SettingsDialog:
         # Initial status populate & check
         if getattr(self, "engine", None):
             cached = self.engine.get_last_servers_sync_status()
-            self._update_servers_sync_ui(cached)
-            if self.config.backup_server_enabled:
-                self.window.after(300, self._on_check_servers_status)
+            if cached:
+                self._update_servers_sync_ui(cached)
+            else:
+                self._update_servers_sync_ui({"enabled": self.config.backup_server_enabled, "state": "idle", "badge": "⚪ " + t("status_ready")})
         else:
             self._update_servers_sync_ui({"enabled": False, "state": "disabled", "badge": "⚪ " + t("servers_sync_disabled")})
 
@@ -1855,7 +1856,7 @@ class SettingsDialog:
         """Creates a standalone RemoteControlManager configured with all available server routes."""
         from remote_control import RemoteControlManager
         routes = []
-        timeout = 8
+        timeout = (2.0, 5.0)
         if self.config.server_url and self.config.username:
             c1 = FileBrowserClient(
                 base_url=self.config.server_url,

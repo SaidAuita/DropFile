@@ -364,7 +364,21 @@ class TestEntrypoint(unittest.TestCase):
             self.assertTrue(bool(t("conn_test_btn2")))
             self.assertTrue(bool(t("server_badge")))
 
+    def test_client_effective_timeout(self):
+        from fb_client import FileBrowserClient
+        c1 = FileBrowserClient("http://test.local", timeout=20)
+        self.assertEqual(c1.effective_timeout, (2.5, 20.0))
+        self.assertEqual(c1._effective_timeout(2), (2.5, 40.0))
+
+        c2 = FileBrowserClient("http://test.local", timeout=(1.5, 7.0))
+        self.assertEqual(c2.effective_timeout, (1.5, 7.0))
+        self.assertEqual(c2._effective_timeout(3), (1.5, 21.0))
+
+        c3 = FileBrowserClient("http://test.local", timeout=1.2)
+        self.assertEqual(c3.effective_timeout, (1.2, 1.2))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
