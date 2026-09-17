@@ -69,6 +69,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "tray_settings": "⚙ Settings...",
         "tray_open_web": "🌐 Open in browser (FileBrowser)",
         "tray_exit": "❌ Exit",
+        "tray_running_notify": "DropFile v{version} is running in the system tray.",
+        "tray_already_running_hint": "DropFile is running in the system tray (near the clock).",
         # Notifications
         "notify_file_uploaded": "File uploaded!",
         "notify_share_ready": "Share link ready: {name}",
@@ -315,6 +317,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "tray_settings": "⚙ Настройки...",
         "tray_open_web": "🌐 Открыть в браузере (FileBrowser)",
         "tray_exit": "❌ Выход",
+        "tray_running_notify": "DropFile v{version} работает в системном трее (рядом с часами).",
+        "tray_already_running_hint": "DropFile уже работает в системном трее (рядом с часами).",
         # Notifications
         "notify_file_uploaded": "Файл выгружен!",
         "notify_share_ready": "Ссылка для обмена готова: {name}",

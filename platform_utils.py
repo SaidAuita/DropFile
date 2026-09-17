@@ -465,7 +465,12 @@ def spawn_settings_process(
             if script_path is None:
                 script_path = Path(__file__).resolve().parent / "DropFile.pyw"
             target = Path(script_path).resolve()
-            cmd = [sys.executable, str(target), "--settings"]
+            if sys.platform.startswith("linux"):
+                venv_py = target.parent / ".venv" / "bin" / "python3"
+                py_runner = str(venv_py) if venv_py.exists() else sys.executable
+            else:
+                py_runner = sys.executable
+            cmd = [py_runner, str(target), "--settings"]
             kwargs["cwd"] = str(target.parent)
 
         if tab:
@@ -712,7 +717,9 @@ def create_linux_app_menu_entry(script_path: Optional[Path | str] = None) -> boo
         exec_cmd = f'"{Path(sys.executable).resolve()}"'
     else:
         target = Path(script_path or (Path(__file__).resolve().parent / "DropFile.pyw")).resolve()
-        exec_cmd = f'"{sys.executable}" "{target}"'
+        venv_py = target.parent / ".venv" / "bin" / "python3"
+        py_runner = str(venv_py) if venv_py.exists() else sys.executable
+        exec_cmd = f'"{py_runner}" "{target}"'
     icon_path = Path(__file__).resolve().parent / "icon.ico"
     content = f"""[Desktop Entry]
 Type=Application

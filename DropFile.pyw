@@ -244,6 +244,11 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                         trigger_show_settings()
                     else:
                         open_folder_in_file_manager(_ENGINE_REF.config.local_path)
+                        if _TRAY_REF:
+                            try:
+                                _TRAY_REF.send_notification("DropFile", t("tray_already_running_hint"))
+                            except Exception:
+                                pass
                     try:
                         conn.sendall(b"OK: Launch handled\n")
                     except Exception:
@@ -602,7 +607,10 @@ def main():
             except Exception:
                 pass
 
+        restart_initiated = False
+
         def on_settings_process_save():
+            nonlocal restart_initiated
             # Notify running background instance via IPC to reload config and trigger sync
             res = send_ipc_query("RELOAD_CONFIG", timeout=1.5)
             has_tray = send_ipc_query("HAS_TRAY", timeout=1.0)
@@ -611,10 +619,13 @@ def main():
             else:
                 # Primary daemon was either not running or running without tray! Start/restart full GUI!
                 print("[DropFile --settings] No active tray instance detected. Starting DropFile GUI...")
+                restart_initiated = True
                 restart_dropfile(kill_existing=True)
 
         def on_settings_process_restart():
+            nonlocal restart_initiated
             print("[DropFile --settings] Restart requested. Terminating primary instance and launching new...")
+            restart_initiated = True
             restart_dropfile(kill_existing=True)
             os._exit(0)
 
@@ -630,10 +641,16 @@ def main():
         settings_dialog.show(initial_tab=initial_tab)
 
         # After settings window closes, ensure primary background instance is running with tray
-        has_tray = send_ipc_query("HAS_TRAY", timeout=0.8)
-        if has_tray != "YES":
-            print("[DropFile --settings] Active tray instance not running after settings closed. Starting DropFile GUI...")
-            restart_dropfile(kill_existing=True)
+        if not restart_initiated:
+            has_tray = None
+            for _ in range(3):
+                has_tray = send_ipc_query("HAS_TRAY", timeout=0.8)
+                if has_tray == "YES":
+                    break
+                time.sleep(0.3)
+            if has_tray != "YES":
+                print("[DropFile --settings] Active tray instance not running after settings closed. Starting DropFile GUI...")
+                restart_dropfile(kill_existing=True)
 
         sys.exit(0)
 
