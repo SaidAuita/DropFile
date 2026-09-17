@@ -121,24 +121,24 @@ _SHOW_SETTINGS_FN: Optional[Callable[[], None]] = None
 _ACTIVE_SETTINGS_PROC: Optional[Any] = None
 
 
-def trigger_show_settings() -> None:
+def trigger_show_settings(tab: Optional[str] = None) -> None:
     """Safely opens settings dialog or brings existing one to front without spawning duplicate processes."""
     global _ACTIVE_SETTINGS_PROC, _SHOW_SETTINGS_FN
-    if sys.platform == "darwin":
+    if sys.platform != "win32":
         if _ACTIVE_SETTINGS_PROC is not None:
             if _ACTIVE_SETTINGS_PROC.poll() is None:
                 return
             _ACTIVE_SETTINGS_PROC = None
-        _ACTIVE_SETTINGS_PROC = spawn_settings_process()
+        _ACTIVE_SETTINGS_PROC = spawn_settings_process(tab=tab)
     else:
         if _SHOW_SETTINGS_FN is not None:
-            threading.Thread(target=_SHOW_SETTINGS_FN, daemon=True).start()
+            threading.Thread(target=lambda: _SHOW_SETTINGS_FN(initial_tab=tab), daemon=True).start()
         else:
             if _ACTIVE_SETTINGS_PROC is not None:
                 if _ACTIVE_SETTINGS_PROC.poll() is None:
                     return
                 _ACTIVE_SETTINGS_PROC = None
-            _ACTIVE_SETTINGS_PROC = spawn_settings_process()
+            _ACTIVE_SETTINGS_PROC = spawn_settings_process(tab=tab)
 
 
 def send_ipc_query(cmd: str, timeout: float = 2.0) -> Optional[str]:
@@ -207,14 +207,25 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     conn.close()
                     continue
 
-                cmd = data.strip().decode("utf-8", errors="ignore")
-
-                if cmd == "SHOW_SETTINGS":
-                    trigger_show_settings()
+                if cmd.startswith("SHOW_SETTINGS"):
+                    target_tab = None
+                    if ":" in cmd:
+                        target_tab = cmd.split(":", 1)[1].strip()
+                    trigger_show_settings(tab=target_tab)
                     try:
                         conn.sendall(b"OK: Settings triggered\n")
                     except Exception:
                         pass
+                elif cmd == "RELOAD_CONFIG":
+                    if _ENGINE_REF:
+                        try:
+                            _ENGINE_REF.config.load()
+                            print("[DropFile] Config reloaded via IPC.")
+                            conn.sendall(b"OK: Config reloaded\n")
+                        except Exception as e:
+                            conn.sendall(f"ERR: {e}\n".encode("utf-8"))
+                    else:
+                        conn.sendall(b"ERR: Engine not active\n")
                 elif cmd in ("QUIT", "TERMINATE", "STOP"):
                     print("[DropFile] IPC QUIT received. Shutting down...")
                     try:
@@ -466,6 +477,20 @@ def main():
         )
         engine = SyncEngine(config=config, state_db=state_db, client=client)
 
+        initial_tab = None
+        if "--tab" in sys.argv:
+            try:
+                t_idx = sys.argv.index("--tab")
+                if t_idx + 1 < len(sys.argv):
+                    initial_tab = sys.argv[t_idx + 1]
+            except Exception:
+                pass
+
+        def on_settings_process_save():
+            # Notify running background instance via IPC to reload config and trigger sync
+            send_ipc_query("RELOAD_CONFIG", timeout=1.0)
+            send_ipc_query("SYNC_NOW", timeout=1.0)
+
         def on_settings_process_restart():
             print("[DropFile --settings] Restart requested. Terminating primary instance and launching new...")
             restart_dropfile(kill_existing=True)
@@ -476,10 +501,11 @@ def main():
             state_db=state_db,
             client=client,
             engine=engine,
+            on_save_callback=on_settings_process_save,
             on_restart_callback=on_settings_process_restart,
             on_cleanup_callback=None,
         )
-        settings_dialog.show()
+        settings_dialog.show(initial_tab=initial_tab)
         sys.exit(0)
 
     # Detect headless mode (explicit flag or Linux server without DISPLAY)

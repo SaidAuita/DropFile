@@ -324,34 +324,28 @@ class DropFileTray:
         self.config.save()
         self.refresh_menu()
 
-    def _open_settings(self, icon=None, item=None) -> None:
+    def _open_settings(self, icon=None, item=None, initial_tab: Optional[str] = None) -> None:
         try:
-            if sys.platform == "darwin":
+            if sys.platform != "win32":
                 if getattr(self, "_settings_proc", None) is not None:
                     if self._settings_proc.poll() is None:
                         return
                     self._settings_proc = None
-                self._settings_proc = spawn_settings_process()
+                self._settings_proc = spawn_settings_process(tab=initial_tab)
             else:
                 if self.settings_dialog is not None:
-                    threading.Thread(target=self.settings_dialog.show, daemon=True).start()
+                    threading.Thread(target=lambda: self.settings_dialog.show(initial_tab=initial_tab), daemon=True).start()
                 else:
                     if getattr(self, "_settings_proc", None) is not None:
                         if self._settings_proc.poll() is None:
                             return
                         self._settings_proc = None
-                    self._settings_proc = spawn_settings_process()
+                    self._settings_proc = spawn_settings_process(tab=initial_tab)
         except Exception as e:
             print(f"[Tray] Error opening settings: {e}")
 
     def _open_remote_control(self, icon=None, item=None) -> None:
-        try:
-            if self.settings_dialog is not None:
-                threading.Thread(target=lambda: self.settings_dialog.show(initial_tab="remote"), daemon=True).start()
-            else:
-                self._open_settings(icon, item)
-        except Exception as e:
-            print(f"[Tray] Error opening remote control: {e}")
+        self._open_settings(icon, item, initial_tab="remote")
 
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""

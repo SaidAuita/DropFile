@@ -445,7 +445,10 @@ def copy_to_clipboard(text: str) -> bool:
     return False
 
 
-def spawn_settings_process(script_path: Optional[Path | str] = None) -> Optional[subprocess.Popen]:
+def spawn_settings_process(
+    script_path: Optional[Path | str] = None,
+    tab: Optional[str] = None,
+) -> Optional[subprocess.Popen]:
     """Spawns the Settings dialog in an independent process running on the main thread."""
     try:
         kwargs = {}
@@ -454,16 +457,18 @@ def spawn_settings_process(script_path: Optional[Path | str] = None) -> Optional
 
         if getattr(sys, "frozen", False):
             current_exe = Path(sys.executable).resolve()
-            return subprocess.Popen([str(current_exe), "--settings"], **kwargs)
+            cmd = [str(current_exe), "--settings"]
         else:
             if script_path is None:
                 script_path = Path(__file__).resolve().parent / "DropFile.pyw"
             target = Path(script_path).resolve()
-            return subprocess.Popen(
-                [sys.executable, str(target), "--settings"],
-                cwd=str(target.parent),
-                **kwargs,
-            )
+            cmd = [sys.executable, str(target), "--settings"]
+            kwargs["cwd"] = str(target.parent)
+
+        if tab:
+            cmd.extend(["--tab", str(tab)])
+
+        return subprocess.Popen(cmd, **kwargs)
     except Exception as e:
         print(f"[platform_utils] Error spawning settings process: {e}")
         return None

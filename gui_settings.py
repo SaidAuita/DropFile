@@ -65,6 +65,7 @@ class ScrollableTab(ttk.Frame):
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self._win_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
 
+        self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
 
         self.content.bind("<Configure>", self._on_content_configure)
@@ -87,7 +88,7 @@ class ScrollableTab(ttk.Frame):
         canv_h = self.canvas.winfo_height()
         if canv_h > 40 and req_h > canv_h + 10:
             if not self.scrollbar.winfo_ismapped():
-                self.scrollbar.pack(side="right", fill="y")
+                self.scrollbar.pack(side="right", fill="y", before=self.canvas)
         else:
             if self.scrollbar.winfo_ismapped():
                 self.scrollbar.pack_forget()
@@ -1578,7 +1579,7 @@ class SettingsDialog:
         self.lbl_rc_hdr = ttk.Label(parent, text=t("remote_header"), style="Header.TLabel")
         self.lbl_rc_hdr.pack(anchor="w", pady=(0, 2))
 
-        self.lbl_rc_sub = ttk.Label(parent, text=t("remote_sub"), style="Subheader.TLabel")
+        self.lbl_rc_sub = ttk.Label(parent, text=t("remote_sub"), style="Subheader.TLabel", wraplength=620, justify="left")
         self.lbl_rc_sub.pack(anchor="w", pady=(0, 12))
 
         # --- Card 1: Receiver (Этот компьютер) ---
@@ -1873,10 +1874,14 @@ class SettingsDialog:
                 if dev_name and dev_name.lower() != my_name:
                     names.append(dev_name)
 
-            if hasattr(self, "combo_target_device"):
-                self.combo_target_device["values"] = names
-                if names and not self.combo_target_device.get():
-                    self.combo_target_device.set(names[0])
+            def _apply_devices():
+                if hasattr(self, "combo_target_device") and self._is_window_alive():
+                    self.combo_target_device["values"] = names
+                    if names and not self.combo_target_device.get():
+                        self.combo_target_device.set(names[0])
+
+            if self._is_window_alive():
+                self.window.after(0, _apply_devices)
         except Exception as e:
             print(f"[SettingsDialog] _refresh_remote_devices error: {e}")
 
@@ -1962,7 +1967,9 @@ class SettingsDialog:
                         status_callback=status_cb,
                     )
 
-                if self._is_window_alive():
+                def _apply_cmd_result():
+                    if not self._is_window_alive():
+                        return
                     if ok:
                         self.lbl_rc_cmd_status.config(
                             text=f"✅ {msg}",
@@ -1971,7 +1978,7 @@ class SettingsDialog:
                         )
                         if action == "list_processes":
                             procs = res_dict.get("processes", [])
-                            self.window.after(0, lambda: self._show_remote_processes_dialog(target, procs, pin))
+                            self._show_remote_processes_dialog(target, procs, pin)
                         else:
                             messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=self.window)
                     else:
@@ -1981,12 +1988,17 @@ class SettingsDialog:
                             bg="#FDE8E8",
                         )
                         messagebox.showerror(t("remote_header"), f"❌ {msg}", parent=self.window)
-            except Exception as e:
-                if self._is_window_alive():
-                    self.lbl_rc_cmd_status.config(text=f"Error: {e}", fg="#C81E1E", bg="#FDE8E8")
-            finally:
-                if self._is_window_alive():
                     self.btn_send_rc_cmd.config(state="normal")
+
+                if self._is_window_alive():
+                    self.window.after(0, _apply_cmd_result)
+            except Exception as e:
+                def _apply_err():
+                    if self._is_window_alive():
+                        self.lbl_rc_cmd_status.config(text=f"Error: {e}", fg="#C81E1E", bg="#FDE8E8")
+                        self.btn_send_rc_cmd.config(state="normal")
+                if self._is_window_alive():
+                    self.window.after(0, _apply_err)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2098,12 +2110,20 @@ class SettingsDialog:
                         timeout_seconds=30,
                     )
 
-                if top.winfo_exists():
+                def _apply_kill_result():
+                    if not top.winfo_exists():
+                        return
                     if ok:
                         messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=top)
-                        tree.delete(sel[0])
+                        try:
+                            tree.delete(sel[0])
+                        except Exception:
+                            pass
                     else:
                         messagebox.showerror(t("remote_header"), f"❌ {msg}", parent=top)
+
+                if top.winfo_exists():
+                    top.after(0, _apply_kill_result)
 
             threading.Thread(target=kill_worker, daemon=True).start()
 
