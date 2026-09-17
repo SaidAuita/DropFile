@@ -207,6 +207,8 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     conn.close()
                     continue
 
+                cmd = data.strip().decode("utf-8", errors="ignore")
+
                 if cmd.startswith("SHOW_SETTINGS"):
                     target_tab = None
                     if ":" in cmd:
