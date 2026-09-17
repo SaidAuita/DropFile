@@ -324,7 +324,10 @@ class DropFileTray:
         self.config.save()
         self.refresh_menu()
 
-    def _open_settings(self, icon=None, item=None, initial_tab: Optional[str] = None) -> None:
+    def _open_settings(self, icon=None, item=None) -> None:
+        self.open_settings_dialog()
+
+    def open_settings_dialog(self, initial_tab: Optional[str] = None) -> None:
         try:
             if sys.platform != "win32":
                 if getattr(self, "_settings_proc", None) is not None:
@@ -345,7 +348,8 @@ class DropFileTray:
             print(f"[Tray] Error opening settings: {e}")
 
     def _open_remote_control(self, icon=None, item=None) -> None:
-        self._open_settings(icon, item, initial_tab="remote")
+        self.open_settings_dialog(initial_tab="remote")
+
 
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""
