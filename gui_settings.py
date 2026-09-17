@@ -20,6 +20,7 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+import tkinter.font as tkfont
 from typing import Any, Callable, Optional
 
 from platform_utils import list_system_processes
@@ -225,15 +226,16 @@ class SettingsDialog:
 
         # Apply native visual style (aqua on macOS, vista/winnative on Windows, clam on Linux)
         style = ttk.Style()
+        available_families = set(tkfont.families())
         if sys.platform == "darwin":
             theme_candidates = ("aqua", "clam")
-            font_family = "Helvetica Neue"
+            font_candidates = ("Helvetica Neue", "SF Pro Text", "Helvetica", "Arial")
         elif sys.platform.startswith("win"):
             theme_candidates = ("vista", "winnative", "clam")
-            font_family = "Segoe UI"
+            font_candidates = ("Segoe UI", "Tahoma", "Arial")
         else:
             theme_candidates = ("clam", "default")
-            font_family = "DejaVu Sans"
+            font_candidates = ("DejaVu Sans", "Ubuntu", "Noto Sans", "Liberation Sans", "FreeSans", "sans-serif")
 
         for theme_name in theme_candidates:
             if theme_name in style.theme_names():
@@ -242,6 +244,10 @@ class SettingsDialog:
                     break
                 except Exception:
                     pass
+
+        font_family = next((f for f in font_candidates if f in available_families), "TkDefaultFont")
+        self.font_family = font_family
+        self.style = style
 
         # Color scheme
         bg_window = "#F3F3F3"
@@ -269,6 +275,31 @@ class SettingsDialog:
         style.configure("Accent.TButton", font=(font_family, 9, "bold"))
         style.configure("TCheckbutton", background=bg_card, font=(font_family, 9), foreground=fg_text)
 
+        # Dynamic Treeview row height calculation to avoid text overlap on Linux / custom DPI
+        tree_font = tkfont.Font(family=font_family, size=9)
+        tree_linespace = tree_font.metrics("linespace")
+        self.tree_row_height = max(28, tree_linespace + 10)
+
+        style.configure(
+            "Treeview",
+            font=(font_family, 9),
+            rowheight=self.tree_row_height,
+            background=bg_card,
+            fieldbackground=bg_card,
+            foreground=fg_text,
+        )
+        style.configure(
+            "Treeview.Heading",
+            font=(font_family, 9, "bold"),
+            foreground="#202124",
+            padding=[4, 4],
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", accent_blue)],
+            foreground=[("selected", "#FFFFFF")],
+        )
+
         # --- Top Header Bar ---
         header_bar = tk.Frame(self.window, bg="#FFFFFF", padx=20, pady=10)
         header_bar.pack(fill="x", side="top")
@@ -279,7 +310,7 @@ class SettingsDialog:
         self.lbl_app_title = tk.Label(
             title_row,
             text=t("app_name"),
-            font=("Segoe UI", 14, "bold"),
+            font=(self.font_family, 14, "bold"),
             fg="#1A1A1A",
             bg="#FFFFFF",
         )
@@ -289,7 +320,7 @@ class SettingsDialog:
         self.lbl_version_badge = tk.Label(
             title_row,
             text=f"v{__version__}",
-            font=("Segoe UI", 8, "bold"),
+            font=(self.font_family, 8, "bold"),
             fg=accent_blue,
             bg="#EBF3FB",
             padx=8,
@@ -308,7 +339,7 @@ class SettingsDialog:
         self.lbl_app_subtitle = tk.Label(
             header_bar,
             text=t("app_subtitle"),
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             fg=fg_muted,
             bg="#FFFFFF",
         )
@@ -554,7 +585,7 @@ class SettingsDialog:
         self.lbl_active_server = tk.Label(
             self.frame_active_badge,
             text=self._get_active_server_display_text(),
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             fg="#0067C0",
             bg="#EBF3FB",
         )
@@ -590,21 +621,21 @@ class SettingsDialog:
         # Server 1 URL
         self.lbl_conn_url = ttk.Label(parent, text=t("conn_url_label"), style="Card.TLabel")
         self.lbl_conn_url.pack(anchor="w", pady=(0, 2))
-        self.entry_url = ttk.Entry(parent, font=("Segoe UI", 9))
+        self.entry_url = ttk.Entry(parent, font=(self.font_family, 9))
         self.entry_url.insert(0, self.config.server_url)
         self.entry_url.pack(fill="x", pady=(0, 6))
 
         # Server 1 Username
         self.lbl_conn_user = ttk.Label(parent, text=t("conn_user_label"), style="Card.TLabel")
         self.lbl_conn_user.pack(anchor="w", pady=(0, 2))
-        self.entry_user = ttk.Entry(parent, font=("Segoe UI", 9))
+        self.entry_user = ttk.Entry(parent, font=(self.font_family, 9))
         self.entry_user.insert(0, self.config.username)
         self.entry_user.pack(fill="x", pady=(0, 6))
 
         # Server 1 Password
         self.lbl_conn_pwd = ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_conn_pwd.pack(anchor="w", pady=(0, 2))
-        self.entry_pwd = ttk.Entry(parent, font=("Segoe UI", 9), show="•")
+        self.entry_pwd = ttk.Entry(parent, font=(self.font_family, 9), show="•")
         self.entry_pwd.insert(0, self.config.password)
         self.entry_pwd.pack(fill="x", pady=(0, 8))
 
@@ -618,7 +649,7 @@ class SettingsDialog:
         self.lbl_test_status = tk.Label(
             test_frame1,
             text="",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             fg="#5F6368",
             bg="#FFFFFF",
         )
@@ -642,21 +673,21 @@ class SettingsDialog:
         # Server 2 URL
         self.lbl_backup_url = ttk.Label(self.frame_server2_body, text=t("conn_url_label"), style="Card.TLabel")
         self.lbl_backup_url.pack(anchor="w", pady=(0, 2))
-        self.entry_backup_url = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9))
+        self.entry_backup_url = ttk.Entry(self.frame_server2_body, font=(self.font_family, 9))
         self.entry_backup_url.insert(0, self.config.backup_server_url)
         self.entry_backup_url.pack(fill="x", pady=(0, 6))
 
         # Server 2 Username
         self.lbl_backup_user = ttk.Label(self.frame_server2_body, text=t("conn_user_label"), style="Card.TLabel")
         self.lbl_backup_user.pack(anchor="w", pady=(0, 2))
-        self.entry_backup_user = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9))
+        self.entry_backup_user = ttk.Entry(self.frame_server2_body, font=(self.font_family, 9))
         self.entry_backup_user.insert(0, self.config.backup_username)
         self.entry_backup_user.pack(fill="x", pady=(0, 6))
 
         # Server 2 Password
         self.lbl_backup_pwd = ttk.Label(self.frame_server2_body, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_backup_pwd.pack(anchor="w", pady=(0, 2))
-        self.entry_backup_pwd = ttk.Entry(self.frame_server2_body, font=("Segoe UI", 9), show="•")
+        self.entry_backup_pwd = ttk.Entry(self.frame_server2_body, font=(self.font_family, 9), show="•")
         self.entry_backup_pwd.insert(0, self.config.backup_password)
         self.entry_backup_pwd.pack(fill="x", pady=(0, 8))
 
@@ -670,7 +701,7 @@ class SettingsDialog:
         self.lbl_test_status2 = tk.Label(
             test_frame2,
             text="",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             fg="#5F6368",
             bg="#FFFFFF",
         )
@@ -701,7 +732,7 @@ class SettingsDialog:
         self.lbl_sync_warn = tk.Label(
             self.frame_sync_warn,
             text=t("conn_sync_backup_warning"),
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             bg="#FFF4CE",
             fg="#794B02",
             justify="left",
@@ -720,7 +751,7 @@ class SettingsDialog:
         self.lbl_sync_status_title = tk.Label(
             hdr_box,
             text=f"📊 {t('servers_sync_status_title')}:",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             bg="#F8F9FA",
             fg="#202124",
         )
@@ -729,7 +760,7 @@ class SettingsDialog:
         self.lbl_sync_status_badge = tk.Label(
             hdr_box,
             text="...",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             bg="#F8F9FA",
             fg="#0067C0",
         )
@@ -739,7 +770,7 @@ class SettingsDialog:
         self.lbl_s1_detail = tk.Label(
             self.frame_sync_status,
             text="",
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
@@ -750,7 +781,7 @@ class SettingsDialog:
         self.lbl_s2_detail = tk.Label(
             self.frame_sync_status,
             text="",
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
@@ -761,7 +792,7 @@ class SettingsDialog:
         self.lbl_leader_detail = tk.Label(
             self.frame_sync_status,
             text="",
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
@@ -789,7 +820,7 @@ class SettingsDialog:
         self.lbl_sync_action_status = tk.Label(
             btn_box,
             text="",
-            font=("Segoe UI", 8, "italic"),
+            font=(self.font_family, 8, "italic"),
             bg="#F8F9FA",
             fg="#5F6368",
         )
@@ -1067,7 +1098,7 @@ class SettingsDialog:
         local_row = tk.Frame(parent, bg="#FFFFFF")
         local_row.pack(fill="x", pady=(0, 6))
 
-        self.entry_local = ttk.Entry(local_row, font=("Segoe UI", 9))
+        self.entry_local = ttk.Entry(local_row, font=(self.font_family, 9))
         self.entry_local.insert(0, str(self.config.local_path))
         self.entry_local.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -1096,7 +1127,7 @@ class SettingsDialog:
         self.lbl_folders_remote = ttk.Label(parent, text=t("folders_remote_label"), style="Card.TLabel")
         self.lbl_folders_remote.pack(anchor="w", pady=(0, 2))
 
-        self.entry_remote = ttk.Entry(parent, font=("Segoe UI", 9))
+        self.entry_remote = ttk.Entry(parent, font=(self.font_family, 9))
         self.entry_remote.insert(0, self.config.remote_path)
         self.entry_remote.pack(fill="x", pady=(0, 4))
 
@@ -1139,7 +1170,7 @@ class SettingsDialog:
         )
         self.btn_full_sync.pack(side="left")
 
-        self.lbl_sync_status = tk.Label(parent, text="", font=("Segoe UI", 9), bg="#FFFFFF", anchor="w")
+        self.lbl_sync_status = tk.Label(parent, text="", font=(self.font_family, 9), bg="#FFFFFF", anchor="w")
         self.lbl_sync_status.pack(fill="x", pady=(4, 0))
 
     def _pull_missing_files_ui(self) -> None:
@@ -1272,7 +1303,7 @@ class SettingsDialog:
         self.lbl_poll = ttk.Label(poll_row, text=t("settings_poll_label"), style="Card.TLabel")
         self.lbl_poll.pack(side="left", padx=(0, 8))
 
-        self.spin_poll = ttk.Spinbox(poll_row, from_=5, to=3600, width=6, font=("Segoe UI", 9))
+        self.spin_poll = ttk.Spinbox(poll_row, from_=5, to=3600, width=6, font=(self.font_family, 9))
         self.spin_poll.set(self.config.poll_interval)
         self.spin_poll.pack(side="left")
 
@@ -1283,7 +1314,7 @@ class SettingsDialog:
         self.lbl_file_ret.pack(side="left", padx=(0, 8))
 
         self.spin_file_retention = ttk.Spinbox(
-            file_ret_row, from_=0, to=365, width=5, font=("Segoe UI", 9)
+            file_ret_row, from_=0, to=365, width=5, font=(self.font_family, 9)
         )
         self.spin_file_retention.set(self.config.file_retention_days)
         self.spin_file_retention.pack(side="left", padx=(0, 6))
@@ -1302,7 +1333,7 @@ class SettingsDialog:
         self.lbl_log_ret = ttk.Label(log_ret_row, text=t("settings_log_ret_label"), style="Card.TLabel")
         self.lbl_log_ret.pack(side="left", padx=(0, 8))
 
-        self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=5, font=("Segoe UI", 9))
+        self.spin_retention = ttk.Spinbox(log_ret_row, from_=0, to=365, width=5, font=(self.font_family, 9))
         self.spin_retention.set(self.config.log_retention_days)
         self.spin_retention.pack(side="left", padx=(0, 6))
 
@@ -1319,7 +1350,7 @@ class SettingsDialog:
             conflict_row,
             values=[t("settings_conflict_keep_both"), t("settings_conflict_newer_wins")],
             state="readonly",
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
         )
         self.combo_conflict.current(1 if self.config.conflict_action == "newer_wins" else 0)
         self.combo_conflict.pack(side="left", fill="x", expand=True)
@@ -1349,7 +1380,7 @@ class SettingsDialog:
             lang_row,
             values=lang_display_names,
             state="readonly",
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             width=24,
         )
         cur_lang = self.config.language
@@ -1364,7 +1395,7 @@ class SettingsDialog:
         self.lbl_lang_hint = tk.Label(
             parent,
             text="",
-            font=("Segoe UI", 8, "italic"),
+            font=(self.font_family, 8, "italic"),
             fg="#0F7B0F",
             bg="#FFFFFF",
             anchor="w",
@@ -1403,7 +1434,7 @@ class SettingsDialog:
         self.lbl_ignore = ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel")
         self.lbl_ignore.pack(anchor="w", pady=(0, 2))
 
-        self.entry_ignore = ttk.Entry(parent, font=("Segoe UI", 9))
+        self.entry_ignore = ttk.Entry(parent, font=(self.font_family, 9))
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
         self.entry_ignore.pack(fill="x", pady=(0, 8))
 
@@ -1620,7 +1651,7 @@ class SettingsDialog:
             fg="#0067C0" if has_pin else "#C81E1E",
             padx=8,
             pady=2,
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
         )
         self.lbl_rc_pin_val.pack(side="left", padx=(0, 10))
         self.btn_set_pin = ttk.Button(row_pin, text=f"🔑 {t('remote_btn_set_pin')}", command=self._prompt_set_pin)
@@ -1665,7 +1696,7 @@ class SettingsDialog:
         # Whitelist listbox + scrollbar
         wl_box_frame = tk.Frame(card1, bg="#FFFFFF")
         wl_box_frame.pack(fill="x", pady=(0, 6))
-        self.listbox_wl = tk.Listbox(wl_box_frame, height=4, font=("Segoe UI", 9), selectmode="browse")
+        self.listbox_wl = tk.Listbox(wl_box_frame, height=4, font=(self.font_family, 9), selectmode="browse")
         self.listbox_wl.pack(side="left", fill="both", expand=True)
         sb_wl = ttk.Scrollbar(wl_box_frame, orient="vertical", command=self.listbox_wl.yview)
         sb_wl.pack(side="right", fill="y")
@@ -1745,7 +1776,7 @@ class SettingsDialog:
             text="",
             bg="#F3F3F3",
             fg="#202124",
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             anchor="w",
             padx=8,
             pady=4,
@@ -1818,7 +1849,7 @@ class SettingsDialog:
 
         list_frame = tk.Frame(top)
         list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-        lb = tk.Listbox(list_frame, font=("Segoe UI", 9))
+        lb = tk.Listbox(list_frame, font=(self.font_family, 9))
         lb.pack(side="left", fill="both", expand=True)
         sb = ttk.Scrollbar(list_frame, orient="vertical", command=lb.yview)
         sb.pack(side="right", fill="y")
@@ -2031,8 +2062,8 @@ class SettingsDialog:
     def _show_remote_processes_dialog(self, target_pc: str, processes: list, target_pin: str) -> None:
         top = tk.Toplevel(self.window)
         top.title(t("remote_procs_title", target=target_pc))
-        top.geometry("640x540")
-        top.minsize(520, 420)
+        top.geometry("680x560")
+        top.minsize(580, 440)
         top.transient(self.window)
 
         # Internal mutable process list
@@ -2064,13 +2095,26 @@ class SettingsDialog:
                 return f"{kb // 1024} MB"
             return f"{kb} KB"
 
+        # Ensure toplevel Treeview style uses correct row height and font
+        top_style = ttk.Style(top)
+        top_style.configure(
+            "Treeview",
+            font=(self.font_family, 9),
+            rowheight=getattr(self, "tree_row_height", 28),
+        )
+        top_style.configure(
+            "Treeview.Heading",
+            font=(self.font_family, 9, "bold"),
+            padding=[4, 4],
+        )
+
         # Header
         hdr_frame = tk.Frame(top, bg="#FFFFFF", padx=14, pady=10)
         hdr_frame.pack(fill="x")
         lbl_hdr = tk.Label(
             hdr_frame,
             text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(local_procs)} processes)",
-            font=("Segoe UI", 11, "bold"),
+            font=(self.font_family, 11, "bold"),
             bg="#FFFFFF",
             fg="#1A1A1A",
         )
@@ -2079,9 +2123,6 @@ class SettingsDialog:
         # Filter bar with grouping toggle
         filter_frame = tk.Frame(top, padx=14, pady=6)
         filter_frame.pack(fill="x")
-        ttk.Label(filter_frame, text=t("remote_procs_filter")).pack(side="left", padx=(0, 8))
-        ent_filter = ttk.Entry(filter_frame)
-        ent_filter.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         var_group = tk.BooleanVar(value=True)
         chk_group = ttk.Checkbutton(
@@ -2090,7 +2131,16 @@ class SettingsDialog:
             variable=var_group,
             command=lambda: refresh_view(),
         )
-        chk_group.pack(side="right")
+        # Pack chk_group to the right first so it preserves its full width
+        chk_group.pack(side="right", padx=(8, 0))
+
+        ttk.Label(filter_frame, text=t("remote_procs_filter")).pack(side="left", padx=(0, 8))
+        ent_filter = ttk.Entry(filter_frame, font=(self.font_family, 9))
+        ent_filter.pack(side="left", fill="x", expand=True)
+
+        # Bottom actions frame packed with side="bottom" FIRST so it is guaranteed visible
+        bot_frame = tk.Frame(top, padx=14, pady=10)
+        bot_frame.pack(fill="x", side="bottom")
 
         # Table frame
         tree_frame = tk.Frame(top, padx=14, pady=4)
@@ -2098,13 +2148,13 @@ class SettingsDialog:
 
         cols = ("name", "pid", "memory")
         tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
-        tree.heading("name", text="Process / Application")
-        tree.heading("pid", text="PID(s)")
-        tree.heading("memory", text="Memory")
+        tree.heading("name", text=t("remote_procs_col_name"))
+        tree.heading("pid", text=t("remote_procs_col_pid"))
+        tree.heading("memory", text=t("remote_procs_col_memory"))
 
-        tree.column("name", width=280, anchor="w")
+        tree.column("name", width=320, anchor="w")
         tree.column("pid", width=120, anchor="center")
-        tree.column("memory", width=110, anchor="center")
+        tree.column("memory", width=120, anchor="center")
 
         sb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
@@ -2179,14 +2229,10 @@ class SettingsDialog:
         ent_filter.bind("<KeyRelease>", refresh_view)
         refresh_view()
 
-        # Bottom actions
-        bot_frame = tk.Frame(top, padx=14, pady=10)
-        bot_frame.pack(fill="x")
-
         def terminate_selected():
             sel = tree.selection()
             if not sel:
-                messagebox.showwarning(t("remote_header"), "Please select a process from the list.", parent=top)
+                messagebox.showwarning(t("remote_header"), t("remote_procs_select_warn"), parent=top)
                 return
             node = sel[0]
             meta = item_meta.get(node)
@@ -2249,15 +2295,19 @@ class SettingsDialog:
 
             threading.Thread(target=kill_worker, daemon=True).start()
 
+        btn_close = ttk.Button(bot_frame, text=t("btn_close"), command=top.destroy)
+        btn_close.pack(side="right", padx=(8, 0))
+
+        kill_label = t("remote_procs_btn_kill")
+        if not kill_label.startswith("🛑"):
+            kill_label = f"🛑 {kill_label}"
         btn_kill = ttk.Button(
             bot_frame,
-            text=f"🛑 {t('remote_procs_btn_kill')}",
+            text=kill_label,
             style="Accent.TButton",
             command=terminate_selected,
         )
         btn_kill.pack(side="left")
-
-        ttk.Button(bot_frame, text=t("btn_close"), command=top.destroy).pack(side="right")
 
     def _read_form_into_config(self) -> None:
         """Updates the in-memory config object with values from form fields."""
