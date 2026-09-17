@@ -51,6 +51,8 @@ DEFAULT_CONFIG = {
         "desktop.ini",
         "Thumbs.db",
         ".dropfile*",
+        "*dropfile_control*",
+        "*dropfile_leader*",
         ".DS_Store",
         "*.swp",
     ],

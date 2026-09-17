@@ -1716,9 +1716,13 @@ class SyncEngine:
 
         l_hash = compute_file_hash(local_file)
 
-        # 1. Download remote file to an isolated temporary file to inspect its content
-        temp_conflict = local_file.parent / f".df_conflict_{os.getpid()}_{local_file.name}.tmp"
-        clean_temp_rel = str(temp_conflict.relative_to(self.config.local_path)).replace("\\", "/")
+        temp_conflict_name = f".df_conflict_{os.getpid()}_{local_file.name}.tmp"
+        temp_conflict = local_file.parent / temp_conflict_name
+        parent_rel = Path(rel).parent
+        if str(parent_rel) in (".", "/"):
+            clean_temp_rel = temp_conflict_name
+        else:
+            clean_temp_rel = f"{str(parent_rel).replace(chr(92), '/').strip('/')}/{temp_conflict_name}"
         self._suppress(clean_temp_rel, duration=10.0)
 
         ok = self.client.download_file(r_item.path, temp_conflict)
