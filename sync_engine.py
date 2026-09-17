@@ -11,12 +11,13 @@ import platform
 import re
 import shutil
 import socket
+import sys
 import threading
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -24,6 +25,7 @@ from watchdog.observers import Observer
 from config import Config
 from fb_client import FileBrowserClient, RemoteItem
 from i18n import t
+from remote_control import RemoteControlManager
 from state_db import FileRecord, StateDatabase, compute_file_hash
 
 
@@ -76,6 +78,11 @@ class SyncEngine:
         self.client_id = f"{self.hostname}_{uuid.uuid4().hex[:6]}"
         self.is_sync_leader = False
         self.leader_info: Dict[str, Any] = {}
+
+        # Remote control & emergency actions
+        self.remote_control = RemoteControlManager(self.client, self.active_remote_path)
+        self._last_rc_poll: float = 0.0
+        self._last_rc_heartbeat: float = 0.0
 
         try:
             self._last_cfg_mtime = self.config.config_file.stat().st_mtime if self.config.config_file.exists() else 0.0
@@ -204,6 +211,9 @@ class SyncEngine:
             self.client.password = pwd
             self.client.token = None
         self.active_server_index = index
+        if hasattr(self, "remote_control") and self.remote_control:
+            self.remote_control.client = self.client
+            self.remote_control.remote_path = self.active_remote_path
 
     def compare_servers_status(self) -> Dict[str, Any]:
         """
@@ -713,6 +723,16 @@ class SyncEngine:
                     if not self._paused:
                         self._sync_single_local_file(rel)
 
+                # Periodic Remote Control polling & heartbeat
+                if self.config.remote_control_enabled and not self._paused:
+                    if now - self._last_rc_poll >= 5.0:
+                        self._last_rc_poll = now
+                        self._process_remote_control()
+
+                    if now - self._last_rc_heartbeat >= 60.0:
+                        self._last_rc_heartbeat = now
+                        self._publish_remote_heartbeat()
+
                 # Periodic remote polling
                 if not self._paused and (now - last_poll >= self.config.poll_interval):
                     self.reconcile_all()
@@ -732,6 +752,72 @@ class SyncEngine:
                 print(f"[SyncEngine] Worker loop exception: {e}")
 
             time.sleep(0.5)
+
+    def _process_remote_control(self) -> None:
+        """Checks for incoming remote control commands targeted at this computer."""
+        try:
+            results = self.remote_control.poll_and_dispatch(
+                local_device_name=self.config.remote_control_device_name,
+                local_pin=self.config.remote_control_pin,
+                allow_reboot=self.config.remote_control_allow_reboot,
+                allow_process_list=self.config.remote_control_allow_process_list,
+                whitelist=self.config.remote_control_whitelist,
+                strict_whitelist=self.config.remote_control_strict_whitelist,
+            )
+            for res in results:
+                action = res.get("action", "")
+                success = res.get("success", False)
+                msg = res.get("message") or res.get("error", "")
+                sender = res.get("sender", "unknown")
+                print(f"[SyncEngine] Remote action '{action}' executed: success={success}, msg={msg} (From: {sender})")
+                if self.on_notify:
+                    title = f"DropFile: {t('remote_notify_title')}"
+                    body = f"{action}: {msg} (From: {sender})"
+                    self.on_notify(title, body)
+        except Exception as e:
+            print(f"[SyncEngine] _process_remote_control error: {e}")
+
+    def _publish_remote_heartbeat(self) -> None:
+        """Publishes heartbeat of this computer to .dropfile_control."""
+        try:
+            device_info = {
+                "device_name": self.config.remote_control_device_name,
+                "hostname": self.hostname,
+                "platform": sys.platform,
+                "allow_reboot": self.config.remote_control_allow_reboot,
+                "allow_process_list": self.config.remote_control_allow_process_list,
+                "whitelist": self.config.remote_control_whitelist,
+            }
+            self.remote_control.publish_heartbeat(device_info)
+        except Exception as e:
+            print(f"[SyncEngine] _publish_remote_heartbeat error: {e}")
+
+    def get_remote_devices(self) -> List[Dict[str, Any]]:
+        """Returns list of online devices detected on the FileBrowser server."""
+        if hasattr(self, "remote_control") and self.remote_control:
+            return self.remote_control.get_online_devices()
+        return []
+
+    def send_remote_command(
+        self,
+        target_device: str,
+        action: str,
+        payload: Dict[str, Any],
+        pin: str,
+        timeout: int = 30,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Sends a remote command to target_device and waits for execution response."""
+        sender = self.config.remote_control_device_name
+        return self.remote_control.send_command_and_wait(
+            target_device=target_device,
+            sender_device=sender,
+            action=action,
+            payload=payload,
+            secret_pin=pin,
+            timeout_seconds=timeout,
+            status_callback=status_callback,
+        )
 
     def _sync_single_local_directory(self, rel_path: str, event_type: str) -> None:
         """Handles local directory creation or deletion."""

@@ -5,6 +5,7 @@ Supports portable mode (local config.json) or user AppData storage.
 
 import json
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -30,6 +31,19 @@ DEFAULT_CONFIG = {
     "file_retention_days": 30,  # File auto-cleanup in days (0 = disabled)
     "log_retention_days": 30,  # History log retention in days (0 = keep forever)
     "conflict_action": "keep_both",  # "keep_both" creates conflicted copies
+    "remote_control_enabled": False,  # Remote control & emergency actions
+    "remote_control_device_name": "",  # Name of this PC (defaults to hostname if empty)
+    "remote_control_pin": "",  # Secret PIN/password for authenticating commands
+    "remote_control_allow_reboot": True,  # Allow remote system reboot
+    "remote_control_allow_process_list": True,  # Allow remote process listing
+    "remote_control_whitelist": [  # Default whitelisted apps
+        "happ.exe",
+        "sing-box.exe",
+        "v2rayn.exe",
+        "telegram.exe",
+        "chrome.exe",
+    ],
+    "remote_control_strict_whitelist": False,  # If True, only whitelist apps can be killed
     "ignore_patterns": [
         "~$*",
         "*.tmp",
@@ -356,4 +370,72 @@ class Config:
     @desktop_shortcut.setter
     def desktop_shortcut(self, value: bool) -> None:
         self._data["desktop_shortcut"] = bool(value)
+
+    @property
+    def remote_control_enabled(self) -> bool:
+        return bool(self._data.get("remote_control_enabled", False))
+
+    @remote_control_enabled.setter
+    def remote_control_enabled(self, value: bool) -> None:
+        self._data["remote_control_enabled"] = bool(value)
+
+    @property
+    def remote_control_device_name(self) -> str:
+        val = str(self._data.get("remote_control_device_name", "")).strip()
+        if not val:
+            try:
+                val = socket.gethostname()
+            except Exception:
+                val = "MyPC"
+        return val
+
+    @remote_control_device_name.setter
+    def remote_control_device_name(self, value: str) -> None:
+        self._data["remote_control_device_name"] = str(value).strip()
+
+    @property
+    def remote_control_pin(self) -> str:
+        return str(self._data.get("remote_control_pin", "")).strip()
+
+    @remote_control_pin.setter
+    def remote_control_pin(self, value: str) -> None:
+        self._data["remote_control_pin"] = str(value).strip()
+
+    @property
+    def remote_control_allow_reboot(self) -> bool:
+        return bool(self._data.get("remote_control_allow_reboot", True))
+
+    @remote_control_allow_reboot.setter
+    def remote_control_allow_reboot(self, value: bool) -> None:
+        self._data["remote_control_allow_reboot"] = bool(value)
+
+    @property
+    def remote_control_allow_process_list(self) -> bool:
+        return bool(self._data.get("remote_control_allow_process_list", True))
+
+    @remote_control_allow_process_list.setter
+    def remote_control_allow_process_list(self, value: bool) -> None:
+        self._data["remote_control_allow_process_list"] = bool(value)
+
+    @property
+    def remote_control_whitelist(self) -> list:
+        wl = self._data.get("remote_control_whitelist")
+        if isinstance(wl, list):
+            return wl
+        return list(DEFAULT_CONFIG["remote_control_whitelist"])
+
+    @remote_control_whitelist.setter
+    def remote_control_whitelist(self, value: list) -> None:
+        if isinstance(value, list):
+            self._data["remote_control_whitelist"] = [str(x).strip() for x in value if str(x).strip()]
+        else:
+            self._data["remote_control_whitelist"] = []
+
+    @property
+    def remote_control_strict_whitelist(self) -> bool:
+        return bool(self._data.get("remote_control_strict_whitelist", False))
+
+    @remote_control_strict_whitelist.setter
+    def remote_control_strict_whitelist(self, value: bool) -> None:
+        self._data["remote_control_strict_whitelist"] = bool(value)
 

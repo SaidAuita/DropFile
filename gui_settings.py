@@ -19,8 +19,10 @@ ensure_macos_tk_compatibility()
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable, Optional
+
+from platform_utils import list_system_processes
 
 from config import Config
 from fb_client import FileBrowserClient
@@ -149,12 +151,14 @@ class SettingsDialog:
             except Exception:
                 pass
 
-    def show(self) -> None:
+    def show(self, initial_tab: Optional[str] = None) -> None:
         with self._show_lock:
             if self._is_window_alive():
                 try:
                     self.window.lift()
                     self.window.focus_force()
+                    if initial_tab == "remote" and hasattr(self, "tab_remote"):
+                        self.window.after(0, lambda: self.notebook.select(self.tab_remote))
                     if sys.platform == "darwin":
                         from AppKit import NSApplication
                         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
@@ -365,6 +369,16 @@ class SettingsDialog:
         self.notebook.add(self.tab_log, text=t("tab_log"))
         self._build_log_tab(self.tab_log)
 
+        # Tab 5: Remote Control (Scrollable)
+        self.tab_remote = ScrollableTab(self.notebook, padding=(18, 14))
+        self.notebook.add(self.tab_remote, text=t("tab_remote"))
+        self._build_remote_tab(self.tab_remote.content)
+        if initial_tab == "remote":
+            try:
+                self.notebook.select(self.tab_remote)
+            except Exception:
+                pass
+
         # Center on screen
         self.window.update_idletasks()
         w = self.window.winfo_width()
@@ -404,6 +418,8 @@ class SettingsDialog:
         self.notebook.tab(self.tab_folders, text=t("tab_folders"))
         self.notebook.tab(self.tab_settings, text=t("tab_settings"))
         self.notebook.tab(self.tab_log, text=t("tab_log"))
+        if hasattr(self, "tab_remote"):
+            self.notebook.tab(self.tab_remote, text=t("tab_remote"))
 
         self.btn_restart.config(text=f"🔄 {t('btn_save_restart')}")
         self.btn_save.config(text=t("btn_save_apply"))
@@ -1558,6 +1574,549 @@ class SettingsDialog:
             stat = t("status_success") if r["status"] == "success" else r["status"]
             self.tree_log.insert("", "end", values=(ts, act, r["direction"], r["rel_path"], stat))
 
+    def _build_remote_tab(self, parent: ttk.Frame) -> None:
+        self.lbl_rc_hdr = ttk.Label(parent, text=t("remote_header"), style="Header.TLabel")
+        self.lbl_rc_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_rc_sub = ttk.Label(parent, text=t("remote_sub"), style="Subheader.TLabel")
+        self.lbl_rc_sub.pack(anchor="w", pady=(0, 12))
+
+        # --- Card 1: Receiver (Этот компьютер) ---
+        card1 = tk.LabelFrame(parent, text=f"  💻 {t('remote_receiver_card')}  ", bg="#FFFFFF", padx=14, pady=10)
+        card1.pack(fill="x", pady=(0, 14))
+
+        # Enable checkbox
+        self.var_rc_enabled = tk.BooleanVar(value=self.config.remote_control_enabled)
+        self.chk_rc_enabled = ttk.Checkbutton(
+            card1,
+            text=t("remote_enable_chk"),
+            variable=self.var_rc_enabled,
+            style="TCheckbutton",
+        )
+        self.chk_rc_enabled.pack(anchor="w", pady=(0, 8))
+
+        # Device name row
+        row_name = tk.Frame(card1, bg="#FFFFFF")
+        row_name.pack(fill="x", pady=(0, 8))
+        self.lbl_rc_name = ttk.Label(row_name, text=t("remote_device_name_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_name.pack(side="left")
+        self.entry_rc_name = ttk.Entry(row_name, width=28)
+        self.entry_rc_name.insert(0, self.config.remote_control_device_name)
+        self.entry_rc_name.pack(side="left", padx=(0, 8))
+
+        # PIN status & button
+        row_pin = tk.Frame(card1, bg="#FFFFFF")
+        row_pin.pack(fill="x", pady=(0, 8))
+        self.lbl_rc_pin_lbl = ttk.Label(row_pin, text=t("remote_pin_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_pin_lbl.pack(side="left")
+        has_pin = bool(self.config.remote_control_pin)
+        pin_status_txt = "●●●●●●●● (OK)" if has_pin else "●●●● (Не задан)"
+        self.lbl_rc_pin_val = tk.Label(
+            row_pin,
+            text=pin_status_txt,
+            bg="#EBF3FB" if has_pin else "#FDE8E8",
+            fg="#0067C0" if has_pin else "#C81E1E",
+            padx=8,
+            pady=2,
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.lbl_rc_pin_val.pack(side="left", padx=(0, 10))
+        self.btn_set_pin = ttk.Button(row_pin, text=f"🔑 {t('remote_btn_set_pin')}", command=self._prompt_set_pin)
+        self.btn_set_pin.pack(side="left")
+
+        # Permissions checkboxes
+        row_perms = tk.Frame(card1, bg="#FFFFFF")
+        row_perms.pack(fill="x", pady=(0, 6))
+        self.var_rc_reboot = tk.BooleanVar(value=self.config.remote_control_allow_reboot)
+        self.chk_rc_reboot = ttk.Checkbutton(
+            row_perms,
+            text=f"🔄 {t('remote_allow_reboot_chk')}",
+            variable=self.var_rc_reboot,
+            style="TCheckbutton",
+        )
+        self.chk_rc_reboot.pack(side="left", padx=(0, 16))
+
+        self.var_rc_procs = tk.BooleanVar(value=self.config.remote_control_allow_process_list)
+        self.chk_rc_procs = ttk.Checkbutton(
+            row_perms,
+            text=f"📋 {t('remote_allow_procs_chk')}",
+            variable=self.var_rc_procs,
+            style="TCheckbutton",
+        )
+        self.chk_rc_procs.pack(side="left")
+
+        # Whitelist section
+        row_wl_hdr = tk.Frame(card1, bg="#FFFFFF")
+        row_wl_hdr.pack(fill="x", pady=(8, 4))
+        self.lbl_rc_wl_hdr = ttk.Label(row_wl_hdr, text=t("remote_whitelist_hdr"), style="Card.TLabel")
+        self.lbl_rc_wl_hdr.pack(side="left")
+
+        self.var_rc_strict_wl = tk.BooleanVar(value=self.config.remote_control_strict_whitelist)
+        self.chk_rc_strict_wl = ttk.Checkbutton(
+            row_wl_hdr,
+            text=t("remote_strict_whitelist_chk"),
+            variable=self.var_rc_strict_wl,
+            style="TCheckbutton",
+        )
+        self.chk_rc_strict_wl.pack(side="right")
+
+        # Whitelist listbox + scrollbar
+        wl_box_frame = tk.Frame(card1, bg="#FFFFFF")
+        wl_box_frame.pack(fill="x", pady=(0, 6))
+        self.listbox_wl = tk.Listbox(wl_box_frame, height=4, font=("Segoe UI", 9), selectmode="browse")
+        self.listbox_wl.pack(side="left", fill="both", expand=True)
+        sb_wl = ttk.Scrollbar(wl_box_frame, orient="vertical", command=self.listbox_wl.yview)
+        sb_wl.pack(side="right", fill="y")
+        self.listbox_wl.config(yscrollcommand=sb_wl.set)
+        for app in self.config.remote_control_whitelist:
+            self.listbox_wl.insert(tk.END, app)
+
+        # Whitelist buttons
+        wl_btns_frame = tk.Frame(card1, bg="#FFFFFF")
+        wl_btns_frame.pack(fill="x")
+        ttk.Button(wl_btns_frame, text=t("remote_btn_add_app"), command=self._add_whitelist_app).pack(side="left", padx=(0, 6))
+        ttk.Button(wl_btns_frame, text=t("remote_btn_del_app"), command=self._remove_whitelist_app).pack(side="left", padx=(0, 6))
+        ttk.Button(wl_btns_frame, text=f"📋 {t('remote_btn_from_running')}", command=self._add_from_running_apps).pack(side="left")
+
+        # --- Card 2: Remote Controller (Отправить команду на другой ПК) ---
+        card2 = tk.LabelFrame(parent, text=f"  🚀 {t('remote_sender_card')}  ", bg="#FFFFFF", padx=14, pady=10)
+        card2.pack(fill="x", pady=(0, 10))
+
+        # Target PC selection
+        row_target = tk.Frame(card2, bg="#FFFFFF")
+        row_target.pack(fill="x", pady=(0, 8))
+        self.lbl_rc_target_lbl = ttk.Label(row_target, text=t("remote_target_pc_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_target_lbl.pack(side="left")
+        self.combo_target_device = ttk.Combobox(row_target, width=25)
+        self.combo_target_device.pack(side="left", padx=(0, 8))
+        ttk.Button(row_target, text=t("remote_devices_refresh"), command=self._refresh_remote_devices).pack(side="left")
+
+        # Action selection
+        row_act = tk.Frame(card2, bg="#FFFFFF")
+        row_act.pack(fill="x", pady=(0, 8))
+        self.lbl_rc_act_lbl = ttk.Label(row_act, text=t("remote_action_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_act_lbl.pack(side="left")
+        self.rc_action_options = [
+            t("remote_act_kill"),
+            t("remote_act_reboot"),
+            t("remote_act_list"),
+        ]
+        self.combo_rc_action = ttk.Combobox(row_act, values=self.rc_action_options, state="readonly", width=36)
+        self.combo_rc_action.current(0)
+        self.combo_rc_action.pack(side="left")
+        self.combo_rc_action.bind("<<ComboboxSelected>>", self._on_rc_action_changed)
+
+        # Process name row (enabled for kill_process)
+        self.row_proc_input = tk.Frame(card2, bg="#FFFFFF")
+        self.row_proc_input.pack(fill="x", pady=(0, 8))
+        self.lbl_rc_proc_lbl = ttk.Label(self.row_proc_input, text=t("remote_process_name_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_proc_lbl.pack(side="left")
+        self.entry_rc_target_proc = ttk.Entry(self.row_proc_input, width=28)
+        self.entry_rc_target_proc.insert(0, "happ.exe")
+        self.entry_rc_target_proc.pack(side="left")
+
+        # Target PIN row
+        row_target_pin = tk.Frame(card2, bg="#FFFFFF")
+        row_target_pin.pack(fill="x", pady=(0, 10))
+        self.lbl_rc_tpin_lbl = ttk.Label(row_target_pin, text=t("remote_target_pin_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_tpin_lbl.pack(side="left")
+        self.entry_rc_target_pin = ttk.Entry(row_target_pin, show="●", width=20)
+        self.entry_rc_target_pin.pack(side="left", padx=(0, 8))
+        self._target_pin_visible = False
+        self.btn_toggle_target_pin = ttk.Button(row_target_pin, text="👁", width=3, command=self._toggle_target_pin_visibility)
+        self.btn_toggle_target_pin.pack(side="left")
+
+        # Send command button
+        row_send = tk.Frame(card2, bg="#FFFFFF")
+        row_send.pack(fill="x", pady=(0, 6))
+        self.btn_send_rc_cmd = ttk.Button(
+            row_send,
+            text=f"🚀 {t('remote_btn_send_cmd')}",
+            style="Accent.TButton",
+            command=self._on_send_remote_command,
+        )
+        self.btn_send_rc_cmd.pack(side="left")
+
+        # Live status message banner
+        self.lbl_rc_cmd_status = tk.Label(
+            card2,
+            text="",
+            bg="#F3F3F3",
+            fg="#202124",
+            font=("Segoe UI", 9),
+            anchor="w",
+            padx=8,
+            pady=4,
+            relief="sunken",
+        )
+        self.lbl_rc_cmd_status.pack(fill="x", pady=(6, 0))
+
+        # Auto-refresh remote devices on initial build in background
+        threading.Thread(target=self._refresh_remote_devices, daemon=True).start()
+
+    def _prompt_set_pin(self) -> None:
+        pin = simpledialog.askstring(
+            t("remote_pin_prompt_title"),
+            t("remote_pin_prompt_msg"),
+            show="●",
+            parent=self.window,
+        )
+        if pin is not None:
+            clean_pin = pin.strip()
+            self.config.remote_control_pin = clean_pin
+            has_pin = bool(clean_pin)
+            self.lbl_rc_pin_val.config(
+                text="●●●●●●●● (OK)" if has_pin else "●●●● (Не задан)",
+                bg="#EBF3FB" if has_pin else "#FDE8E8",
+                fg="#0067C0" if has_pin else "#C81E1E",
+            )
+            if has_pin:
+                messagebox.showinfo(t("remote_header"), t("remote_pin_set_success"), parent=self.window)
+            else:
+                messagebox.showwarning(t("remote_header"), t("remote_pin_cleared"), parent=self.window)
+
+    def _add_whitelist_app(self) -> None:
+        app = simpledialog.askstring(
+            t("remote_whitelist_hdr"),
+            "Enter executable name to whitelist (e.g. happ.exe, chrome.exe):",
+            parent=self.window,
+        )
+        if app and app.strip():
+            clean_app = app.strip().lower()
+            existing = [self.listbox_wl.get(i).lower() for i in range(self.listbox_wl.size())]
+            if clean_app not in existing:
+                self.listbox_wl.insert(tk.END, clean_app)
+
+    def _remove_whitelist_app(self) -> None:
+        sel = self.listbox_wl.curselection()
+        if sel:
+            self.listbox_wl.delete(sel[0])
+
+    def _add_from_running_apps(self) -> None:
+        procs = list_system_processes()
+        if not procs:
+            messagebox.showinfo(t("remote_whitelist_hdr"), "No running processes detected.", parent=self.window)
+            return
+
+        top = tk.Toplevel(self.window)
+        top.title("Select Application from Running Processes")
+        top.geometry("420x450")
+        top.transient(self.window)
+        top.grab_set()
+
+        lbl = ttk.Label(top, text="Select an application to add to whitelist:", style="Header.TLabel")
+        lbl.pack(anchor="w", padx=12, pady=(12, 6))
+
+        # Filter
+        filter_frame = tk.Frame(top)
+        filter_frame.pack(fill="x", padx=12, pady=(0, 6))
+        ttk.Label(filter_frame, text="Filter:").pack(side="left", padx=(0, 6))
+        ent_filter = ttk.Entry(filter_frame)
+        ent_filter.pack(side="left", fill="x", expand=True)
+
+        list_frame = tk.Frame(top)
+        list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        lb = tk.Listbox(list_frame, font=("Segoe UI", 9))
+        lb.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(list_frame, orient="vertical", command=lb.yview)
+        sb.pack(side="right", fill="y")
+        lb.config(yscrollcommand=sb.set)
+
+        # Unique process names sorted
+        unique_names = sorted(list(set(p["name"] for p in procs)), key=lambda x: x.lower())
+        for name in unique_names:
+            lb.insert(tk.END, name)
+
+        def apply_filter(*args):
+            query = ent_filter.get().strip().lower()
+            lb.delete(0, tk.END)
+            for name in unique_names:
+                if query in name.lower():
+                    lb.insert(tk.END, name)
+
+        ent_filter.bind("<KeyRelease>", apply_filter)
+
+        def on_select():
+            sel = lb.curselection()
+            if sel:
+                chosen = lb.get(sel[0])
+                existing = [self.listbox_wl.get(i).lower() for i in range(self.listbox_wl.size())]
+                if chosen.lower() not in existing:
+                    self.listbox_wl.insert(tk.END, chosen)
+                top.destroy()
+
+        btn_row = tk.Frame(top)
+        btn_row.pack(fill="x", padx=12, pady=(0, 12))
+        ttk.Button(btn_row, text="Add Selected", style="Accent.TButton", command=on_select).pack(side="right")
+        ttk.Button(btn_row, text="Cancel", command=top.destroy).pack(side="right", padx=(0, 8))
+
+    def _refresh_remote_devices(self) -> None:
+        try:
+            devices = []
+            if self.engine:
+                devices = self.engine.get_remote_devices()
+            else:
+                from remote_control import RemoteControlManager
+                c = FileBrowserClient(
+                    base_url=self.config.server_url,
+                    username=self.config.username,
+                    password=self.config.password,
+                    timeout=8,
+                )
+                rc = RemoteControlManager(c, self.config.remote_path)
+                devices = rc.get_online_devices()
+
+            my_name = self.config.remote_control_device_name.lower()
+            names = []
+            for d in devices:
+                dev_name = d.get("device_name", "")
+                if dev_name and dev_name.lower() != my_name:
+                    names.append(dev_name)
+
+            if hasattr(self, "combo_target_device"):
+                self.combo_target_device["values"] = names
+                if names and not self.combo_target_device.get():
+                    self.combo_target_device.set(names[0])
+        except Exception as e:
+            print(f"[SettingsDialog] _refresh_remote_devices error: {e}")
+
+    def _on_rc_action_changed(self, event=None) -> None:
+        idx = self.combo_rc_action.current()
+        if idx == 0:  # kill_process
+            self.row_proc_input.pack(fill="x", pady=(0, 8))
+        else:
+            self.row_proc_input.pack_forget()
+
+    def _toggle_target_pin_visibility(self) -> None:
+        self._target_pin_visible = not getattr(self, "_target_pin_visible", False)
+        self.entry_rc_target_pin.config(show="" if self._target_pin_visible else "●")
+        self.btn_toggle_target_pin.config(text="🔒" if self._target_pin_visible else "👁")
+
+    def _on_send_remote_command(self) -> None:
+        target = self.combo_target_device.get().strip()
+        if not target:
+            messagebox.showwarning(t("remote_header"), "Please select or enter a target computer name.", parent=self.window)
+            return
+
+        pin = self.entry_rc_target_pin.get().strip()
+        if not pin:
+            messagebox.showwarning(t("remote_header"), "Please enter the target computer's PIN / password.", parent=self.window)
+            return
+
+        idx = self.combo_rc_action.current()
+        if idx == 0:
+            action = "kill_process"
+            proc_name = self.entry_rc_target_proc.get().strip()
+            if not proc_name:
+                messagebox.showwarning(t("remote_header"), "Please enter a process name to terminate.", parent=self.window)
+                return
+            payload = {"process_name": proc_name}
+        elif idx == 1:
+            action = "reboot"
+            ans = messagebox.askyesno(
+                t("remote_confirm_reboot_title"),
+                t("remote_confirm_reboot_msg", target=target),
+                parent=self.window,
+            )
+            if not ans:
+                return
+            payload = {"delay": 5}
+        else:
+            action = "list_processes"
+            payload = {}
+
+        self.btn_send_rc_cmd.config(state="disabled")
+        self.lbl_rc_cmd_status.config(text=f"Sending command to '{target}'...", fg="#0067C0", bg="#EBF3FB")
+
+        def status_cb(msg: str):
+            if hasattr(self, "lbl_rc_cmd_status") and self._is_window_alive():
+                self.lbl_rc_cmd_status.after(0, lambda: self.lbl_rc_cmd_status.config(text=msg))
+
+        def worker():
+            try:
+                if self.engine:
+                    ok, msg, res_dict = self.engine.send_remote_command(
+                        target_device=target,
+                        action=action,
+                        payload=payload,
+                        pin=pin,
+                        timeout=35,
+                        status_callback=status_cb,
+                    )
+                else:
+                    from remote_control import RemoteControlManager
+                    c = FileBrowserClient(
+                        base_url=self.config.server_url,
+                        username=self.config.username,
+                        password=self.config.password,
+                        timeout=15,
+                    )
+                    rc = RemoteControlManager(c, self.config.remote_path)
+                    ok, msg, res_dict = rc.send_command_and_wait(
+                        target_device=target,
+                        sender_device=self.config.remote_control_device_name,
+                        action=action,
+                        payload=payload,
+                        secret_pin=pin,
+                        timeout_seconds=35,
+                        status_callback=status_cb,
+                    )
+
+                if self._is_window_alive():
+                    if ok:
+                        self.lbl_rc_cmd_status.config(
+                            text=f"✅ {msg}",
+                            fg="#0F7B0F",
+                            bg="#EDF7ED",
+                        )
+                        if action == "list_processes":
+                            procs = res_dict.get("processes", [])
+                            self.window.after(0, lambda: self._show_remote_processes_dialog(target, procs, pin))
+                        else:
+                            messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=self.window)
+                    else:
+                        self.lbl_rc_cmd_status.config(
+                            text=f"❌ {msg}",
+                            fg="#C81E1E",
+                            bg="#FDE8E8",
+                        )
+                        messagebox.showerror(t("remote_header"), f"❌ {msg}", parent=self.window)
+            except Exception as e:
+                if self._is_window_alive():
+                    self.lbl_rc_cmd_status.config(text=f"Error: {e}", fg="#C81E1E", bg="#FDE8E8")
+            finally:
+                if self._is_window_alive():
+                    self.btn_send_rc_cmd.config(state="normal")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_remote_processes_dialog(self, target_pc: str, processes: list, target_pin: str) -> None:
+        top = tk.Toplevel(self.window)
+        top.title(t("remote_procs_title", target=target_pc))
+        top.geometry("620x520")
+        top.minsize(500, 400)
+        top.transient(self.window)
+
+        # Header
+        hdr_frame = tk.Frame(top, bg="#FFFFFF", padx=14, pady=10)
+        hdr_frame.pack(fill="x")
+        tk.Label(
+            hdr_frame,
+            text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(processes)} processes)",
+            font=("Segoe UI", 11, "bold"),
+            bg="#FFFFFF",
+            fg="#1A1A1A",
+        ).pack(side="left")
+
+        # Filter bar
+        filter_frame = tk.Frame(top, padx=14, pady=6)
+        filter_frame.pack(fill="x")
+        ttk.Label(filter_frame, text=t("remote_procs_filter")).pack(side="left", padx=(0, 8))
+        ent_filter = ttk.Entry(filter_frame)
+        ent_filter.pack(side="left", fill="x", expand=True)
+
+        # Table frame
+        tree_frame = tk.Frame(top, padx=14, pady=4)
+        tree_frame.pack(fill="both", expand=True)
+
+        cols = ("name", "pid", "memory")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+        tree.heading("name", text="Process Name")
+        tree.heading("pid", text="PID")
+        tree.heading("memory", text="Memory")
+
+        tree.column("name", width=260, anchor="w")
+        tree.column("pid", width=100, anchor="center")
+        tree.column("memory", width=120, anchor="center")
+
+        sb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+
+        tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        for p in processes:
+            tree.insert("", "end", values=(p.get("name", ""), p.get("pid", ""), p.get("memory", "")))
+
+        def filter_tree(*args):
+            q = ent_filter.get().strip().lower()
+            for r in tree.get_children():
+                tree.delete(r)
+            for p in processes:
+                p_name = str(p.get("name", "")).lower()
+                p_pid = str(p.get("pid", ""))
+                if q in p_name or q in p_pid:
+                    tree.insert("", "end", values=(p.get("name", ""), p.get("pid", ""), p.get("memory", "")))
+
+        ent_filter.bind("<KeyRelease>", filter_tree)
+
+        # Bottom actions
+        bot_frame = tk.Frame(top, padx=14, pady=10)
+        bot_frame.pack(fill="x")
+
+        def terminate_selected():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showwarning(t("remote_header"), "Please select a process from the list.", parent=top)
+                return
+            item_vals = tree.item(sel[0], "values")
+            p_name = item_vals[0]
+            p_pid = item_vals[1]
+
+            ans = messagebox.askyesno(
+                t("remote_header"),
+                t("remote_procs_confirm_kill", name=p_name, pid=p_pid, target=target_pc),
+                parent=top,
+            )
+            if not ans:
+                return
+
+            def kill_worker():
+                if self.engine:
+                    ok, msg, _ = self.engine.send_remote_command(
+                        target_device=target_pc,
+                        action="kill_process",
+                        payload={"process_name": p_name},
+                        pin=target_pin,
+                        timeout=30,
+                    )
+                else:
+                    from remote_control import RemoteControlManager
+                    c = FileBrowserClient(
+                        base_url=self.config.server_url,
+                        username=self.config.username,
+                        password=self.config.password,
+                        timeout=15,
+                    )
+                    rc = RemoteControlManager(c, self.config.remote_path)
+                    ok, msg, _ = rc.send_command_and_wait(
+                        target_device=target_pc,
+                        sender_device=self.config.remote_control_device_name,
+                        action="kill_process",
+                        payload={"process_name": p_name},
+                        secret_pin=target_pin,
+                        timeout_seconds=30,
+                    )
+
+                if top.winfo_exists():
+                    if ok:
+                        messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=top)
+                        tree.delete(sel[0])
+                    else:
+                        messagebox.showerror(t("remote_header"), f"❌ {msg}", parent=top)
+
+            threading.Thread(target=kill_worker, daemon=True).start()
+
+        btn_kill = ttk.Button(
+            bot_frame,
+            text=f"🛑 {t('remote_procs_btn_kill')}",
+            style="Accent.TButton",
+            command=terminate_selected,
+        )
+        btn_kill.pack(side="left")
+
+        ttk.Button(bot_frame, text=t("btn_close"), command=top.destroy).pack(side="right")
+
     def _read_form_into_config(self) -> None:
         """Updates the in-memory config object with values from form fields."""
         self.config.server_url = self.entry_url.get().strip()
@@ -1630,6 +2189,19 @@ class SettingsDialog:
             if raw_patterns:
                 self.config.set("ignore_patterns", raw_patterns)
 
+        if hasattr(self, "var_rc_enabled"):
+            self.config.remote_control_enabled = self.var_rc_enabled.get()
+        if hasattr(self, "entry_rc_name"):
+            self.config.remote_control_device_name = self.entry_rc_name.get().strip()
+        if hasattr(self, "var_rc_reboot"):
+            self.config.remote_control_allow_reboot = self.var_rc_reboot.get()
+        if hasattr(self, "var_rc_procs"):
+            self.config.remote_control_allow_process_list = self.var_rc_procs.get()
+        if hasattr(self, "var_rc_strict_wl"):
+            self.config.remote_control_strict_whitelist = self.var_rc_strict_wl.get()
+        if hasattr(self, "listbox_wl"):
+            self.config.remote_control_whitelist = list(self.listbox_wl.get(0, tk.END))
+
     def _populate_form_fields(self) -> None:
         """Populates UI fields from the current config object."""
         self.entry_url.delete(0, tk.END)
@@ -1693,6 +2265,29 @@ class SettingsDialog:
 
         self.entry_ignore.delete(0, tk.END)
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
+
+        if hasattr(self, "var_rc_enabled"):
+            self.var_rc_enabled.set(self.config.remote_control_enabled)
+        if hasattr(self, "entry_rc_name"):
+            self.entry_rc_name.delete(0, tk.END)
+            self.entry_rc_name.insert(0, self.config.remote_control_device_name)
+        if hasattr(self, "var_rc_reboot"):
+            self.var_rc_reboot.set(self.config.remote_control_allow_reboot)
+        if hasattr(self, "var_rc_procs"):
+            self.var_rc_procs.set(self.config.remote_control_allow_process_list)
+        if hasattr(self, "var_rc_strict_wl"):
+            self.var_rc_strict_wl.set(self.config.remote_control_strict_whitelist)
+        if hasattr(self, "listbox_wl"):
+            self.listbox_wl.delete(0, tk.END)
+            for itm in self.config.remote_control_whitelist:
+                self.listbox_wl.insert(tk.END, itm)
+        if hasattr(self, "lbl_rc_pin_val"):
+            has_pin = bool(self.config.remote_control_pin)
+            self.lbl_rc_pin_val.config(
+                text="●●●●●●●● (OK)" if has_pin else "●●●● (Не задан)",
+                bg="#EBF3FB" if has_pin else "#FDE8E8",
+                fg="#0067C0" if has_pin else "#C81E1E",
+            )
 
     def _export_settings(self) -> None:
         """Exports current settings to a user-chosen backup JSON file."""

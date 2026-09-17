@@ -344,6 +344,15 @@ class DropFileTray:
         except Exception as e:
             print(f"[Tray] Error opening settings: {e}")
 
+    def _open_remote_control(self, icon=None, item=None) -> None:
+        try:
+            if self.settings_dialog is not None:
+                threading.Thread(target=lambda: self.settings_dialog.show(initial_tab="remote"), daemon=True).start()
+            else:
+                self._open_settings(icon, item)
+        except Exception as e:
+            print(f"[Tray] Error opening remote control: {e}")
+
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""
         self.send_notification("DropFile", t("update_checking"))
@@ -445,6 +454,7 @@ class DropFileTray:
                 checked=lambda item: self.config.notify_on_sync,
             ),
             pystray.Menu.SEPARATOR,
+            item(lambda text: t("tray_remote_menu"), self._open_remote_control),
             item(lambda text: t("tray_settings"), self._open_settings),
             item(lambda text: t("tray_check_updates"), self._check_updates_from_tray),
             item(lambda text: t("tray_open_web"), self._open_web),

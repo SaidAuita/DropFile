@@ -10,7 +10,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 APP_NAME = "DropFile"
 MACOS_BUNDLE_ID = "com.saidauita.dropfile"
@@ -852,4 +852,166 @@ def release_single_instance_lock() -> None:
         except Exception:
             pass
         _SINGLE_INSTANCE_HANDLE = None
+
+
+def kill_process_by_name(proc_name: str) -> Tuple[bool, str]:
+    """
+    Terminates running process(es) matching proc_name across Windows, macOS, and Linux.
+    Returns (success: bool, message: str).
+    """
+    clean_name = proc_name.strip()
+    if not clean_name:
+        return False, "Process name cannot be empty"
+
+    if sys.platform.startswith("win"):
+        # On Windows, ensure .exe if needed or try both
+        names_to_try = [clean_name]
+        if not clean_name.lower().endswith(".exe"):
+            names_to_try.append(clean_name + ".exe")
+
+        killed_any = False
+        last_msg = ""
+        for name in names_to_try:
+            try:
+                flags = 0x08000000  # CREATE_NO_WINDOW
+                res = subprocess.run(
+                    ["taskkill", "/F", "/T", "/IM", name],
+                    capture_output=True,
+                    text=True,
+                    creationflags=flags,
+                    timeout=10,
+                )
+                if res.returncode == 0:
+                    killed_any = True
+                    last_msg = res.stdout.strip()
+                elif "not found" not in res.stderr.lower() and "не найден" not in res.stderr.lower():
+                    last_msg = res.stderr.strip() or res.stdout.strip()
+            except Exception as e:
+                last_msg = str(e)
+
+        if killed_any:
+            return True, f"Process '{clean_name}' terminated successfully."
+        return False, last_msg or f"Process '{clean_name}' not found."
+    else:
+        # macOS and Linux
+        try:
+            res = subprocess.run(
+                ["pkill", "-9", "-f", clean_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if res.returncode == 0:
+                return True, f"Process '{clean_name}' terminated successfully."
+            return False, f"Process '{clean_name}' not found or could not be terminated."
+        except Exception as e:
+            return False, f"Error killing process: {e}"
+
+
+def reboot_system(delay_seconds: int = 5) -> Tuple[bool, str]:
+    """
+    Initiates system reboot across Windows, macOS, and Linux.
+    Returns (success: bool, message: str).
+    """
+    delay = max(1, delay_seconds)
+    if sys.platform.startswith("win"):
+        try:
+            flags = 0x08000000  # CREATE_NO_WINDOW
+            subprocess.run(
+                ["shutdown", "/r", "/t", str(delay), "/f", "/c", "DropFile Remote Reboot"],
+                capture_output=True,
+                creationflags=flags,
+                timeout=10,
+            )
+            return True, f"System reboot scheduled in {delay} seconds."
+        except Exception as e:
+            return False, f"Failed to initiate reboot: {e}"
+    elif sys.platform == "darwin":
+        try:
+            # Try AppleScript System Events first
+            script = 'tell app "System Events" to restart'
+            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+            return True, "macOS restart requested via System Events."
+        except Exception:
+            try:
+                subprocess.run(["shutdown", "-r", "now"], capture_output=True, timeout=10)
+                return True, "macOS reboot initiated."
+            except Exception as e:
+                return False, f"Failed to initiate reboot on macOS: {e}"
+    else:
+        # Linux
+        try:
+            subprocess.run(["systemctl", "reboot"], capture_output=True, timeout=10)
+            return True, "System reboot initiated via systemctl."
+        except Exception:
+            try:
+                subprocess.run(["shutdown", "-r", "now"], capture_output=True, timeout=10)
+                return True, "System reboot initiated via shutdown."
+            except Exception as e:
+                return False, f"Failed to initiate reboot on Linux: {e}"
+
+
+def list_system_processes() -> List[Dict[str, Any]]:
+    """
+    Returns a list of running processes with pid, name, and memory usage.
+    Zero external dependencies.
+    """
+    procs: List[Dict[str, Any]] = []
+    if sys.platform.startswith("win"):
+        try:
+            import csv
+            import io
+            flags = 0x08000000  # CREATE_NO_WINDOW
+            res = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                creationflags=flags,
+                timeout=10,
+            )
+            if res.returncode == 0:
+                reader = csv.reader(io.StringIO(res.stdout))
+                for row in reader:
+                    if len(row) >= 5:
+                        p_name = row[0].strip()
+                        p_pid = row[1].strip()
+                        p_mem = row[4].replace("\xa0", " ").replace("\u202f", " ").strip()
+                        if p_name:
+                            procs.append({
+                                "pid": p_pid,
+                                "name": p_name,
+                                "memory": p_mem,
+                            })
+        except Exception as e:
+            print(f"[platform_utils] list_system_processes Windows error: {e}")
+    else:
+        # Unix (Linux / macOS)
+        try:
+            res = subprocess.run(
+                ["ps", "-eo", "pid,rss,comm"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if res.returncode == 0:
+                lines = res.stdout.strip().splitlines()
+                for line in lines:
+                    parts = line.strip().split(None, 2)
+                    if len(parts) >= 3 and parts[0].isdigit():
+                        pid = parts[0]
+                        rss_kb = int(parts[1]) if parts[1].isdigit() else 0
+                        mem_str = f"{rss_kb // 1024} MB" if rss_kb >= 1024 else f"{rss_kb} KB"
+                        comm = parts[2]
+                        procs.append({
+                            "pid": pid,
+                            "name": os.path.basename(comm),
+                            "memory": mem_str,
+                        })
+        except Exception as e:
+            print(f"[platform_utils] list_system_processes Unix error: {e}")
+
+    # Sort alphabetically by name
+    procs.sort(key=lambda x: x.get("name", "").lower())
+    return procs
 
