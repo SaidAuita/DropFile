@@ -218,9 +218,13 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
         while sock and sock == INSTANCE_SOCKET:
             try:
                 conn, _ = sock.accept()
+            except Exception:
+                break
+
+            try:
+                conn.settimeout(4.0)
                 data = conn.recv(1024)
                 if not data:
-                    conn.close()
                     continue
 
                 cmd = data.strip().decode("utf-8", errors="ignore")
@@ -329,14 +333,15 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                             conn.sendall(b"OK: Sync resumed\n")
                         except Exception:
                             pass
+            except Exception as e:
+                print(f"[DropFile IPC] Error handling command: {e}")
+            finally:
                 try:
                     conn.close()
                 except Exception:
                     pass
-            except Exception:
-                break
 
-    t = threading.Thread(target=listener, daemon=True)
+    t = threading.Thread(target=listener, daemon=True, name="DropFile-IPC-Listener")
     t.start()
 
 
