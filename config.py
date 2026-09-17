@@ -44,6 +44,8 @@ DEFAULT_CONFIG = {
         "chrome.exe",
     ],
     "remote_control_strict_whitelist": False,  # If True, only whitelist apps can be killed
+    "remote_control_allow_launch": True,  # Allow remote launching of pre-defined applications
+    "remote_control_launch_apps": [],  # Pre-defined apps: [{"name": "...", "path": "...", "args": "..."}]
     "ignore_patterns": [
         "~$*",
         "*.tmp",
@@ -440,4 +442,32 @@ class Config:
     @remote_control_strict_whitelist.setter
     def remote_control_strict_whitelist(self, value: bool) -> None:
         self._data["remote_control_strict_whitelist"] = bool(value)
+
+    @property
+    def remote_control_allow_launch(self) -> bool:
+        return bool(self._data.get("remote_control_allow_launch", True))
+
+    @remote_control_allow_launch.setter
+    def remote_control_allow_launch(self, value: bool) -> None:
+        self._data["remote_control_allow_launch"] = bool(value)
+
+    @property
+    def remote_control_launch_apps(self) -> list:
+        apps = self._data.get("remote_control_launch_apps")
+        if isinstance(apps, list):
+            return apps
+        return []
+
+    @remote_control_launch_apps.setter
+    def remote_control_launch_apps(self, value: list) -> None:
+        clean = []
+        if isinstance(value, list):
+            for it in value:
+                if isinstance(it, dict):
+                    name = str(it.get("name", "")).strip()
+                    path = str(it.get("path", "")).strip()
+                    args = str(it.get("args", "")).strip()
+                    if name and path:
+                        clean.append({"name": name, "path": path, "args": args})
+        self._data["remote_control_launch_apps"] = clean
 

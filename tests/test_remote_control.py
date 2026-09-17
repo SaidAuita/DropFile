@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from remote_control import (
     ACTION_KILL_PROCESS,
+    ACTION_LAUNCH_APP,
     ACTION_LIST_PROCESSES,
     ACTION_REBOOT,
     COMMAND_FRESHNESS_SECONDS,
@@ -212,10 +213,79 @@ class TestRemoteControlProtocol(unittest.TestCase):
     @patch("remote_control.list_system_processes")
     def test_execute_list_processes_action(self, mock_list):
         mock_list.return_value = [{"name": "happ.exe", "pid": "123", "memory": "50 MB"}]
-        res = execute_action(ACTION_LIST_PROCESSES, {})
+        launch_apps = [{"name": "RustDesk", "path": "C:\\rustdesk.exe", "args": ""}]
+        res = execute_action(ACTION_LIST_PROCESSES, {}, launch_apps=launch_apps)
         self.assertTrue(res["success"])
         self.assertEqual(len(res["processes"]), 1)
         self.assertEqual(res["processes"][0]["name"], "happ.exe")
+        self.assertEqual(res["launch_apps"], [{"name": "RustDesk"}])
+
+    def test_verify_launch_app_policy(self):
+        launch_apps = [
+            {"name": "RustDesk", "path": "C:\\Program Files\\RustDesk\\rustdesk.exe", "args": ""},
+            {"name": "Telegram", "path": "C:\\Program Files\\Telegram\\Telegram.exe", "args": "-startintray"},
+        ]
+        packet = create_command_packet(
+            target_device=self.target,
+            sender_device=self.sender,
+            action=ACTION_LAUNCH_APP,
+            payload={"app_name": "RustDesk"},
+            secret_pin=self.pin,
+        )
+
+        # Disallowed
+        ok, err = verify_command_packet(
+            packet=packet,
+            local_device_name=self.target,
+            local_pin=self.pin,
+            allow_launch=False,
+            launch_apps=launch_apps,
+        )
+        self.assertFalse(ok)
+        self.assertIn("Application launch is disabled", err)
+
+        # Allowed with matching app
+        ok, err = verify_command_packet(
+            packet=packet,
+            local_device_name=self.target,
+            local_pin=self.pin,
+            allow_launch=True,
+            launch_apps=launch_apps,
+        )
+        self.assertTrue(ok)
+
+        # Allowed but unknown app
+        packet_unknown = create_command_packet(
+            target_device=self.target,
+            sender_device=self.sender,
+            action=ACTION_LAUNCH_APP,
+            payload={"app_name": "Calculator"},
+            secret_pin=self.pin,
+        )
+        ok, err = verify_command_packet(
+            packet=packet_unknown,
+            local_device_name=self.target,
+            local_pin=self.pin,
+            allow_launch=True,
+            launch_apps=launch_apps,
+        )
+        self.assertFalse(ok)
+        self.assertIn("not in the allowed launch list", err)
+
+    @patch("remote_control.launch_app_detached")
+    def test_execute_launch_action(self, mock_launch):
+        mock_launch.return_value = (True, "Launched successfully (PID 999)")
+        launch_apps = [
+            {"name": "RustDesk", "path": "C:\\Program Files\\RustDesk\\rustdesk.exe", "args": "--silent"}
+        ]
+        res = execute_action(
+            ACTION_LAUNCH_APP,
+            {"app_name": "RustDesk"},
+            launch_apps=launch_apps,
+        )
+        self.assertTrue(res["success"])
+        self.assertEqual(res["target_app"], "RustDesk")
+        mock_launch.assert_called_once_with("C:\\Program Files\\RustDesk\\rustdesk.exe", "--silent")
 
 
 class TestRemoteControlManager(unittest.TestCase):
@@ -279,6 +349,44 @@ class TestRemoteControlManager(unittest.TestCase):
         self.mock_client.write_text_file.assert_called_once()
         res_call_path, res_call_data = self.mock_client.write_text_file.call_args[0]
         self.assertIn(f"res_{self.local_pc.lower()}_{cmd_id}.json", res_call_path)
+        self.mock_client.delete_resource.assert_called_once_with(cmd_path)
+
+    def test_poll_and_dispatch_launch_app_command(self):
+        packet = create_command_packet(
+            target_device=self.local_pc,
+            sender_device="Home-PC",
+            action=ACTION_LAUNCH_APP,
+            payload={"app_name": "RustDesk"},
+            secret_pin=self.pin,
+        )
+        cmd_id = packet["id"]
+        cmd_filename = f"cmd_{self.local_pc.lower()}_{cmd_id}.json"
+        cmd_path = f"/DropFile/.dropfile_control/{cmd_filename}"
+
+        mock_item = MagicMock()
+        mock_item.name = cmd_filename
+        mock_item.path = cmd_path
+        mock_item.is_dir = False
+
+        self.mock_client.list_recursive.return_value = [mock_item]
+        self.mock_client.read_text_file.return_value = json.dumps(packet)
+        self.mock_client.write_text_file.return_value = True
+        self.mock_client.delete_resource.return_value = True
+
+        launch_apps = [{"name": "RustDesk", "path": "C:\\rustdesk.exe", "args": ""}]
+
+        with patch("remote_control.launch_app_detached", return_value=(True, "Launched (PID 1234)")) as mock_ln:
+            results = self.manager.poll_and_dispatch(
+                local_device_name=self.local_pc,
+                local_pin=self.pin,
+                allow_launch=True,
+                launch_apps=launch_apps,
+            )
+
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]["success"])
+        self.assertEqual(results[0]["id"], cmd_id)
+        mock_ln.assert_called_once_with("C:\\rustdesk.exe", "")
         self.mock_client.delete_resource.assert_called_once_with(cmd_path)
 
     def test_send_command_and_wait(self):

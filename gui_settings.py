@@ -1676,7 +1676,16 @@ class SettingsDialog:
             variable=self.var_rc_procs,
             style="TCheckbutton",
         )
-        self.chk_rc_procs.pack(side="left")
+        self.chk_rc_procs.pack(side="left", padx=(0, 16))
+
+        self.var_rc_launch = tk.BooleanVar(value=self.config.remote_control_allow_launch)
+        self.chk_rc_launch = ttk.Checkbutton(
+            row_perms,
+            text=f"🚀 {t('remote_allow_launch_chk')}",
+            variable=self.var_rc_launch,
+            style="TCheckbutton",
+        )
+        self.chk_rc_launch.pack(side="left")
 
         # Whitelist section
         row_wl_hdr = tk.Frame(card1, bg="#FFFFFF")
@@ -1706,10 +1715,50 @@ class SettingsDialog:
 
         # Whitelist buttons
         wl_btns_frame = tk.Frame(card1, bg="#FFFFFF")
-        wl_btns_frame.pack(fill="x")
+        wl_btns_frame.pack(fill="x", pady=(0, 8))
         ttk.Button(wl_btns_frame, text=t("remote_btn_add_app"), command=self._add_whitelist_app).pack(side="left", padx=(0, 6))
         ttk.Button(wl_btns_frame, text=t("remote_btn_del_app"), command=self._remove_whitelist_app).pack(side="left", padx=(0, 6))
         ttk.Button(wl_btns_frame, text=f"📋 {t('remote_btn_from_running')}", command=self._add_from_running_apps).pack(side="left")
+
+        # --- Pre-defined Launch Applications section ---
+        row_launch_hdr = tk.Frame(card1, bg="#FFFFFF")
+        row_launch_hdr.pack(fill="x", pady=(8, 4))
+        self.lbl_rc_launch_hdr = ttk.Label(row_launch_hdr, text=t("remote_launch_apps_hdr"), style="Card.TLabel")
+        self.lbl_rc_launch_hdr.pack(side="left")
+
+        launch_box_frame = tk.Frame(card1, bg="#FFFFFF")
+        launch_box_frame.pack(fill="x", pady=(0, 6))
+
+        launch_cols = ("name", "path", "args")
+        self.tree_launch_apps = ttk.Treeview(
+            launch_box_frame,
+            columns=launch_cols,
+            show="headings",
+            height=3,
+            selectmode="browse",
+        )
+        self.tree_launch_apps.heading("name", text=t("remote_app_name_lbl"))
+        self.tree_launch_apps.heading("path", text=t("remote_app_path_lbl"))
+        self.tree_launch_apps.heading("args", text=t("remote_app_args_lbl"))
+
+        self.tree_launch_apps.column("name", width=140, anchor="w")
+        self.tree_launch_apps.column("path", width=340, anchor="w")
+        self.tree_launch_apps.column("args", width=120, anchor="w")
+
+        sb_launch = ttk.Scrollbar(launch_box_frame, orient="vertical", command=self.tree_launch_apps.yview)
+        self.tree_launch_apps.configure(yscrollcommand=sb_launch.set)
+
+        self.tree_launch_apps.pack(side="left", fill="both", expand=True)
+        sb_launch.pack(side="right", fill="y")
+
+        self._local_launch_apps = list(self.config.remote_control_launch_apps)
+        for app in self._local_launch_apps:
+            self.tree_launch_apps.insert("", "end", values=(app.get("name", ""), app.get("path", ""), app.get("args", "")))
+
+        launch_btns_frame = tk.Frame(card1, bg="#FFFFFF")
+        launch_btns_frame.pack(fill="x")
+        ttk.Button(launch_btns_frame, text=t("remote_btn_add_launch_app"), command=self._add_launch_app_dialog).pack(side="left", padx=(0, 6))
+        ttk.Button(launch_btns_frame, text=t("remote_btn_del_launch_app"), command=self._remove_launch_app).pack(side="left")
 
         # --- Card 2: Remote Controller (Отправить команду на другой ПК) ---
         card2 = tk.LabelFrame(parent, text=f"  🚀 {t('remote_sender_card')}  ", bg="#FFFFFF", padx=14, pady=10)
@@ -1722,6 +1771,7 @@ class SettingsDialog:
         self.lbl_rc_target_lbl.pack(side="left")
         self.combo_target_device = ttk.Combobox(row_target, width=25)
         self.combo_target_device.pack(side="left", padx=(0, 8))
+        self.combo_target_device.bind("<<ComboboxSelected>>", self._on_target_device_selected)
         ttk.Button(row_target, text=t("remote_devices_refresh"), command=self._refresh_remote_devices).pack(side="left")
 
         # Action selection
@@ -1733,6 +1783,7 @@ class SettingsDialog:
             t("remote_act_kill"),
             t("remote_act_reboot"),
             t("remote_act_list"),
+            t("remote_act_launch"),
         ]
         self.combo_rc_action = ttk.Combobox(row_act, values=self.rc_action_options, state="readonly", width=36)
         self.combo_rc_action.current(0)
@@ -1748,15 +1799,22 @@ class SettingsDialog:
         self.entry_rc_target_proc.insert(0, "happ.exe")
         self.entry_rc_target_proc.pack(side="left")
 
+        # Launch app selection row (enabled for launch_app)
+        self.row_launch_input = tk.Frame(card2, bg="#FFFFFF")
+        self.lbl_rc_app_lbl = ttk.Label(self.row_launch_input, text=t("remote_target_app_label"), style="Card.TLabel", width=28)
+        self.lbl_rc_app_lbl.pack(side="left")
+        self.combo_rc_target_app = ttk.Combobox(self.row_launch_input, state="readonly", width=28)
+        self.combo_rc_target_app.pack(side="left")
+
         # Target PIN row
-        row_target_pin = tk.Frame(card2, bg="#FFFFFF")
-        row_target_pin.pack(fill="x", pady=(0, 10))
-        self.lbl_rc_tpin_lbl = ttk.Label(row_target_pin, text=t("remote_target_pin_label"), style="Card.TLabel", width=28)
+        self.row_target_pin = tk.Frame(card2, bg="#FFFFFF")
+        self.row_target_pin.pack(fill="x", pady=(0, 10))
+        self.lbl_rc_tpin_lbl = ttk.Label(self.row_target_pin, text=t("remote_target_pin_label"), style="Card.TLabel", width=28)
         self.lbl_rc_tpin_lbl.pack(side="left")
-        self.entry_rc_target_pin = ttk.Entry(row_target_pin, show="●", width=20)
+        self.entry_rc_target_pin = ttk.Entry(self.row_target_pin, show="●", width=20)
         self.entry_rc_target_pin.pack(side="left", padx=(0, 8))
         self._target_pin_visible = False
-        self.btn_toggle_target_pin = ttk.Button(row_target_pin, text="👁", width=3, command=self._toggle_target_pin_visibility)
+        self.btn_toggle_target_pin = ttk.Button(self.row_target_pin, text="👁", width=3, command=self._toggle_target_pin_visibility)
         self.btn_toggle_target_pin.pack(side="left")
 
         # Send command button
@@ -1883,6 +1941,88 @@ class SettingsDialog:
         ttk.Button(btn_row, text="Add Selected", style="Accent.TButton", command=on_select).pack(side="right")
         ttk.Button(btn_row, text="Cancel", command=top.destroy).pack(side="right", padx=(0, 8))
 
+    def _add_launch_app_dialog(self) -> None:
+        top = tk.Toplevel(self.window)
+        top.title(t("remote_app_add_title"))
+        top.geometry("520x240")
+        top.resizable(False, False)
+        top.transient(self.window)
+        top.grab_set()
+
+        frm = tk.Frame(top, padx=16, pady=16)
+        frm.pack(fill="both", expand=True)
+
+        # Name row
+        row1 = tk.Frame(frm)
+        row1.pack(fill="x", pady=(0, 10))
+        ttk.Label(row1, text=t("remote_app_name_lbl"), width=24, anchor="w").pack(side="left")
+        ent_name = ttk.Entry(row1)
+        ent_name.pack(side="left", fill="x", expand=True)
+        ent_name.focus_set()
+
+        # Path row
+        row2 = tk.Frame(frm)
+        row2.pack(fill="x", pady=(0, 10))
+        ttk.Label(row2, text=t("remote_app_path_lbl"), width=24, anchor="w").pack(side="left")
+        ent_path = ttk.Entry(row2)
+        ent_path.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        def browse_path():
+            import sys
+            filetypes = [("Executables", "*.exe;*.bat;*.cmd;*.sh;*.bin"), ("All Files", "*.*")] if sys.platform == "win32" else [("All Files", "*.*")]
+            fpath = filedialog.askopenfilename(
+                parent=top,
+                title="Select Application Executable",
+                filetypes=filetypes,
+            )
+            if fpath:
+                ent_path.delete(0, tk.END)
+                ent_path.insert(0, fpath)
+                if not ent_name.get().strip():
+                    import os
+                    base = os.path.basename(fpath)
+                    stem = os.path.splitext(base)[0]
+                    ent_name.insert(0, stem)
+
+        ttk.Button(row2, text=t("remote_app_browse_btn"), command=browse_path).pack(side="right")
+
+        # Args row
+        row3 = tk.Frame(frm)
+        row3.pack(fill="x", pady=(0, 16))
+        ttk.Label(row3, text=t("remote_app_args_lbl"), width=24, anchor="w").pack(side="left")
+        ent_args = ttk.Entry(row3)
+        ent_args.pack(side="left", fill="x", expand=True)
+
+        # Buttons
+        btn_row = tk.Frame(frm)
+        btn_row.pack(fill="x", side="bottom")
+
+        def on_save():
+            name = ent_name.get().strip()
+            path = ent_path.get().strip()
+            args = ent_args.get().strip()
+            if not name or not path:
+                messagebox.showwarning(t("remote_app_add_title"), "Please provide both an application name and executable path.", parent=top)
+                return
+            new_app = {"name": name, "path": path, "args": args}
+            self._local_launch_apps.append(new_app)
+            self.tree_launch_apps.insert("", "end", values=(name, path, args))
+            top.destroy()
+
+        ttk.Button(btn_row, text=t("btn_save"), style="Accent.TButton", command=on_save).pack(side="right")
+        ttk.Button(btn_row, text=t("btn_cancel"), command=top.destroy).pack(side="right", padx=(0, 8))
+
+    def _remove_launch_app(self) -> None:
+        sel = self.tree_launch_apps.selection()
+        if not sel:
+            return
+        item_id = sel[0]
+        values = self.tree_launch_apps.item(item_id, "values")
+        if values:
+            app_name = values[0]
+            self._local_launch_apps = [a for a in self._local_launch_apps if a.get("name") != app_name]
+        self.tree_launch_apps.delete(item_id)
+
     def _get_fallback_rc_manager(self):
         """Creates a standalone RemoteControlManager configured with all available server routes."""
         from remote_control import RemoteControlManager
@@ -1931,6 +2071,7 @@ class SettingsDialog:
                 rc = self._get_fallback_rc_manager()
                 devices = rc.get_online_devices()
 
+            self._remote_devices_cache = {d.get("device_name", "").lower(): d for d in devices if d.get("device_name")}
             my_name = self.config.remote_control_device_name.lower()
             names = []
             for d in devices:
@@ -1943,18 +2084,38 @@ class SettingsDialog:
                     self.combo_target_device["values"] = names
                     if names and not self.combo_target_device.get():
                         self.combo_target_device.set(names[0])
+                    self._on_target_device_selected()
 
             if self._is_window_alive():
                 self.window.after(0, _apply_devices)
         except Exception as e:
             print(f"[SettingsDialog] _refresh_remote_devices error: {e}")
 
+    def _on_target_device_selected(self, event=None) -> None:
+        if not hasattr(self, "combo_target_device") or not hasattr(self, "combo_rc_target_app"):
+            return
+        target = self.combo_target_device.get().strip().lower()
+        cached = getattr(self, "_remote_devices_cache", {}).get(target, {})
+        launch_apps = cached.get("launch_apps", [])
+        app_names = [a.get("name", "") for a in launch_apps if a.get("name")]
+        self.combo_rc_target_app["values"] = app_names
+        if app_names:
+            if self.combo_rc_target_app.get() not in app_names:
+                self.combo_rc_target_app.set(app_names[0])
+        else:
+            self.combo_rc_target_app.set("")
+
     def _on_rc_action_changed(self, event=None) -> None:
         idx = self.combo_rc_action.current()
         if idx == 0:  # kill_process
-            self.row_proc_input.pack(fill="x", pady=(0, 8))
+            self.row_launch_input.pack_forget()
+            self.row_proc_input.pack(fill="x", pady=(0, 8), before=self.row_target_pin)
+        elif idx == 3:  # launch_app
+            self.row_proc_input.pack_forget()
+            self.row_launch_input.pack(fill="x", pady=(0, 8), before=self.row_target_pin)
         else:
             self.row_proc_input.pack_forget()
+            self.row_launch_input.pack_forget()
 
     def _toggle_target_pin_visibility(self) -> None:
         self._target_pin_visible = not getattr(self, "_target_pin_visible", False)
@@ -1990,6 +2151,16 @@ class SettingsDialog:
             if not ans:
                 return
             payload = {"delay": 5}
+        elif idx == 2:
+            action = "list_processes"
+            payload = {}
+        elif idx == 3:
+            action = "launch_app"
+            app_name = self.combo_rc_target_app.get().strip()
+            if not app_name:
+                messagebox.showwarning(t("remote_header"), "Please select an application to launch.", parent=self.window)
+                return
+            payload = {"app_name": app_name}
         else:
             action = "list_processes"
             payload = {}
@@ -2035,7 +2206,8 @@ class SettingsDialog:
                         )
                         if action == "list_processes":
                             procs = res_dict.get("processes", [])
-                            self._show_remote_processes_dialog(target, procs, pin)
+                            launch_apps = res_dict.get("launch_apps", [])
+                            self._show_remote_processes_dialog(target, procs, pin, launch_apps=launch_apps)
                         else:
                             messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=self.window)
                     else:
@@ -2059,15 +2231,21 @@ class SettingsDialog:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _show_remote_processes_dialog(self, target_pc: str, processes: list, target_pin: str) -> None:
+    def _show_remote_processes_dialog(self, target_pc: str, processes: list, target_pin: str, launch_apps: list = None) -> None:
         top = tk.Toplevel(self.window)
         top.title(t("remote_procs_title", target=target_pc))
-        top.geometry("680x560")
-        top.minsize(580, 440)
+        top.geometry("840x580")
+        top.minsize(700, 460)
         top.transient(self.window)
 
         # Internal mutable process list
         local_procs = list(processes)
+
+        # Determine available launch apps for target PC
+        if launch_apps is None:
+            cached = getattr(self, "_remote_devices_cache", {}).get(target_pc.lower(), {})
+            launch_apps = cached.get("launch_apps", [])
+        app_names = [a.get("name", "") for a in launch_apps if a.get("name")]
 
         def parse_mem_kb(val):
             s = str(val or "").replace(" ", "").replace("\xa0", "").upper()
@@ -2295,9 +2473,11 @@ class SettingsDialog:
 
             threading.Thread(target=kill_worker, daemon=True).start()
 
+        # Bottom Bar: Close button on far right
         btn_close = ttk.Button(bot_frame, text=t("btn_close"), command=top.destroy)
         btn_close.pack(side="right", padx=(8, 0))
 
+        # Bottom Bar: Kill Selected button on left
         kill_label = t("remote_procs_btn_kill")
         if not kill_label.startswith("🛑"):
             kill_label = f"🛑 {kill_label}"
@@ -2307,7 +2487,107 @@ class SettingsDialog:
             style="Accent.TButton",
             command=terminate_selected,
         )
-        btn_kill.pack(side="left")
+        btn_kill.pack(side="left", padx=(0, 10))
+
+        # Bottom Bar: Refresh button
+        def do_refresh_procs():
+            btn_refresh.config(state="disabled")
+            def refresh_worker():
+                if self.engine:
+                    ok_ref, msg_ref, res_ref = self.engine.send_remote_command(
+                        target_device=target_pc,
+                        action="list_processes",
+                        payload={},
+                        pin=target_pin,
+                        timeout=60,
+                    )
+                else:
+                    rc_ref = self._get_fallback_rc_manager()
+                    ok_ref, msg_ref, res_ref = rc_ref.send_command_and_wait(
+                        target_device=target_pc,
+                        sender_device=self.config.remote_control_device_name,
+                        action="list_processes",
+                        payload={},
+                        secret_pin=target_pin,
+                        timeout_seconds=60,
+                    )
+                def _apply_ref():
+                    if not top.winfo_exists():
+                        return
+                    btn_refresh.config(state="normal")
+                    if ok_ref:
+                        nonlocal local_procs
+                        local_procs = res_ref.get("processes", [])
+                        refresh_view()
+                    else:
+                        messagebox.showerror(t("remote_header"), f"❌ {msg_ref}", parent=top)
+                if top.winfo_exists():
+                    top.after(0, _apply_ref)
+            threading.Thread(target=refresh_worker, daemon=True).start()
+
+        btn_refresh = ttk.Button(bot_frame, text=f"🔄 {t('remote_devices_refresh')}", command=do_refresh_procs)
+        btn_refresh.pack(side="left", padx=(0, 14))
+
+        # Bottom Bar: Quick Launch application section
+        if app_names:
+            sep = ttk.Separator(bot_frame, orient="vertical")
+            sep.pack(side="left", fill="y", padx=(0, 14))
+
+            ttk.Label(bot_frame, text=t("remote_procs_launch_label")).pack(side="left", padx=(0, 6))
+            combo_quick_app = ttk.Combobox(bot_frame, values=app_names, state="readonly", width=18)
+            combo_quick_app.set(app_names[0])
+            combo_quick_app.pack(side="left", padx=(0, 6))
+
+            def do_quick_launch():
+                chosen_app = combo_quick_app.get().strip()
+                if not chosen_app:
+                    return
+                ans = messagebox.askyesno(
+                    t("remote_header"),
+                    t("remote_procs_launch_confirm", name=chosen_app, target=target_pc),
+                    parent=top,
+                )
+                if not ans:
+                    return
+                btn_quick_launch.config(state="disabled")
+                def launch_worker():
+                    if self.engine:
+                        ok_ln, msg_ln, _ = self.engine.send_remote_command(
+                            target_device=target_pc,
+                            action="launch_app",
+                            payload={"app_name": chosen_app},
+                            pin=target_pin,
+                            timeout=60,
+                        )
+                    else:
+                        rc_ln = self._get_fallback_rc_manager()
+                        ok_ln, msg_ln, _ = rc_ln.send_command_and_wait(
+                            target_device=target_pc,
+                            sender_device=self.config.remote_control_device_name,
+                            action="launch_app",
+                            payload={"app_name": chosen_app},
+                            secret_pin=target_pin,
+                            timeout_seconds=60,
+                        )
+                    def _apply_ln():
+                        if not top.winfo_exists():
+                            return
+                        btn_quick_launch.config(state="normal")
+                        if ok_ln:
+                            messagebox.showinfo(t("remote_header"), f"✅ {msg_ln}", parent=top)
+                            top.after(2000, do_refresh_procs)
+                        else:
+                            messagebox.showerror(t("remote_header"), f"❌ {msg_ln}", parent=top)
+                    if top.winfo_exists():
+                        top.after(0, _apply_ln)
+                threading.Thread(target=launch_worker, daemon=True).start()
+
+            btn_quick_launch = ttk.Button(
+                bot_frame,
+                text=t("remote_procs_launch_btn"),
+                command=do_quick_launch,
+            )
+            btn_quick_launch.pack(side="left")
 
     def _read_form_into_config(self) -> None:
         """Updates the in-memory config object with values from form fields."""
@@ -2393,6 +2673,10 @@ class SettingsDialog:
             self.config.remote_control_strict_whitelist = self.var_rc_strict_wl.get()
         if hasattr(self, "listbox_wl"):
             self.config.remote_control_whitelist = list(self.listbox_wl.get(0, tk.END))
+        if hasattr(self, "var_rc_launch"):
+            self.config.remote_control_allow_launch = self.var_rc_launch.get()
+        if hasattr(self, "_local_launch_apps"):
+            self.config.remote_control_launch_apps = list(self._local_launch_apps)
 
     def _populate_form_fields(self) -> None:
         """Populates UI fields from the current config object."""
@@ -2473,6 +2757,14 @@ class SettingsDialog:
             self.listbox_wl.delete(0, tk.END)
             for itm in self.config.remote_control_whitelist:
                 self.listbox_wl.insert(tk.END, itm)
+        if hasattr(self, "var_rc_launch"):
+            self.var_rc_launch.set(self.config.remote_control_allow_launch)
+        if hasattr(self, "tree_launch_apps"):
+            self._local_launch_apps = list(self.config.remote_control_launch_apps)
+            for itm in self.tree_launch_apps.get_children():
+                self.tree_launch_apps.delete(itm)
+            for app in self._local_launch_apps:
+                self.tree_launch_apps.insert("", "end", values=(app.get("name", ""), app.get("path", ""), app.get("args", "")))
         if hasattr(self, "lbl_rc_pin_val"):
             has_pin = bool(self.config.remote_control_pin)
             self.lbl_rc_pin_val.config(

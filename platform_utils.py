@@ -1048,3 +1048,88 @@ def list_system_processes() -> List[Dict[str, Any]]:
     procs.sort(key=lambda x: x.get("name", "").lower())
     return procs
 
+
+def launch_app_detached(executable_path: str, args: str = "") -> Tuple[bool, str]:
+    """
+    Launches an executable or application in a detached, independent background process.
+    Returns (success: bool, message: str).
+    """
+    import shlex
+    import shutil
+
+    clean_path = str(executable_path or "").strip()
+    if not clean_path:
+        return False, "Executable path is empty."
+
+    cmd_args = []
+    if args and str(args).strip():
+        try:
+            cmd_args = shlex.split(str(args).strip())
+        except Exception:
+            cmd_args = str(args).strip().split()
+
+    if sys.platform.startswith("win"):
+        try:
+            p = Path(clean_path)
+            if not p.is_file() and not p.suffix and not Path(clean_path + ".exe").is_file():
+                which_path = shutil.which(clean_path) or shutil.which(clean_path + ".exe")
+                if not which_path:
+                    return False, f"Executable not found: '{clean_path}'"
+                clean_path = which_path
+
+            cmd = [clean_path] + cmd_args
+            # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
+            flags = 0x00000008 | 0x00000200
+            working_dir = str(Path(clean_path).parent) if Path(clean_path).is_file() else None
+            subprocess.Popen(
+                cmd,
+                cwd=working_dir,
+                creationflags=flags,
+                close_fds=True,
+            )
+            return True, f"Application '{Path(clean_path).name}' launched successfully."
+        except Exception as e:
+            return False, f"Failed to launch '{clean_path}': {e}"
+    elif sys.platform == "darwin":
+        try:
+            if clean_path.endswith(".app") or Path(clean_path).is_dir():
+                cmd = ["open", "-a", clean_path]
+                if cmd_args:
+                    cmd.extend(["--args"] + cmd_args)
+            else:
+                cmd = [clean_path] + cmd_args
+
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                close_fds=True,
+            )
+            return True, f"Application '{Path(clean_path).name}' launched successfully."
+        except Exception as e:
+            return False, f"Failed to launch '{clean_path}': {e}"
+    else:
+        # Linux
+        try:
+            which_path = shutil.which(clean_path)
+            actual_path = which_path or clean_path
+            if not Path(actual_path).is_file() and not which_path:
+                return False, f"Executable not found: '{clean_path}'"
+
+            env = dict(os.environ)
+            if "DISPLAY" not in env and "WAYLAND_DISPLAY" not in env:
+                env["DISPLAY"] = ":0"
+
+            cmd = [actual_path] + cmd_args
+            working_dir = str(Path(actual_path).parent) if Path(actual_path).is_file() else None
+            subprocess.Popen(
+                cmd,
+                cwd=working_dir,
+                env=env,
+                start_new_session=True,
+                close_fds=True,
+            )
+            return True, f"Application '{Path(clean_path).name}' launched successfully."
+        except Exception as e:
+            return False, f"Failed to launch '{clean_path}': {e}"
+
+

@@ -816,6 +816,8 @@ class SyncEngine:
                 allow_process_list=self.config.remote_control_allow_process_list,
                 whitelist=self.config.remote_control_whitelist,
                 strict_whitelist=self.config.remote_control_strict_whitelist,
+                allow_launch=self.config.remote_control_allow_launch,
+                launch_apps=self.config.remote_control_launch_apps,
             )
             for res in results:
                 action = res.get("action", "")
@@ -833,13 +835,20 @@ class SyncEngine:
     def _publish_remote_heartbeat(self) -> None:
         """Publishes heartbeat of this computer to .dropfile_control."""
         try:
+            safe_launch_apps = [
+                {"name": str(a.get("name", "")).strip()}
+                for a in (self.config.remote_control_launch_apps or [])
+                if isinstance(a, dict) and str(a.get("name", "")).strip()
+            ]
             device_info = {
                 "device_name": self.config.remote_control_device_name,
                 "hostname": self.hostname,
                 "platform": sys.platform,
                 "allow_reboot": self.config.remote_control_allow_reboot,
                 "allow_process_list": self.config.remote_control_allow_process_list,
+                "allow_launch": self.config.remote_control_allow_launch,
                 "whitelist": self.config.remote_control_whitelist,
+                "launch_apps": safe_launch_apps,
             }
             self.remote_control.publish_heartbeat(device_info)
         except Exception as e:

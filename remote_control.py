@@ -28,12 +28,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fb_client import FileBrowserClient
-from platform_utils import kill_process_by_name, list_system_processes, reboot_system
+from platform_utils import kill_process_by_name, launch_app_detached, list_system_processes, reboot_system
 
 ACTION_KILL_PROCESS = "kill_process"
 ACTION_REBOOT = "reboot"
 ACTION_LIST_PROCESSES = "list_processes"
-VALID_ACTIONS = {ACTION_KILL_PROCESS, ACTION_REBOOT, ACTION_LIST_PROCESSES}
+ACTION_LAUNCH_APP = "launch_app"
+VALID_ACTIONS = {ACTION_KILL_PROCESS, ACTION_REBOOT, ACTION_LIST_PROCESSES, ACTION_LAUNCH_APP}
 
 COMMAND_FRESHNESS_SECONDS = 180.0  # 3 minutes expiration window
 CONTROL_DIR_NAME = ".dropfile_control"
@@ -87,6 +88,8 @@ def verify_command_packet(
     allow_process_list: bool = True,
     whitelist: Optional[List[str]] = None,
     strict_whitelist: bool = False,
+    allow_launch: bool = True,
+    launch_apps: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[bool, str]:
     """
     Validates the authenticity and authorization of an incoming command packet.
@@ -134,6 +137,21 @@ def verify_command_packet(
     if action == ACTION_LIST_PROCESSES and not allow_process_list:
         return False, "Process listing is disabled in target computer settings"
 
+    if action == ACTION_LAUNCH_APP:
+        if not allow_launch:
+            return False, "Application launch is disabled in target computer settings"
+        app_name = str(payload.get("app_name", "")).strip()
+        if not app_name:
+            return False, "Missing app_name parameter"
+        clean_name = app_name.lower()
+        matched = any(
+            str(a.get("name", "")).strip().lower() == clean_name
+            for a in (launch_apps or [])
+            if isinstance(a, dict)
+        )
+        if not matched:
+            return False, f"Application '{app_name}' is not in the allowed launch list on target computer"
+
     if action == ACTION_KILL_PROCESS:
         proc_name = str(payload.get("process_name", "")).strip()
         if not proc_name:
@@ -150,7 +168,11 @@ def verify_command_packet(
     return True, ""
 
 
-def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def execute_action(
+    action: str,
+    payload: Dict[str, Any],
+    launch_apps: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
     """
     Executes an authorized action on the local machine and returns result dictionary.
     """
@@ -176,11 +198,39 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 
     elif action == ACTION_LIST_PROCESSES:
         procs = list_system_processes()
+        safe_apps = [
+            {"name": str(a.get("name", "")).strip()}
+            for a in (launch_apps or [])
+            if isinstance(a, dict) and str(a.get("name", "")).strip()
+        ]
         return {
             "success": True,
             "message": f"Retrieved {len(procs)} active processes.",
             "action": action,
             "processes": procs,
+            "launch_apps": safe_apps,
+        }
+
+    elif action == ACTION_LAUNCH_APP:
+        app_name = str(payload.get("app_name", "")).strip()
+        matched_item = next(
+            (a for a in (launch_apps or []) if isinstance(a, dict) and str(a.get("name", "")).strip().lower() == app_name.lower()),
+            None,
+        )
+        if not matched_item:
+            return {
+                "success": False,
+                "message": f"Application '{app_name}' is not configured on target.",
+                "action": action,
+            }
+        path = str(matched_item.get("path", "")).strip()
+        args = str(matched_item.get("args", "")).strip()
+        success, msg = launch_app_detached(path, args)
+        return {
+            "success": success,
+            "message": msg,
+            "action": action,
+            "target_app": app_name,
         }
 
     return {"success": False, "message": f"Unknown action: {action}"}
@@ -325,10 +375,12 @@ class RemoteControlManager:
         self,
         local_device_name: str,
         local_pin: str,
-        allow_reboot: bool,
-        allow_process_list: bool,
-        whitelist: List[str],
-        strict_whitelist: bool,
+        allow_reboot: bool = False,
+        allow_process_list: bool = False,
+        whitelist: Optional[List[str]] = None,
+        strict_whitelist: bool = False,
+        allow_launch: bool = False,
+        launch_apps: Optional[List[Dict[str, str]]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Target machine check: scans .dropfile_control/ across all routes for cmd_{local_device_name}_*.json,
@@ -339,6 +391,9 @@ class RemoteControlManager:
         executed_results = []
         if not local_device_name or not local_pin:
             return executed_results
+
+        if whitelist is None:
+            whitelist = []
 
         # Clean old cached command results older than 5 minutes
         now = time.time()
@@ -392,6 +447,8 @@ class RemoteControlManager:
                             allow_process_list=allow_process_list,
                             whitelist=whitelist,
                             strict_whitelist=strict_whitelist,
+                            allow_launch=allow_launch,
+                            launch_apps=launch_apps,
                         )
 
                         if not is_valid:
@@ -405,7 +462,7 @@ class RemoteControlManager:
                                 "timestamp": time.time(),
                             }
                         else:
-                            result_data = execute_action(action, packet.get("payload", {}))
+                            result_data = execute_action(action, packet.get("payload", {}), launch_apps=launch_apps)
                             result_packet = {
                                 "id": cmd_id,
                                 "target": local_device_name,
