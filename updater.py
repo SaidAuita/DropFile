@@ -468,7 +468,7 @@ def _apply_update_via_git(
 
         # 1. Stash changes if any
         status_res = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "-c", "core.fileMode=false", "status", "--porcelain"],
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
@@ -477,7 +477,7 @@ def _apply_update_via_git(
         )
         if status_res.stdout.strip():
             subprocess.run(
-                ["git", "stash"],
+                ["git", "-c", "core.fileMode=false", "stash"],
                 cwd=str(repo_dir),
                 capture_output=True,
                 timeout=10,
@@ -486,7 +486,7 @@ def _apply_update_via_git(
 
         # 2. Pull latest main branch
         res = subprocess.run(
-            ["git", "-c", "http.proxy=", "-c", "https.proxy=", "pull", "origin", "main"],
+            ["git", "-c", "core.fileMode=false", "-c", "http.proxy=", "-c", "https.proxy=", "pull", "origin", "main"],
             cwd=str(repo_dir),
             capture_output=True,
             text=True,

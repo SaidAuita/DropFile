@@ -2010,8 +2010,16 @@ class SettingsDialog:
             self.tree_launch_apps.insert("", "end", values=(name, path, args))
             top.destroy()
 
-        ttk.Button(btn_row, text=t("btn_save"), style="Accent.TButton", command=on_save).pack(side="right")
-        ttk.Button(btn_row, text=t("btn_cancel"), command=top.destroy).pack(side="right", padx=(0, 8))
+        save_text = t("btn_save")
+        if save_text == "btn_save":
+            save_text = "Сохранить" if self.config.language == "ru" else "Save"
+
+        cancel_text = t("btn_cancel")
+        if cancel_text == "btn_cancel":
+            cancel_text = "Отмена" if self.config.language == "ru" else "Cancel"
+
+        ttk.Button(btn_row, text=save_text, style="Accent.TButton", command=on_save).pack(side="right")
+        ttk.Button(btn_row, text=cancel_text, command=top.destroy).pack(side="right", padx=(0, 8))
 
     def _remove_launch_app(self) -> None:
         sel = self.tree_launch_apps.selection()
