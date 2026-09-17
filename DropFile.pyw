@@ -436,7 +436,8 @@ def ensure_single_instance(is_headless: bool = False) -> Optional[socket.socket]
     for _ in range(4):
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if sys.platform != "win32":
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
             s.listen(2)
             INSTANCE_SOCKET = s
@@ -459,7 +460,8 @@ def ensure_single_instance(is_headless: bool = False) -> Optional[socket.socket]
             for _ in range(5):
                 try:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    if sys.platform != "win32":
+                        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     s.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
                     s.listen(2)
                     INSTANCE_SOCKET = s

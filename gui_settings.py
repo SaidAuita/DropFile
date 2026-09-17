@@ -2031,27 +2031,66 @@ class SettingsDialog:
     def _show_remote_processes_dialog(self, target_pc: str, processes: list, target_pin: str) -> None:
         top = tk.Toplevel(self.window)
         top.title(t("remote_procs_title", target=target_pc))
-        top.geometry("620x520")
-        top.minsize(500, 400)
+        top.geometry("640x540")
+        top.minsize(520, 420)
         top.transient(self.window)
+
+        # Internal mutable process list
+        local_procs = list(processes)
+
+        def parse_mem_kb(val):
+            s = str(val or "").replace(" ", "").replace("\xa0", "").upper()
+            if s.endswith("GB"):
+                try:
+                    return int(float(s[:-2]) * 1024 * 1024)
+                except Exception:
+                    return 0
+            elif s.endswith("MB"):
+                try:
+                    return int(float(s[:-2])) * 1024
+                except Exception:
+                    return 0
+            elif s.endswith("KB"):
+                try:
+                    return int(float(s[:-2]))
+                except Exception:
+                    return 0
+            return 0
+
+        def fmt_kb(kb):
+            if kb >= 1024 * 1024:
+                return f"{kb / (1024 * 1024):.1f} GB"
+            elif kb >= 1024:
+                return f"{kb // 1024} MB"
+            return f"{kb} KB"
 
         # Header
         hdr_frame = tk.Frame(top, bg="#FFFFFF", padx=14, pady=10)
         hdr_frame.pack(fill="x")
-        tk.Label(
+        lbl_hdr = tk.Label(
             hdr_frame,
-            text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(processes)} processes)",
+            text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(local_procs)} processes)",
             font=("Segoe UI", 11, "bold"),
             bg="#FFFFFF",
             fg="#1A1A1A",
-        ).pack(side="left")
+        )
+        lbl_hdr.pack(side="left")
 
-        # Filter bar
+        # Filter bar with grouping toggle
         filter_frame = tk.Frame(top, padx=14, pady=6)
         filter_frame.pack(fill="x")
         ttk.Label(filter_frame, text=t("remote_procs_filter")).pack(side="left", padx=(0, 8))
         ent_filter = ttk.Entry(filter_frame)
-        ent_filter.pack(side="left", fill="x", expand=True)
+        ent_filter.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        var_group = tk.BooleanVar(value=True)
+        chk_group = ttk.Checkbutton(
+            filter_frame,
+            text=t("remote_procs_group_apps"),
+            variable=var_group,
+            command=lambda: refresh_view(),
+        )
+        chk_group.pack(side="right")
 
         # Table frame
         tree_frame = tk.Frame(top, padx=14, pady=4)
@@ -2059,13 +2098,13 @@ class SettingsDialog:
 
         cols = ("name", "pid", "memory")
         tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
-        tree.heading("name", text="Process Name")
-        tree.heading("pid", text="PID")
+        tree.heading("name", text="Process / Application")
+        tree.heading("pid", text="PID(s)")
         tree.heading("memory", text="Memory")
 
-        tree.column("name", width=260, anchor="w")
-        tree.column("pid", width=100, anchor="center")
-        tree.column("memory", width=120, anchor="center")
+        tree.column("name", width=280, anchor="w")
+        tree.column("pid", width=120, anchor="center")
+        tree.column("memory", width=110, anchor="center")
 
         sb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=sb.set)
@@ -2073,20 +2112,72 @@ class SettingsDialog:
         tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
-        for p in processes:
-            tree.insert("", "end", values=(p.get("name", ""), p.get("pid", ""), p.get("memory", "")))
+        item_meta = {}
 
-        def filter_tree(*args):
+        def refresh_view(*args):
             q = ent_filter.get().strip().lower()
             for r in tree.get_children():
                 tree.delete(r)
-            for p in processes:
-                p_name = str(p.get("name", "")).lower()
-                p_pid = str(p.get("pid", ""))
-                if q in p_name or q in p_pid:
-                    tree.insert("", "end", values=(p.get("name", ""), p.get("pid", ""), p.get("memory", "")))
+            item_meta.clear()
 
-        ent_filter.bind("<KeyRelease>", filter_tree)
+            grouped = var_group.get()
+            if grouped:
+                groups = {}
+                for p in local_procs:
+                    p_name = str(p.get("name", "")).strip()
+                    if not p_name:
+                        continue
+                    p_pid = str(p.get("pid", ""))
+                    kb = parse_mem_kb(p.get("memory", "0"))
+                    if p_name not in groups:
+                        groups[p_name] = {
+                            "name": p_name,
+                            "count": 0,
+                            "pids": [],
+                            "total_kb": 0,
+                        }
+                    groups[p_name]["count"] += 1
+                    groups[p_name]["pids"].append(p_pid)
+                    groups[p_name]["total_kb"] += kb
+
+                sorted_groups = sorted(groups.values(), key=lambda g: (-g["total_kb"], g["name"].lower()))
+                for g in sorted_groups:
+                    name_display = f"{g['name']} ({g['count']})" if g["count"] > 1 else g["name"]
+                    pids_display = f"{g['pids'][0]} (+{g['count']-1})" if g["count"] > 1 else (g["pids"][0] if g["pids"] else "-")
+                    mem_display = fmt_kb(g["total_kb"])
+
+                    if q and q not in g["name"].lower() and not any(q in pid for pid in g["pids"]):
+                        continue
+
+                    node = tree.insert("", "end", values=(name_display, pids_display, mem_display))
+                    item_meta[node] = {
+                        "clean_name": g["name"],
+                        "count": g["count"],
+                        "mem": mem_display,
+                        "pid": g["pids"][0] if g["pids"] else "",
+                    }
+
+                lbl_hdr.config(text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(groups)} apps / {len(local_procs)} processes)")
+            else:
+                sorted_procs = sorted(local_procs, key=lambda p: p.get("name", "").lower())
+                for p in sorted_procs:
+                    p_name = str(p.get("name", "")).strip()
+                    p_pid = str(p.get("pid", ""))
+                    p_mem = str(p.get("memory", ""))
+                    if q and q not in p_name.lower() and q not in p_pid:
+                        continue
+                    node = tree.insert("", "end", values=(p_name, p_pid, p_mem))
+                    item_meta[node] = {
+                        "clean_name": p_name,
+                        "count": 1,
+                        "mem": p_mem,
+                        "pid": p_pid,
+                    }
+
+                lbl_hdr.config(text=f"📋 {t('remote_procs_title', target=target_pc)} ({len(local_procs)} processes)")
+
+        ent_filter.bind("<KeyRelease>", refresh_view)
+        refresh_view()
 
         # Bottom actions
         bot_frame = tk.Frame(top, padx=14, pady=10)
@@ -2097,13 +2188,24 @@ class SettingsDialog:
             if not sel:
                 messagebox.showwarning(t("remote_header"), "Please select a process from the list.", parent=top)
                 return
-            item_vals = tree.item(sel[0], "values")
-            p_name = item_vals[0]
-            p_pid = item_vals[1]
+            node = sel[0]
+            meta = item_meta.get(node)
+            if not meta:
+                return
+
+            clean_name = meta["clean_name"]
+            count = meta["count"]
+            mem = meta["mem"]
+            pid = meta["pid"]
+
+            if count > 1:
+                confirm_msg = t("remote_procs_confirm_kill_group", name=clean_name, count=count, mem=mem, target=target_pc)
+            else:
+                confirm_msg = t("remote_procs_confirm_kill", name=clean_name, pid=pid, target=target_pc)
 
             ans = messagebox.askyesno(
                 t("remote_header"),
-                t("remote_procs_confirm_kill", name=p_name, pid=p_pid, target=target_pc),
+                confirm_msg,
                 parent=top,
             )
             if not ans:
@@ -2114,7 +2216,7 @@ class SettingsDialog:
                     ok, msg, _ = self.engine.send_remote_command(
                         target_device=target_pc,
                         action="kill_process",
-                        payload={"process_name": p_name},
+                        payload={"process_name": clean_name},
                         pin=target_pin,
                         timeout=60,
                     )
@@ -2124,7 +2226,7 @@ class SettingsDialog:
                         target_device=target_pc,
                         sender_device=self.config.remote_control_device_name,
                         action="kill_process",
-                        payload={"process_name": p_name},
+                        payload={"process_name": clean_name},
                         secret_pin=target_pin,
                         timeout_seconds=60,
                     )
@@ -2133,11 +2235,12 @@ class SettingsDialog:
                     if not top.winfo_exists():
                         return
                     if ok:
-                        messagebox.showinfo(t("remote_header"), f"✅ {msg}", parent=top)
-                        try:
-                            tree.delete(sel[0])
-                        except Exception:
-                            pass
+                        nonlocal local_procs
+                        killed_count = sum(1 for p in local_procs if str(p.get("name", "")).strip().lower() == clean_name.lower())
+                        local_procs = [p for p in local_procs if str(p.get("name", "")).strip().lower() != clean_name.lower()]
+                        refresh_view()
+                        done_msg = t("remote_procs_all_killed", name=clean_name, count=killed_count or count)
+                        messagebox.showinfo(t("remote_header"), f"✅ {msg}\n\n{done_msg}", parent=top)
                     else:
                         messagebox.showerror(t("remote_header"), f"❌ {msg}", parent=top)
 
