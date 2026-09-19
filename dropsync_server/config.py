@@ -40,8 +40,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "Thumbs.db",
         "desktop.ini",
         ".dropsync*",
+        ".dropfile*",
     ],
 }
+
 
 
 class Config:

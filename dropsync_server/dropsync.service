@@ -6,8 +6,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/dropsync
-ExecStart=/usr/bin/python3 -m dropsync_server.main --config %h/.dropsync/dropsync.json
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/usr/bin/python3 -u -m dropsync_server.main --config %h/.dropsync/dropsync.json
 Restart=always
+
+
 RestartSec=5
 LimitNOFILE=65536
 StandardOutput=journal
