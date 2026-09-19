@@ -181,6 +181,23 @@ def get_history(seconds: Optional[int] = None) -> List[Tuple[float, float, float
     return get_traffic_monitor().get_history(seconds)
 
 
+_CLIENT_TRANSFER: Optional[dict] = None
+_CLIENT_TRANSFER_LOCK = threading.Lock()
+
+
+def set_client_transfer(transfer_info: Optional[dict]) -> None:
+    """Sets active file transfer info for local client GUI."""
+    global _CLIENT_TRANSFER
+    with _CLIENT_TRANSFER_LOCK:
+        _CLIENT_TRANSFER = transfer_info
+
+
+def get_client_transfer() -> Optional[dict]:
+    """Returns active file transfer info for local client GUI."""
+    with _CLIENT_TRANSFER_LOCK:
+        return _CLIENT_TRANSFER
+
+
 # ---------------------------------------------------------------------------
 # Formatting helpers (compatible with Russian / English Keenetic style)
 # ---------------------------------------------------------------------------
@@ -239,3 +256,27 @@ def format_bytes(total_bytes: int, lang: str = "ru") -> str:
         return f"{s} {unit_kb}"
     else:
         return f"{total_bytes} {unit_b}"
+
+
+def format_eta(seconds: Optional[int], lang: str = "ru") -> str:
+    """Formats estimated time of arrival (ETA) into a clean string (e.g. '~45 сек', '~1 мин 20 сек', '~12 мин')."""
+    if seconds is None or seconds < 0:
+        return "—"
+    is_ru = lang == "ru"
+    if seconds == 0:
+        return "< 1 сек" if is_ru else "< 1s"
+    if seconds < 60:
+        return f"~{seconds} сек" if is_ru else f"~{seconds}s"
+    elif seconds < 3600:
+        m = seconds // 60
+        s = seconds % 60
+        if s > 0 and m < 10:
+            return f"~{m} мин {s} сек" if is_ru else f"~{m}m {s}s"
+        return f"~{m} мин" if is_ru else f"~{m}m"
+    else:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        if m > 0:
+            return f"~{h} ч {m} мин" if is_ru else f"~{h}h {m}m"
+        return f"~{h} ч" if is_ru else f"~{h}h"
+

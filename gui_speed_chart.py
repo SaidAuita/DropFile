@@ -17,7 +17,37 @@ from tkinter import ttk
 from typing import Any, Callable, List, Optional, Tuple
 
 from i18n import t
-from traffic_monitor import format_bytes, format_speed, get_traffic_monitor
+from traffic_monitor import format_bytes, format_eta, format_speed, get_client_transfer, get_traffic_monitor
+
+
+class TransferProgressBar(tk.Canvas):
+    """
+    Smooth, crisp progress bar drawn on Canvas to avoid OS-dependent ttk styling bugs.
+    Supports animated fill, custom bar color, and dynamic sizing.
+    """
+
+    def __init__(self, parent: Any, height: int = 8, bg: str = "#E2E8F0", bar_color: str = "#0284C7", **kwargs: Any):
+        super().__init__(parent, height=height, bg=bg, highlightthickness=0, bd=0, **kwargs)
+        self.bar_color = bar_color
+        self._percent: float = 0.0
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, event: Any) -> None:
+        self._draw()
+
+    def set_progress(self, percent: float, color: Optional[str] = None) -> None:
+        self._percent = max(0.0, min(100.0, float(percent)))
+        if color:
+            self.bar_color = color
+        self._draw()
+
+    def _draw(self) -> None:
+        self.delete("all")
+        w = float(self.winfo_width() or 100)
+        h = float(self.winfo_height() or 8)
+        if self._percent > 0:
+            fill_w = (w * self._percent) / 100.0
+            self.create_rectangle(0, 0, fill_w, h, fill=self.bar_color, width=0)
 
 
 class SpeedChartWidget(tk.Canvas):
@@ -431,11 +461,76 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_tx_badge.pack(side="left")
 
         # Separator line
-        tk.Frame(self, height=1, bg="#F1F5F9").pack(fill="x", padx=12, pady=(0, 8))
+        tk.Frame(self, height=1, bg="#F1F5F9").pack(fill="x", padx=12, pady=(0, 6))
+
+        # --- File Transfer Progress Block (Live Sync / Upload / Download) ---
+        self.transfer_box = tk.Frame(
+            self,
+            bg="#F8FAFC",
+            highlightthickness=1,
+            highlightbackground="#E2E8F0",
+            padx=10,
+            pady=7,
+        )
+        self.transfer_box.pack(fill="x", padx=12, pady=(0, 8))
+
+        # Row 1: Direction + File name (left) & Percentage (right)
+        t_row1 = tk.Frame(self.transfer_box, bg="#F8FAFC")
+        t_row1.pack(fill="x", pady=(0, 4))
+
+        self.lbl_file_name = tk.Label(
+            t_row1,
+            text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
+            bg="#F8FAFC",
+            fg="#64748B",
+            font=("Segoe UI", 9, "bold"),
+            anchor="w",
+        )
+        self.lbl_file_name.pack(side="left", fill="x", expand=True)
+
+        self.lbl_file_pct = tk.Label(
+            t_row1,
+            text="",
+            bg="#F8FAFC",
+            fg="#0284C7",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.lbl_file_pct.pack(side="right")
+
+        # Row 2: Smooth Progress Bar
+        self.progress_bar = TransferProgressBar(self.transfer_box, height=8, bg="#E2E8F0", bar_color="#0284C7")
+        self.progress_bar.pack(fill="x", pady=(0, 5))
+
+        # Row 3: Transferred volume / Total volume (left) & ETA (right)
+        t_row3 = tk.Frame(self.transfer_box, bg="#F8FAFC")
+        t_row3.pack(fill="x")
+
+        self.lbl_transfer_bytes = tk.Label(
+            t_row3,
+            text="",
+            bg="#F8FAFC",
+            fg="#64748B",
+            font=("Segoe UI", 8),
+            anchor="w",
+        )
+        self.lbl_transfer_bytes.pack(side="left")
+
+        self.lbl_transfer_eta = tk.Label(
+            t_row3,
+            text="",
+            bg="#F8FAFC",
+            fg="#64748B",
+            font=("Segoe UI", 8),
+            anchor="e",
+        )
+        self.lbl_transfer_eta.pack(side="right")
+
+        # Separator line before stats
+        tk.Frame(self, height=1, bg="#F1F5F9").pack(fill="x", padx=12, pady=(0, 6))
 
         # --- Stats Grid (Keenetic 4-block stats) ---
         stats_grid = tk.Frame(self, bg="#FFFFFF")
-        stats_grid.pack(fill="x", padx=12, pady=(0, 10))
+        stats_grid.pack(fill="x", padx=12, pady=(0, 8))
 
         # Col 1: Прием & Передача
         col1 = tk.Frame(stats_grid, bg="#FFFFFF")
@@ -496,6 +591,7 @@ class SpeedMonitorCard(tk.Frame):
         if not self._is_alive:
             return
 
+        transfer_info = None
         if self.mode == "server":
             s_data = fetch_server_traffic_stats()
             if s_data:
@@ -519,6 +615,7 @@ class SpeedMonitorCard(tk.Frame):
                 history = s_data.get("history", [])
                 tot_rx = s_data.get("total_rx", 0)
                 tot_tx = s_data.get("total_tx", 0)
+                transfer_info = s_data.get("current_transfer")
             else:
                 self.lbl_status_pill.config(
                     text=t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН"),
@@ -536,6 +633,7 @@ class SpeedMonitorCard(tk.Frame):
             )
             history = self.monitor.get_history(seconds=60)
             tot_rx, tot_tx = self.monitor.get_totals()
+            transfer_info = get_client_transfer()
 
         rx_str, tx_str, peak_str, time_str = self.chart.render(history, lang=self.lang)
 
@@ -552,6 +650,57 @@ class SpeedMonitorCard(tk.Frame):
         # Update session totals
         self.lbl_tot_rx_val.config(text=format_bytes(tot_rx, lang=self.lang))
         self.lbl_tot_tx_val.config(text=format_bytes(tot_tx, lang=self.lang))
+
+        # Update active file transfer progress bar
+        self._update_transfer_ui(transfer_info)
+
+    def _update_transfer_ui(self, transfer: Optional[dict]) -> None:
+        """Updates the file transfer progress indicator with file name, progress bar, bytes, and ETA."""
+        if not transfer or not transfer.get("file_name"):
+            self.lbl_file_name.config(
+                text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
+                fg="#64748B",
+            )
+            self.lbl_file_pct.config(text="")
+            self.progress_bar.set_progress(0, "#CBD5E1")
+            self.lbl_transfer_bytes.config(text="")
+            self.lbl_transfer_eta.config(text="")
+            return
+
+        direction = transfer.get("direction", "tx")
+        file_name = str(transfer.get("file_name", ""))
+        # Cleanly truncate overly long file names
+        if len(file_name) > 36:
+            file_name = file_name[:20] + "..." + file_name[-13:]
+
+        total_bytes = transfer.get("total_size") or transfer.get("total_bytes", 0)
+        transferred = transfer.get("transferred_bytes", 0)
+        pct = transfer.get("percent")
+        if pct is None:
+            pct = round((transferred / total_bytes) * 100.0, 1) if total_bytes > 0 else 0.0
+        pct = min(100.0, max(0.0, float(pct)))
+
+        eta_sec = transfer.get("eta_seconds")
+        eta_str = format_eta(eta_sec, lang=self.lang)
+
+        is_tx = direction == "tx"
+        color = "#0284C7" if is_tx else "#16A34A"  # Blue for upload/tx, Green for download/rx
+        title_key = "speed_transfer_uploading" if is_tx else "speed_transfer_downloading"
+        title_text = t(title_key, name=file_name)
+
+        self.lbl_file_name.config(text=title_text, fg=color)
+        pct_display = f"{int(pct)} %" if pct.is_integer() else f"{pct:.1f} %"
+        self.lbl_file_pct.config(text=pct_display, fg=color)
+        self.progress_bar.set_progress(pct, color)
+
+        bytes_text = f"{format_bytes(transferred, lang=self.lang)} / {format_bytes(total_bytes, lang=self.lang)}"
+        self.lbl_transfer_bytes.config(text=bytes_text)
+
+        if eta_sec is not None and eta_sec >= 0:
+            eta_tpl = t("speed_transfer_eta", eta=eta_str)
+            self.lbl_transfer_eta.config(text=eta_tpl)
+        else:
+            self.lbl_transfer_eta.config(text="")
 
     def _schedule_tick(self) -> None:
         if not self._is_alive:
@@ -630,8 +779,8 @@ class SpeedMonitorWindow:
                 self._owns_root = True
 
         self.window.title(f"{t('app_name')} — {t('speed_monitor_title')}")
-        self.window.geometry("580x360")
-        self.window.minsize(480, 320)
+        self.window.geometry("580x430")
+        self.window.minsize(480, 370)
         self.window.configure(bg="#F8FAFC")
 
         # Set window icon

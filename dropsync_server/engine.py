@@ -53,6 +53,7 @@ class DropSyncEngine:
         self._running = False
         self._traffic_task: Optional[asyncio.Task] = None
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
+        self._current_transfer: Optional[Dict[str, Any]] = None
 
     async def start(self) -> None:
         """Starts the sync engine, state reconciliation, watcher and transport."""
@@ -103,6 +104,31 @@ class DropSyncEngine:
                 rx_bps, tx_bps = tm.get_current_speeds_bps()
                 tot_rx, tot_tx = tm.get_totals()
                 history = tm.get_history(seconds=60)
+
+                transfer_info = None
+                ct = self._current_transfer
+                if ct and ct.get("total_size", 0) > 0:
+                    direction = ct.get("direction", "tx")
+                    total_bytes = ct.get("total_size", 0)
+                    transferred = min(ct.get("transferred_bytes", 0), total_bytes)
+                    pct = round((transferred / total_bytes) * 100.0, 1) if total_bytes > 0 else 0.0
+
+                    speed_bps = tx_bps if direction == "tx" else rx_bps
+                    eta_sec = None
+                    if speed_bps > 8000 and total_bytes > transferred:
+                        rem_bytes = total_bytes - transferred
+                        eta_sec = int((rem_bytes * 8) / speed_bps)
+
+                    transfer_info = {
+                        "direction": direction,
+                        "file_name": ct.get("file_name", ""),
+                        "rel_path": ct.get("rel_path", ""),
+                        "total_bytes": total_bytes,
+                        "transferred_bytes": transferred,
+                        "percent": pct,
+                        "eta_seconds": eta_sec,
+                    }
+
                 stats = {
                     "timestamp": time.time(),
                     "node_name": self.config.node_name,
@@ -114,6 +140,7 @@ class DropSyncEngine:
                     "total_rx": tot_rx,
                     "total_tx": tot_tx,
                     "history": history,
+                    "current_transfer": transfer_info,
                 }
                 tmp_f = stats_file.with_suffix(".tmp")
                 tmp_f.write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")
@@ -343,6 +370,16 @@ class DropSyncEngine:
             total_size = stat.st_size
             file_hash = StateDatabase.calculate_file_hash(full_path)
             chunk_size = self.config.chunk_size
+            file_name = Path(rel_path).name
+
+            self._current_transfer = {
+                "direction": "tx",
+                "rel_path": rel_path,
+                "file_name": file_name,
+                "total_size": total_size,
+                "transferred_bytes": offset,
+                "start_time": time.time(),
+            }
 
             print(f"[Engine] Streaming {rel_path} ({total_size} bytes) to '{peer.remote_node_name}' from offset {offset}...")
 
@@ -371,6 +408,9 @@ class DropSyncEngine:
                     await peer.send_binary(frame)
                     curr_offset += len(chunk)
 
+                    if self._current_transfer and self._current_transfer.get("rel_path") == rel_path:
+                        self._current_transfer["transferred_bytes"] = curr_offset
+
                     # Yield to event loop to allow concurrent messages
                     await asyncio.sleep(0)
 
@@ -378,6 +418,9 @@ class DropSyncEngine:
 
         except Exception as e:
             print(f"[Engine] Error streaming {rel_path}: {e}")
+        finally:
+            if self._current_transfer and self._current_transfer.get("rel_path") == rel_path and self._current_transfer.get("direction") == "tx":
+                self._current_transfer = None
 
     async def _handle_binary_chunk(self, peer: PeerConnection, header: Dict[str, Any], chunk_data: bytes) -> None:
         """Receives and writes a binary chunk into a temporary file, verifying on last chunk."""
@@ -387,6 +430,21 @@ class DropSyncEngine:
         file_hash = header.get("hash", "")
         mtime = header.get("mtime", time.time())
         is_last = header.get("is_last", False)
+        chunk_len = len(chunk_data)
+
+        # Track active incoming transfer
+        self._current_transfer = {
+            "direction": "rx",
+            "rel_path": rel_path,
+            "file_name": Path(rel_path).name,
+            "total_size": total_size,
+            "transferred_bytes": offset + chunk_len,
+            "start_time": (
+                self._current_transfer.get("start_time")
+                if (self._current_transfer and self._current_transfer.get("rel_path") == rel_path)
+                else time.time()
+            ),
+        }
 
         target_path = self.config.sync_dir / rel_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -425,8 +483,12 @@ class DropSyncEngine:
                             {"rel_path": rel_path, "hash": file_hash, "status": "OK"},
                         )
                     )
+                    if self._current_transfer and self._current_transfer.get("rel_path") == rel_path and self._current_transfer.get("direction") == "rx":
+                        self._current_transfer = None
                 else:
                     print(f"[Engine] Hash mismatch for {rel_path}! Expected {file_hash}, got {received_hash}")
+                    if self._current_transfer and self._current_transfer.get("rel_path") == rel_path:
+                        self._current_transfer = None
                     try:
                         temp_file.unlink()
                     except Exception:
@@ -434,6 +496,8 @@ class DropSyncEngine:
 
         except Exception as e:
             print(f"[Engine] Error writing chunk for {rel_path}: {e}")
+            if self._current_transfer and self._current_transfer.get("rel_path") == rel_path:
+                self._current_transfer = None
 
     async def _apply_remote_delete(self, rel_path: str) -> None:
         """Handles remote deletion: moves file to .dropsync_trash if enabled."""

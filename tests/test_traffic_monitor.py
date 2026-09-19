@@ -106,6 +106,44 @@ class TestTrafficMonitor(unittest.TestCase):
         speeds = get_current_speeds_bps()
         self.assertEqual(len(speeds), 2)
 
+    def test_format_eta(self):
+        from traffic_monitor import format_eta
+        # None and negative
+        self.assertEqual(format_eta(None, "ru"), "—")
+        self.assertEqual(format_eta(-1, "ru"), "—")
+        # 0 seconds
+        self.assertEqual(format_eta(0, "ru"), "< 1 сек")
+        self.assertEqual(format_eta(0, "en"), "< 1s")
+        # Under a minute
+        self.assertEqual(format_eta(45, "ru"), "~45 сек")
+        self.assertEqual(format_eta(45, "en"), "~45s")
+        # Minutes and seconds
+        self.assertEqual(format_eta(75, "ru"), "~1 мин 15 сек")
+        self.assertEqual(format_eta(75, "en"), "~1m 15s")
+        # Minutes only
+        self.assertEqual(format_eta(120, "ru"), "~2 мин")
+        self.assertEqual(format_eta(120, "en"), "~2m")
+        # Hours
+        self.assertEqual(format_eta(3665, "ru"), "~1 ч 1 мин")
+        self.assertEqual(format_eta(3665, "en"), "~1h 1m")
+
+    def test_client_transfer_helpers(self):
+        from traffic_monitor import get_client_transfer, set_client_transfer
+        set_client_transfer(None)
+        self.assertIsNone(get_client_transfer())
+        sample = {
+            "direction": "tx",
+            "file_name": "video.mp4",
+            "total_bytes": 1000,
+            "transferred_bytes": 250,
+            "percent": 25.0,
+            "eta_seconds": 15,
+        }
+        set_client_transfer(sample)
+        self.assertEqual(get_client_transfer(), sample)
+        set_client_transfer(None)
+
+
 
 class TestLanShareUtilities(unittest.TestCase):
     def test_get_available_drive_letters(self):

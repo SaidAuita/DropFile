@@ -79,6 +79,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "speed_tx_label": "Upload Speed:",
         "speed_total_rx": "Received Total:",
         "speed_total_tx": "Sent Total:",
+        "speed_transfer_uploading": "⬆ Uploading: {name}",
+        "speed_transfer_downloading": "⬇ Downloading: {name}",
+        "speed_transfer_idle": "✓ All files synchronized",
+        "speed_transfer_eta": "⏱ Remaining: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
         "status_connected": "CONNECTED",
         "app_name": "DropFile",
         "app_subtitle": "Two-way Dropbox-like file synchronization with FileBrowser server",
@@ -449,6 +454,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "speed_tx_label": "Скорость передачи:",
         "speed_total_rx": "Принято:",
         "speed_total_tx": "Отправлено:",
+        "speed_transfer_uploading": "⬆ Отправка: {name}",
+        "speed_transfer_downloading": "⬇ Прием: {name}",
+        "speed_transfer_idle": "✓ Все файлы синхронизированы",
+        "speed_transfer_eta": "⏱ Осталось: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
         "status_connected": "ПОДКЛЮЧЕНО",
         "app_name": "DropFile",
         "app_subtitle": "Двусторонняя Dropbox-подобная синхронизация с сервером FileBrowser",
@@ -770,6 +780,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "remote_status_sending": "Отправка команды на «{target}»...",
     },
     "de": {
+        "speed_transfer_uploading": "⬆ Senden: {name}",
+        "speed_transfer_downloading": "⬇ Empfangen: {name}",
+        "speed_transfer_idle": "✓ Alle Dateien synchronisiert",
+        "speed_transfer_eta": "⏱ Verbleibend: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Server",
         "speed_mode_client": "💻 Client",
         "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
@@ -1131,6 +1147,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "fr": {
+        "speed_transfer_uploading": "⬆ Envoi: {name}",
+        "speed_transfer_downloading": "⬇ Réception: {name}",
+        "speed_transfer_idle": "✓ Tous les fichiers sont synchronisés",
+        "speed_transfer_eta": "⏱ Restant: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Serveur",
         "speed_mode_client": "💻 Client",
         "speed_iface_server": "⚡ DropSync: Serveur ⇄ Serveur",
@@ -1492,6 +1514,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "es": {
+        "speed_transfer_uploading": "⬆ Subiendo: {name}",
+        "speed_transfer_downloading": "⬇ Descargando: {name}",
+        "speed_transfer_idle": "✓ Todos los archivos sincronizados",
+        "speed_transfer_eta": "⏱ Restante: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Servidor",
         "speed_mode_client": "💻 Cliente",
         "speed_iface_server": "⚡ DropSync: Servidor ⇄ Servidor",
@@ -1853,6 +1881,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "it": {
+        "speed_transfer_uploading": "⬆ Invio: {name}",
+        "speed_transfer_downloading": "⬇ Ricezione: {name}",
+        "speed_transfer_idle": "✓ Tutti i file sincronizzati",
+        "speed_transfer_eta": "⏱ Rimanente: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Server",
         "speed_mode_client": "💻 Client",
         "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
@@ -2214,6 +2248,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pt": {
+        "speed_transfer_uploading": "⬆ Enviando: {name}",
+        "speed_transfer_downloading": "⬇ Recebendo: {name}",
+        "speed_transfer_idle": "✓ Todos os arquivos sincronizados",
+        "speed_transfer_eta": "⏱ Restante: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Servidor",
         "speed_mode_client": "💻 Cliente",
         "speed_iface_server": "⚡ DropSync: Servidor ⇄ Servidor",
@@ -2575,6 +2615,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pl": {
+        "speed_transfer_uploading": "⬆ Wysyłanie: {name}",
+        "speed_transfer_downloading": "⬇ Pobieranie: {name}",
+        "speed_transfer_idle": "✓ Wszystkie pliki zsynchronizowane",
+        "speed_transfer_eta": "⏱ Pozostało: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ Serwer",
         "speed_mode_client": "💻 Klient",
         "speed_iface_server": "⚡ DropSync: Serwer ⇄ Serwer",
@@ -2936,6 +2982,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "zh": {
+        "speed_transfer_uploading": "⬆ 正在上传: {name}",
+        "speed_transfer_downloading": "⬇ 正在下载: {name}",
+        "speed_transfer_idle": "✓ 所有文件已同步",
+        "speed_transfer_eta": "⏱ 剩余时间: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ 服务器",
         "speed_mode_client": "💻 客户端",
         "speed_iface_server": "⚡ DropSync: 服务器 ⇄ 服务器",
@@ -3297,6 +3349,12 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "ja": {
+        "speed_transfer_uploading": "⬆ 送信中: {name}",
+        "speed_transfer_downloading": "⬇ 受信中: {name}",
+        "speed_transfer_idle": "✓ すべてのファイルが同期されました",
+        "speed_transfer_eta": "⏱ 残り時間: {eta}",
+        "speed_transfer_eta_short": "⏱ {eta}",
+
         "speed_mode_server": "⚡ サーバー",
         "speed_mode_client": "💻 クライアント",
         "speed_iface_server": "⚡ DropSync: サーバー ⇄ サーバー",
