@@ -65,6 +65,8 @@ DEFAULT_CONFIG = {
         "Exchange*",
         "exchange*",
     ],
+    "speed_window_geometry": "660x580",
+    "speed_monitor_mode": "server",
 }
 
 
@@ -591,4 +593,21 @@ class Config:
                     if name and path:
                         clean.append({"name": name, "path": path, "args": args})
         self._data["remote_control_launch_apps"] = clean
+
+    @property
+    def speed_window_geometry(self) -> str:
+        return str(self._data.get("speed_window_geometry", "660x580"))
+
+    @speed_window_geometry.setter
+    def speed_window_geometry(self, value: str) -> None:
+        self._data["speed_window_geometry"] = str(value).strip() or "660x580"
+
+    @property
+    def speed_monitor_mode(self) -> str:
+        return str(self._data.get("speed_monitor_mode", "server"))
+
+    @speed_monitor_mode.setter
+    def speed_monitor_mode(self, value: str) -> None:
+        self._data["speed_monitor_mode"] = "client" if str(value).lower() == "client" else "server"
+
 

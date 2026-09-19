@@ -117,6 +117,29 @@ class TestI18n(unittest.TestCase):
             import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_disk_space_keys_across_all_languages(self):
+        for lang in SUPPORTED_LANGUAGES:
+            tbl = TRANSLATIONS.get(lang, {})
+            self.assertIn("disk_space_free", tbl, f"Missing disk_space_free in {lang}")
+            self.assertIn("disk_space_short", tbl, f"Missing disk_space_short in {lang}")
+            txt = t("disk_space_short", lang=lang, free="142.5 GB", total="500 GB")
+            self.assertIn("142.5 GB", txt)
+            self.assertIn("500 GB", txt)
+
+    def test_speed_window_geometry_config(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        try:
+            config = Config(temp_dir)
+            self.assertEqual(config.speed_window_geometry, "660x580")
+            config.speed_window_geometry = "720x600+100+100"
+            config.save()
+
+            loaded = Config(temp_dir)
+            self.assertEqual(loaded.speed_window_geometry, "720x600+100+100")
+        finally:
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

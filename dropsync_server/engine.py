@@ -152,6 +152,16 @@ class DropSyncEngine:
                         "eta_seconds": eta_sec,
                     }
 
+                disk_free = None
+                disk_total = None
+                try:
+                    import shutil
+                    du = shutil.disk_usage(self.config.sync_dir)
+                    disk_free = int(du.free)
+                    disk_total = int(du.total)
+                except Exception:
+                    pass
+
                 stats = {
                     "timestamp": time.time(),
                     "node_name": self.config.node_name,
@@ -164,6 +174,8 @@ class DropSyncEngine:
                     "total_tx": tot_tx,
                     "history": history,
                     "current_transfer": transfer_info,
+                    "disk_free": disk_free,
+                    "disk_total": disk_total,
                 }
                 tmp_f = stats_file.with_suffix(".tmp")
                 tmp_f.write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")

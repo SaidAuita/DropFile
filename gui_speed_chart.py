@@ -374,7 +374,7 @@ class SpeedMonitorCard(tk.Frame):
 
         self.monitor = get_traffic_monitor()
 
-        # --- Top Header Row: Interface badge, Mode Toggle & Live status ---
+        # --- Top Header Row: Interface badge, Mode Toggle, Disk Space & Live status ---
         top_row = tk.Frame(self, bg="#FFFFFF")
         top_row.pack(fill="x", padx=12, pady=(8, 4))
 
@@ -387,16 +387,16 @@ class SpeedMonitorCard(tk.Frame):
         )
         self.lbl_iface.pack(side="left")
 
-        # Right box containing toggle and status pill
+        # Right box containing toggle, disk space pill and status pill
         right_box = tk.Frame(top_row, bg="#FFFFFF")
         right_box.pack(side="right")
 
         toggle_frame = tk.Frame(right_box, bg="#F1F5F9", padx=2, pady=2)
-        toggle_frame.pack(side="left", padx=(0, 10))
+        toggle_frame.pack(side="left", padx=(0, 8))
 
         self.btn_mode_server = tk.Button(
             toggle_frame,
-            text=t("speed_mode_server", default="⚡ Сервер"),
+            text=self._t("speed_mode_server"),
             font=("Segoe UI", 8, "bold"),
             relief="flat",
             bd=0,
@@ -409,7 +409,7 @@ class SpeedMonitorCard(tk.Frame):
 
         self.btn_mode_client = tk.Button(
             toggle_frame,
-            text=t("speed_mode_client", default="💻 Клиент"),
+            text=self._t("speed_mode_client"),
             font=("Segoe UI", 8, "bold"),
             relief="flat",
             bd=0,
@@ -420,6 +420,17 @@ class SpeedMonitorCard(tk.Frame):
         )
         self.btn_mode_client.pack(side="left")
 
+        self.lbl_disk_pill = tk.Label(
+            right_box,
+            text="",
+            bg="#F1F5F9",
+            fg="#475569",
+            padx=8,
+            pady=2,
+            font=("Segoe UI", 8, "bold"),
+        )
+        # Packed dynamically when disk telemetry is present
+
         self.lbl_status_pill = tk.Label(
             right_box,
             text="",
@@ -429,7 +440,7 @@ class SpeedMonitorCard(tk.Frame):
             pady=2,
             font=("Segoe UI", 8, "bold"),
         )
-        self.lbl_status_pill.pack(side="left")
+        self.lbl_status_pill.pack(side="left", padx=(6, 0))
 
         self._update_toggle_styles()
 
@@ -443,8 +454,8 @@ class SpeedMonitorCard(tk.Frame):
 
         zero_speed = format_speed(0, lang=self.lang)
         zero_bytes = format_bytes(0, lang=self.lang)
-        rx_init = f"● {t('speed_rx_legend')}: {zero_speed}"
-        tx_init = f"● {t('speed_tx_legend')}: {zero_speed}"
+        rx_init = f"● {self._t('speed_rx_legend')}: {zero_speed}"
+        tx_init = f"● {self._t('speed_tx_legend')}: {zero_speed}"
 
         # Rx Legend (Green)
         self.lbl_rx_badge = tk.Label(
@@ -486,7 +497,7 @@ class SpeedMonitorCard(tk.Frame):
 
         self.lbl_file_name = tk.Label(
             self.t_row1,
-            text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
+            text=self._t("speed_transfer_idle"),
             bg="#F8FAFC",
             fg="#64748B",
             font=("Segoe UI", 9, "bold"),
@@ -572,12 +583,12 @@ class SpeedMonitorCard(tk.Frame):
         col1 = tk.Frame(stats_grid, bg="#FFFFFF")
         col1.pack(side="left", fill="x", expand=True)
 
-        self.lbl_cur_rx_title = tk.Label(col1, text=t("speed_rx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_cur_rx_title = tk.Label(col1, text=self._t("speed_rx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_cur_rx_title.pack(anchor="w")
         self.lbl_cur_rx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_cur_rx_val.pack(anchor="w", pady=(0, 4))
 
-        self.lbl_cur_tx_title = tk.Label(col1, text=t("speed_tx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_cur_tx_title = tk.Label(col1, text=self._t("speed_tx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_cur_tx_title.pack(anchor="w")
         self.lbl_cur_tx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_cur_tx_val.pack(anchor="w")
@@ -586,18 +597,35 @@ class SpeedMonitorCard(tk.Frame):
         col2 = tk.Frame(stats_grid, bg="#FFFFFF")
         col2.pack(side="right", fill="x", expand=True)
 
-        self.lbl_tot_rx_title = tk.Label(col2, text=t("speed_total_rx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_tot_rx_title = tk.Label(col2, text=self._t("speed_total_rx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_tot_rx_title.pack(anchor="w")
         self.lbl_tot_rx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_tot_rx_val.pack(anchor="w", pady=(0, 4))
 
-        self.lbl_tot_tx_title = tk.Label(col2, text=t("speed_total_tx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_tot_tx_title = tk.Label(col2, text=self._t("speed_total_tx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_tot_tx_title.pack(anchor="w")
         self.lbl_tot_tx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_tot_tx_val.pack(anchor="w")
 
         if auto_start:
             self._schedule_tick()
+
+    def _t(self, key: str, **kwargs: Any) -> str:
+        """Translates key for this card's active language."""
+        return t(key, lang=self.lang, **kwargs)
+
+    def update_language(self, lang: Optional[str] = None) -> None:
+        """Dynamically retranslates all card widgets."""
+        if lang:
+            self.lang = lang
+        self._update_toggle_styles()
+        self.btn_mode_server.config(text=self._t("speed_mode_server"))
+        self.btn_mode_client.config(text=self._t("speed_mode_client"))
+        self.lbl_cur_rx_title.config(text=self._t("speed_rx_label"))
+        self.lbl_cur_tx_title.config(text=self._t("speed_tx_label"))
+        self.lbl_tot_rx_title.config(text=self._t("speed_total_rx"))
+        self.lbl_tot_tx_title.config(text=self._t("speed_total_tx"))
+        self.update_view()
 
     def set_mode(self, mode: str) -> None:
         """Switches monitoring mode between 'server' and 'client'."""
@@ -616,11 +644,11 @@ class SpeedMonitorCard(tk.Frame):
         if self.mode == "server":
             self.btn_mode_server.config(bg="#0284C7", fg="#FFFFFF")
             self.btn_mode_client.config(bg="#F1F5F9", fg="#64748B")
-            self.lbl_iface.config(text=t("speed_iface_server", default="⚡ DropSync: Сервер ⇄ Сервер"))
+            self.lbl_iface.config(text=self._t("speed_iface_server"))
         else:
             self.btn_mode_server.config(bg="#F1F5F9", fg="#64748B")
             self.btn_mode_client.config(bg="#0284C7", fg="#FFFFFF")
-            self.lbl_iface.config(text=t("speed_iface_client", default="💻 DropFile: Клиент ПК"))
+            self.lbl_iface.config(text=self._t("speed_iface_client"))
 
     def update_view(self) -> None:
         """Pulls latest metrics from selected source (Server or Client) and redraws chart."""
@@ -628,15 +656,16 @@ class SpeedMonitorCard(tk.Frame):
             return
 
         transfer_info = None
+        s_data = None
         if self.mode == "server":
             s_data = fetch_server_traffic_stats()
             if s_data:
                 node = s_data.get("node_name", "")
                 connected = s_data.get("connected", True)
-                online_suffix = t("speed_status_online", default="ONLINE")
-                offline_suffix = t("speed_status_offline", default="OFFLINE")
-                node_label = f"● {node}: {online_suffix}" if node else t("speed_status_server_online", default="● SERVER: ONLINE")
-                node_offline = f"○ {node}: {offline_suffix}" if node else t("speed_status_server_offline", default="○ SERVER: OFFLINE")
+                online_suffix = self._t("speed_status_online")
+                offline_suffix = self._t("speed_status_offline")
+                node_label = f"● {node}: {online_suffix}" if node else self._t("speed_status_server_online")
+                node_offline = f"○ {node}: {offline_suffix}" if node else self._t("speed_status_server_offline")
                 if connected:
                     self.lbl_status_pill.config(
                         text=node_label,
@@ -656,7 +685,7 @@ class SpeedMonitorCard(tk.Frame):
                 transfer_info = s_data.get("current_transfer")
             else:
                 self.lbl_status_pill.config(
-                    text=t("speed_status_server_offline", default="○ SERVER: OFFLINE"),
+                    text=self._t("speed_status_server_offline"),
                     bg="#F1F5F9",
                     fg="#94A3B8",
                 )
@@ -665,7 +694,7 @@ class SpeedMonitorCard(tk.Frame):
         else:
             # Client mode
             self.lbl_status_pill.config(
-                text=t("speed_status_client_active", default="● CLIENT: ACTIVE"),
+                text=self._t("speed_status_client_active"),
                 bg="#DCFCE7",
                 fg="#15803D",
             )
@@ -673,11 +702,46 @@ class SpeedMonitorCard(tk.Frame):
             tot_rx, tot_tx = self.monitor.get_totals()
             transfer_info = get_client_transfer()
 
+        # Update disk space badge if available (from server stats or local exchange)
+        free_b = s_data.get("disk_free") if s_data else None
+        tot_b = s_data.get("disk_total") if s_data else None
+        if free_b is None or tot_b is None:
+            try:
+                import shutil
+                from pathlib import Path
+                from config import Config
+                cfg = Config()
+                for p in [getattr(cfg, "lan_share_path", None), getattr(cfg, "exchange_folder_local", None), getattr(cfg, "exchange_path", None)]:
+                    if p and Path(p).exists():
+                        du = shutil.disk_usage(p)
+                        free_b = du.free
+                        tot_b = du.total
+                        break
+            except Exception:
+                pass
+
+        if free_b is not None and tot_b is not None and tot_b > 0:
+            free_str = format_bytes(free_b, lang=self.lang)
+            tot_str = format_bytes(tot_b, lang=self.lang)
+            disk_txt = self._t("disk_space_short", free=free_str, total=tot_str)
+            self.lbl_disk_pill.config(text=disk_txt)
+            try:
+                if not self.lbl_disk_pill.winfo_ismapped():
+                    self.lbl_disk_pill.pack(side="left", padx=(0, 6), before=self.lbl_status_pill)
+            except Exception:
+                pass
+        else:
+            try:
+                if self.lbl_disk_pill.winfo_ismapped():
+                    self.lbl_disk_pill.pack_forget()
+            except Exception:
+                pass
+
         rx_str, tx_str, peak_str, time_str = self.chart.render(history, lang=self.lang)
 
         # Update legend text
-        rx_text = f"● {t('speed_rx_legend')}: {rx_str}"
-        tx_text = f"● {t('speed_tx_legend')}: {tx_str}"
+        rx_text = f"● {self._t('speed_rx_legend')}: {rx_str}"
+        tx_text = f"● {self._t('speed_tx_legend')}: {tx_str}"
         self.lbl_rx_badge.config(text=rx_text)
         self.lbl_tx_badge.config(text=tx_text)
 
@@ -696,7 +760,7 @@ class SpeedMonitorCard(tk.Frame):
         """Updates the file transfer progress indicator with file name, progress bar(s), bytes, and ETA."""
         if not transfer or not transfer.get("file_name"):
             self.lbl_file_name.config(
-                text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
+                text=self._t("speed_transfer_idle"),
                 fg="#64748B",
             )
             self.lbl_file_pct.config(text="")
@@ -727,7 +791,7 @@ class SpeedMonitorCard(tk.Frame):
         is_tx = direction == "tx"
         color = "#0284C7" if is_tx else "#16A34A"  # Blue for upload/tx, Green for download/rx
         title_key = "speed_transfer_uploading" if is_tx else "speed_transfer_downloading"
-        title_text = t(title_key, name=file_name)
+        title_text = self._t(title_key, name=file_name)
 
         self.lbl_file_name.config(text=title_text, fg=color)
         pct_display = f"{int(pct)} %" if pct.is_integer() else f"{pct:.1f} %"
@@ -769,7 +833,7 @@ class SpeedMonitorCard(tk.Frame):
         eta_sec = transfer.get("eta_seconds")
         eta_str = format_eta(eta_sec, lang=self.lang)
         if eta_sec is not None and eta_sec >= 0:
-            eta_tpl = t("speed_transfer_eta", eta=eta_str)
+            eta_tpl = self._t("speed_transfer_eta", eta=eta_str)
             self.lbl_transfer_eta.config(text=eta_tpl)
         else:
             self.lbl_transfer_eta.config(text="")
@@ -807,9 +871,24 @@ class SpeedMonitorWindow:
     _INSTANCE: Optional["SpeedMonitorWindow"] = None
 
     @classmethod
-    def show_or_focus(cls, parent: Optional[tk.Tk] = None, lang: str = "ru") -> "SpeedMonitorWindow":
+    def show_or_focus(cls, parent: Optional[tk.Tk] = None, lang: Optional[str] = None) -> "SpeedMonitorWindow":
+        if lang is None:
+            try:
+                from config import Config
+                lang = Config().language
+            except Exception:
+                from i18n import get_current_language
+                lang = get_current_language()
+
+        try:
+            from i18n import set_current_language
+            set_current_language(lang)
+        except Exception:
+            pass
+
         if cls._INSTANCE is not None and cls._INSTANCE.is_alive():
             try:
+                cls._INSTANCE.update_language(lang)
                 cls._INSTANCE.window.lift()
                 cls._INSTANCE.window.focus_force()
                 return cls._INSTANCE
@@ -825,7 +904,19 @@ class SpeedMonitorWindow:
                 pass
         return inst
 
-    def __init__(self, parent: Optional[tk.Tk] = None, lang: str = "ru"):
+    def __init__(self, parent: Optional[tk.Tk] = None, lang: Optional[str] = None):
+        if not lang:
+            try:
+                from config import Config
+                lang = Config().language
+            except Exception:
+                from i18n import get_current_language
+                lang = get_current_language()
+        try:
+            from i18n import set_current_language
+            set_current_language(lang)
+        except Exception:
+            pass
         self.lang = lang
         self._owns_root = False
 
@@ -850,9 +941,20 @@ class SpeedMonitorWindow:
                 self.window = tk.Tk()
                 self._owns_root = True
 
-        self.window.title(f"{t('app_name')} — {t('speed_monitor_title')}")
-        self.window.geometry("580x450")
-        self.window.minsize(480, 380)
+        self.window.title(f"{t('app_name', lang=self.lang)} — {t('speed_monitor_title', lang=self.lang)}")
+
+        # Restore geometry or use comfortable default 660x580
+        saved_geom = "660x580"
+        try:
+            from config import Config
+            cfg_geom = Config().speed_window_geometry
+            if cfg_geom and "x" in cfg_geom:
+                saved_geom = cfg_geom
+        except Exception:
+            pass
+
+        self.window.geometry(saved_geom)
+        self.window.minsize(540, 480)
         self.window.configure(bg="#F8FAFC")
 
         # Set window icon
@@ -888,23 +990,23 @@ class SpeedMonitorWindow:
         header_bar = tk.Frame(self.window, bg="#FFFFFF", padx=16, pady=10)
         header_bar.pack(fill="x")
 
-        lbl_title = tk.Label(
+        self.lbl_win_title = tk.Label(
             header_bar,
-            text=f"📈 {t('speed_monitor_title')}",
+            text=f"📈 {t('speed_monitor_title', lang=self.lang)}",
             font=("Segoe UI", 11, "bold"),
             bg="#FFFFFF",
             fg="#0F172A",
         )
-        lbl_title.pack(side="left")
+        self.lbl_win_title.pack(side="left")
 
         self.var_ontop = tk.BooleanVar(value=False)
-        chk_ontop = ttk.Checkbutton(
+        self.chk_ontop = ttk.Checkbutton(
             header_bar,
-            text=t("speed_always_on_top"),
+            text=t("speed_always_on_top", lang=self.lang),
             variable=self.var_ontop,
             command=self._toggle_on_top,
         )
-        chk_ontop.pack(side="right")
+        self.chk_ontop.pack(side="right")
 
         tk.Frame(self.window, height=1, bg="#E2E8F0").pack(fill="x")
 
@@ -914,6 +1016,20 @@ class SpeedMonitorWindow:
 
         self.card = SpeedMonitorCard(card_outer, lang=self.lang, auto_start=True)
         self.card.pack(fill="both", expand=True)
+
+    def update_language(self, lang: str) -> None:
+        """Dynamically retranslates window controls and card when language changes."""
+        self.lang = lang
+        try:
+            self.window.title(f"{t('app_name', lang=self.lang)} — {t('speed_monitor_title', lang=self.lang)}")
+            if hasattr(self, "lbl_win_title"):
+                self.lbl_win_title.config(text=f"📈 {t('speed_monitor_title', lang=self.lang)}")
+            if hasattr(self, "chk_ontop"):
+                self.chk_ontop.config(text=t("speed_always_on_top", lang=self.lang))
+            if hasattr(self, "card") and self.card:
+                self.card.update_language(lang)
+        except Exception:
+            pass
 
     def _toggle_on_top(self) -> None:
         try:
@@ -929,6 +1045,15 @@ class SpeedMonitorWindow:
 
     def _on_close(self) -> None:
         SpeedMonitorWindow._INSTANCE = None
+        try:
+            geom = self.window.geometry()
+            if geom and "x" in geom:
+                from config import Config
+                cfg = Config()
+                cfg.speed_window_geometry = geom
+                cfg.save()
+        except Exception:
+            pass
         try:
             if hasattr(self, "card"):
                 self.card._is_alive = False

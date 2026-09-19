@@ -767,12 +767,22 @@ class SettingsDialog:
             self.btn_ds_refresh.config(text=t("dropsync_btn_refresh"))
         if hasattr(self, "btn_ds_open"):
             self.btn_ds_open.config(text=t("dropsync_btn_open_folder"))
+        if hasattr(self, "lbl_ds_active_files"):
+            cnt = getattr(self, "_last_ds_active_count", 0)
+            self.lbl_ds_active_files.config(text=f"📄 {t('dropsync_active_files', lang=self.config.language)} {cnt}")
+        if hasattr(self, "lbl_ds_trash_files"):
+            cnt = getattr(self, "_last_ds_trash_count", 0)
+            self.lbl_ds_trash_files.config(text=f"🗑 {t('dropsync_trash_files', lang=self.config.language)} {cnt}")
+        if hasattr(self, "speed_card_ds") and self.speed_card_ds:
+            self.speed_card_ds.update_language(self.config.language)
         if hasattr(self, "tree_ds_log"):
             self.tree_ds_log.heading("time", text=t("dropsync_log_col_time"))
             self.tree_ds_log.heading("action", text=t("dropsync_log_col_action"))
             self.tree_ds_log.heading("file", text=t("dropsync_log_col_file"))
             self.tree_ds_log.heading("size", text=t("dropsync_log_col_size"))
             self.tree_ds_log.heading("status", text=t("dropsync_log_col_status"))
+        if hasattr(self, "_refresh_dropsync_status_and_stats"):
+            self._refresh_dropsync_status_and_stats()
 
         # Remote Control Tab
 
@@ -1221,7 +1231,30 @@ class SettingsDialog:
             return
 
         state = st.get("state", "disabled")
-        badge = st.get("badge", "")
+        cur_lang = self.config.language
+        s1 = st.get("server1", {})
+        s2 = st.get("server2", {})
+        cnt1 = s1.get("file_count", 0)
+        cnt2 = s2.get("file_count", 0)
+
+        if state == "synced":
+            badge = t("servers_sync_synced", lang=cur_lang, count=cnt1)
+        elif state == "server1_newer":
+            badge = t("servers_sync_s1_newer", lang=cur_lang)
+        elif state == "server2_newer":
+            badge = t("servers_sync_s2_newer", lang=cur_lang)
+        elif state == "diff_count":
+            badge = t("servers_sync_diff_count", lang=cur_lang, c1=cnt1, c2=cnt2)
+        elif state == "server1_offline":
+            badge = "🔴 " + t("servers_sync_s1_offline", lang=cur_lang)
+        elif state == "server2_offline":
+            badge = "🔴 " + t("servers_sync_s2_offline", lang=cur_lang)
+        elif state == "both_offline":
+            badge = "🔴 " + t("servers_sync_both_offline", lang=cur_lang)
+        elif state == "disabled":
+            badge = "⚪ " + t("servers_sync_disabled", lang=cur_lang)
+        else:
+            badge = st.get("badge", "")
 
         color_map = {
             "synced": "#0F7B0F",
@@ -1237,32 +1270,27 @@ class SettingsDialog:
 
         self.lbl_sync_status_badge.config(text=badge, fg=fg_color)
 
-        s1 = st.get("server1", {})
-        s2 = st.get("server2", {})
-
         if s1.get("online"):
-            cnt1 = s1.get("file_count", 0)
             f1 = s1.get("latest_file", "")
             t1 = s1.get("latest_time_str", "")
             if cnt1 > 0 and f1:
-                self.lbl_s1_detail.config(text=t("servers_sync_srv_info", idx=1, count=cnt1, file=f1, time=t1))
+                self.lbl_s1_detail.config(text=t("servers_sync_srv_info", lang=cur_lang, idx=1, count=cnt1, file=f1, time=t1))
             else:
-                self.lbl_s1_detail.config(text=t("servers_sync_srv_none", idx=1))
+                self.lbl_s1_detail.config(text=t("servers_sync_srv_none", lang=cur_lang, idx=1))
         elif s1.get("url"):
-            self.lbl_s1_detail.config(text=t("servers_sync_srv_offline", idx=1))
+            self.lbl_s1_detail.config(text=t("servers_sync_srv_offline", lang=cur_lang, idx=1))
         else:
             self.lbl_s1_detail.config(text="")
 
         if s2.get("online"):
-            cnt2 = s2.get("file_count", 0)
             f2 = s2.get("latest_file", "")
             t2 = s2.get("latest_time_str", "")
             if cnt2 > 0 and f2:
-                self.lbl_s2_detail.config(text=t("servers_sync_srv_info", idx=2, count=cnt2, file=f2, time=t2))
+                self.lbl_s2_detail.config(text=t("servers_sync_srv_info", lang=cur_lang, idx=2, count=cnt2, file=f2, time=t2))
             else:
-                self.lbl_s2_detail.config(text=t("servers_sync_srv_none", idx=2))
+                self.lbl_s2_detail.config(text=t("servers_sync_srv_none", lang=cur_lang, idx=2))
         elif s2.get("url"):
-            self.lbl_s2_detail.config(text=t("servers_sync_srv_offline", idx=2))
+            self.lbl_s2_detail.config(text=t("servers_sync_srv_offline", lang=cur_lang, idx=2))
         else:
             self.lbl_s2_detail.config(text="")
 
@@ -1271,11 +1299,11 @@ class SettingsDialog:
             if not self.config.sync_backup_server or not self.config.backup_server_enabled:
                 self.lbl_leader_detail.config(text="")
             elif leader.get("is_self"):
-                self.lbl_leader_detail.config(text=t("servers_sync_leader_self"), fg="#0F7B0F")
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_self", lang=cur_lang), fg="#0F7B0F")
             elif leader.get("hostname") and time.time() <= float(leader.get("expires_at", 0)):
-                self.lbl_leader_detail.config(text=t("servers_sync_leader_other", host=leader.get("hostname")), fg="#5F6368")
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_other", lang=cur_lang, host=leader.get("hostname")), fg="#5F6368")
             else:
-                self.lbl_leader_detail.config(text=t("servers_sync_leader_none"), fg="#5F6368")
+                self.lbl_leader_detail.config(text=t("servers_sync_leader_none", lang=cur_lang), fg="#5F6368")
 
         if hasattr(self, "btn_check_servers"):
             b_state = "normal" if self.var_backup_enabled.get() else "disabled"
@@ -2564,7 +2592,7 @@ class SettingsDialog:
 
         self.lbl_ds_active_files = tk.Label(
             row_metrics,
-            text=f"📄 {t('dropsync_active_files')} 0",
+            text=f"📄 {t('dropsync_active_files', lang=self.config.language)} 0",
             bg="#EBF3FB",
             fg="#0067C0",
             padx=10,
@@ -2575,7 +2603,7 @@ class SettingsDialog:
 
         self.lbl_ds_trash_files = tk.Label(
             row_metrics,
-            text=f"🗑 {t('dropsync_trash_files')} 0",
+            text=f"🗑 {t('dropsync_trash_files', lang=self.config.language)} 0",
             bg="#F3F3F3",
             fg="#605E5C",
             padx=10,
@@ -2584,9 +2612,20 @@ class SettingsDialog:
         )
         self.lbl_ds_trash_files.pack(side="left", padx=(0, 10))
 
+        self.lbl_ds_disk_space = tk.Label(
+            row_metrics,
+            text="",
+            bg="#F8FAFC",
+            fg="#334155",
+            padx=10,
+            pady=4,
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_ds_disk_space.pack(side="left", padx=(0, 10))
+
         self.btn_ds_open = ttk.Button(
             row_metrics,
-            text=t("dropsync_btn_open_folder"),
+            text=t("dropsync_btn_open_folder", lang=self.config.language),
             command=self._open_ds_folder,
         )
         self.btn_ds_open.pack(side="right")
@@ -2776,10 +2815,26 @@ class SettingsDialog:
                     self.lbl_ds_sub_detail.config(text=status_info.get("sub_text", ""))
 
                 # Update metrics
+                self._last_ds_active_count = summary.get('active_files', 0)
+                self._last_ds_trash_count = summary.get('trash_files', 0)
+                cur_lang = self.config.language
                 if hasattr(self, "lbl_ds_active_files"):
-                    self.lbl_ds_active_files.config(text=f"📄 {t('dropsync_active_files')} {summary.get('active_files', 0)}")
+                    self.lbl_ds_active_files.config(text=f"📄 {t('dropsync_active_files', lang=cur_lang)} {self._last_ds_active_count}")
                 if hasattr(self, "lbl_ds_trash_files"):
-                    self.lbl_ds_trash_files.config(text=f"🗑 {t('dropsync_trash_files')} {summary.get('trash_files', 0)}")
+                    self.lbl_ds_trash_files.config(text=f"🗑 {t('dropsync_trash_files', lang=cur_lang)} {self._last_ds_trash_count}")
+                if hasattr(self, "lbl_ds_disk_space"):
+                    try:
+                        import shutil
+                        from pathlib import Path
+                        tgt_dir = sync_dir or getattr(self.config, "exchange_path", None)
+                        if tgt_dir and Path(tgt_dir).exists():
+                            du = shutil.disk_usage(tgt_dir)
+                            f_str = format_bytes(du.free, lang=cur_lang)
+                            t_str = format_bytes(du.total, lang=cur_lang)
+                            u_pct = round(((du.total - du.free) / du.total) * 100.0) if du.total > 0 else 0
+                            self.lbl_ds_disk_space.config(text=t("disk_space_free", lang=cur_lang, free=f_str, total=t_str, used_pct=u_pct))
+                    except Exception:
+                        pass
 
                 # Populate Treeview
                 if hasattr(self, "tree_ds_log"):
