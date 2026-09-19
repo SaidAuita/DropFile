@@ -46,6 +46,7 @@ def build():
         "--collect-all=sqlite3",
         "--collect-all=requests",
         "--collect-submodules=pystray",
+        "--collect-all=dropsync_server",
     ]
 
     # Explicitly bundle sqlite3.dll if found in Python DLLs directory

@@ -39,6 +39,39 @@ from win_utils import (
     restart_dropfile,
     set_windows_autostart,
 )
+import secrets
+
+try:
+    from dropsync_server import (
+        __version__ as ds_version,
+        __build__ as ds_build,
+        control_service as ds_control_service,
+        get_default_config_path as ds_get_default_config_path,
+        get_service_status as ds_get_service_status,
+        get_state_summary as ds_get_state_summary,
+        load_dropsync_config as ds_load_config,
+        save_dropsync_config as ds_save_config,
+    )
+except ImportError:
+    ds_version = "1.0.0"
+    ds_build = "88"
+    ds_control_service = lambda action: (False, "DropSync server module not found")
+    ds_get_default_config_path = lambda: Path.home() / ".dropsync" / "dropsync.json"
+    ds_get_service_status = lambda: {
+        "platform": sys.platform,
+        "installed": False,
+        "active": False,
+        "status_label": "Not installed",
+        "sub_text": "",
+    }
+    ds_get_state_summary = lambda p=None: {
+        "active_files": 0,
+        "trash_files": 0,
+        "logs": [],
+        "db_found": False,
+    }
+    ds_load_config = lambda p=None: {}
+    ds_save_config = lambda d, p=None: False
 
 # Enable modern per-monitor DPI awareness on Windows
 if sys.platform.startswith("win"):
@@ -182,6 +215,8 @@ class SettingsDialog:
                     self.window.focus_force()
                     if initial_tab == "remote" and hasattr(self, "tab_remote"):
                         self.window.after(0, lambda: self.notebook.select(self.tab_remote))
+                    elif initial_tab == "dropsync" and hasattr(self, "tab_dropsync"):
+                        self.window.after(0, lambda: self.notebook.select(self.tab_dropsync))
                     if sys.platform == "darwin":
                         from AppKit import NSApplication
                         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
@@ -424,7 +459,17 @@ class SettingsDialog:
         self.notebook.add(self.tab_log, text=t("tab_log"))
         self._build_log_tab(self.tab_log)
 
-        # Tab 5: Remote Control (Scrollable)
+        # Tab 5: DropSync Server (Scrollable)
+        self.tab_dropsync = ScrollableTab(self.notebook, padding=(18, 14))
+        self.notebook.add(self.tab_dropsync, text=t("tab_dropsync"))
+        self._build_dropsync_tab(self.tab_dropsync.content)
+        if initial_tab == "dropsync":
+            try:
+                self.notebook.select(self.tab_dropsync)
+            except Exception:
+                pass
+
+        # Tab 6: Remote Control (Scrollable)
         self.tab_remote = ScrollableTab(self.notebook, padding=(18, 14))
         self.notebook.add(self.tab_remote, text=t("tab_remote"))
         self._build_remote_tab(self.tab_remote.content)
@@ -433,6 +478,7 @@ class SettingsDialog:
                 self.notebook.select(self.tab_remote)
             except Exception:
                 pass
+
 
         # Center on screen while preserving dimensions
         self.window.update_idletasks()
@@ -593,7 +639,59 @@ class SettingsDialog:
         self.tree_log.heading("status", text=t("log_col_status"))
         self._refresh_logs()
 
+        # DropSync Tab
+        if hasattr(self, "notebook") and hasattr(self, "tab_dropsync"):
+            try:
+                self.notebook.tab(self.tab_dropsync, text=t("tab_dropsync"))
+            except Exception:
+                pass
+        if hasattr(self, "lbl_ds_hdr"):
+            self.lbl_ds_hdr.config(text=t("dropsync_header"))
+        if hasattr(self, "lbl_ds_sub"):
+            self.lbl_ds_sub.config(text=t("dropsync_sub"))
+        if hasattr(self, "card_ds_status"):
+            self.card_ds_status.config(text=f"  ⚡ {t('dropsync_card_status')}  ")
+        if hasattr(self, "card_ds_config"):
+            self.card_ds_config.config(text=f"  ⚙ {t('dropsync_card_config')}  ")
+        if hasattr(self, "card_ds_act"):
+            self.card_ds_act.config(text=f"  📊 {t('dropsync_card_activity')}  ")
+        if hasattr(self, "lbl_ds_node"):
+            self.lbl_ds_node.config(text=t("dropsync_node_label"))
+        if hasattr(self, "lbl_ds_role"):
+            self.lbl_ds_role.config(text=t("dropsync_role_label"))
+        if hasattr(self, "radio_ds_server"):
+            self.radio_ds_server.config(text=t("dropsync_role_server"))
+        if hasattr(self, "radio_ds_client"):
+            self.radio_ds_client.config(text=t("dropsync_role_client"))
+        if hasattr(self, "lbl_ds_folder"):
+            self.lbl_ds_folder.config(text=t("dropsync_folder_label"))
+        if hasattr(self, "lbl_ds_port"):
+            self.lbl_ds_port.config(text=t("dropsync_port_label"))
+        if hasattr(self, "lbl_ds_remote"):
+            self.lbl_ds_remote.config(text=t("dropsync_remote_label"))
+        if hasattr(self, "lbl_ds_token"):
+            self.lbl_ds_token.config(text=t("dropsync_token_label"))
+        if hasattr(self, "btn_ds_restart"):
+            self.btn_ds_restart.config(text=t("dropsync_btn_restart"))
+        if hasattr(self, "btn_ds_start"):
+            self.btn_ds_start.config(text=t("dropsync_btn_start"))
+        if hasattr(self, "btn_ds_stop"):
+            self.btn_ds_stop.config(text=t("dropsync_btn_stop"))
+        if hasattr(self, "btn_ds_save"):
+            self.btn_ds_save.config(text=t("dropsync_btn_save"))
+        if hasattr(self, "btn_ds_refresh"):
+            self.btn_ds_refresh.config(text=t("dropsync_btn_refresh"))
+        if hasattr(self, "btn_ds_open"):
+            self.btn_ds_open.config(text=t("dropsync_btn_open_folder"))
+        if hasattr(self, "tree_ds_log"):
+            self.tree_ds_log.heading("time", text=t("dropsync_log_col_time"))
+            self.tree_ds_log.heading("action", text=t("dropsync_log_col_action"))
+            self.tree_ds_log.heading("file", text=t("dropsync_log_col_file"))
+            self.tree_ds_log.heading("size", text=t("dropsync_log_col_size"))
+            self.tree_ds_log.heading("status", text=t("dropsync_log_col_status"))
+
         # Remote Control Tab
+
         if hasattr(self, "lbl_rc_hdr"):
             self.lbl_rc_hdr.config(text=t("remote_header"))
         if hasattr(self, "lbl_rc_sub"):
@@ -1821,6 +1919,487 @@ class SettingsDialog:
             act = action_names.get(r["action"], r["action"])
             stat = t("status_success") if r["status"] == "success" else r["status"]
             self.tree_log.insert("", "end", values=(ts, act, r["direction"], r["rel_path"], stat))
+
+    # -------------------------------------------------------------------------
+    # TAB 5: DropSync Server (High-Speed Linux Sync)
+    # -------------------------------------------------------------------------
+    def _build_dropsync_tab(self, parent: ttk.Frame) -> None:
+        self.lbl_ds_hdr = ttk.Label(parent, text=t("dropsync_header"), style="Header.TLabel")
+        self.lbl_ds_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_ds_sub = ttk.Label(parent, text=t("dropsync_sub"), style="Subheader.TLabel", justify="left")
+        self.lbl_ds_sub.pack(anchor="w", pady=(0, 12))
+        self.tab_dropsync.register_autowrap(self.lbl_ds_sub)
+
+        # --- Card 1: Daemon Service & Build Info ---
+        self.card_ds_status = tk.LabelFrame(
+            parent,
+            text=f"  ⚡ {t('dropsync_card_status')}  ",
+            bg="#FFFFFF",
+            padx=14,
+            pady=10,
+        )
+        self.card_ds_status.pack(fill="x", pady=(0, 14))
+
+        # Row 1: Build & Version Badge + Service Status Badge + Refresh Button
+        row_svc_top = tk.Frame(self.card_ds_status, bg="#FFFFFF")
+        row_svc_top.pack(fill="x", pady=(0, 6))
+
+        self.lbl_ds_build_badge = tk.Label(
+            row_svc_top,
+            text=f"📦 DropSync v{ds_version} (build {ds_build})",
+            bg="#EBF3FB",
+            fg="#0067C0",
+            padx=8,
+            pady=3,
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_ds_build_badge.pack(side="left", padx=(0, 8))
+
+        self.lbl_ds_status_badge = tk.Label(
+            row_svc_top,
+            text="⏳ Checking...",
+            bg="#F3F3F3",
+            fg="#605E5C",
+            padx=8,
+            pady=3,
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_ds_status_badge.pack(side="left", padx=(0, 8))
+
+        self.btn_ds_refresh = ttk.Button(
+            row_svc_top,
+            text=t("dropsync_btn_refresh"),
+            command=self._refresh_dropsync_status_and_stats,
+        )
+        self.btn_ds_refresh.pack(side="right")
+
+        # Row 2: Sub-detail text (systemd info or standalone)
+        self.lbl_ds_sub_detail = tk.Label(
+            self.card_ds_status,
+            text="",
+            bg="#FFFFFF",
+            fg="#605E5C",
+            font=(self.font_family, 8),
+            anchor="w",
+        )
+        self.lbl_ds_sub_detail.pack(fill="x", pady=(0, 6))
+
+        # Row 3: Action Buttons (Restart, Start, Stop)
+        row_svc_btns = tk.Frame(self.card_ds_status, bg="#FFFFFF")
+        row_svc_btns.pack(fill="x", pady=(0, 2))
+
+        self.btn_ds_restart = ttk.Button(
+            row_svc_btns,
+            text=t("dropsync_btn_restart"),
+            command=lambda: self._action_dropsync_service("restart"),
+        )
+        self.btn_ds_restart.pack(side="left", padx=(0, 6))
+
+        self.btn_ds_start = ttk.Button(
+            row_svc_btns,
+            text=t("dropsync_btn_start"),
+            command=lambda: self._action_dropsync_service("start"),
+        )
+        self.btn_ds_start.pack(side="left", padx=(0, 6))
+
+        self.btn_ds_stop = ttk.Button(
+            row_svc_btns,
+            text=t("dropsync_btn_stop"),
+            command=lambda: self._action_dropsync_service("stop"),
+        )
+        self.btn_ds_stop.pack(side="left", padx=(0, 6))
+
+        self.lbl_ds_action_msg = tk.Label(
+            row_svc_btns,
+            text="",
+            bg="#FFFFFF",
+            fg="#0F7B0F",
+            font=(self.font_family, 8),
+        )
+        self.lbl_ds_action_msg.pack(side="left", padx=(8, 0))
+
+        # --- Card 2: Configuration ---
+        self.card_ds_config = tk.LabelFrame(
+            parent,
+            text=f"  ⚙ {t('dropsync_card_config')}  ",
+            bg="#FFFFFF",
+            padx=14,
+            pady=10,
+        )
+        self.card_ds_config.pack(fill="x", pady=(0, 14))
+
+        # Node Name
+        row_node = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        row_node.pack(fill="x", pady=(0, 8))
+        self.lbl_ds_node = ttk.Label(row_node, text=t("dropsync_node_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_node.pack(side="left")
+        self.entry_ds_node = ttk.Entry(row_node)
+        self.entry_ds_node.pack(side="left", fill="x", expand=True)
+
+        # Role Radiobuttons
+        row_role = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        row_role.pack(fill="x", pady=(0, 8))
+        self.lbl_ds_role = ttk.Label(row_role, text=t("dropsync_role_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_role.pack(side="left")
+
+        self.var_ds_role = tk.StringVar(value="server")
+        self.radio_ds_server = ttk.Radiobutton(
+            row_role,
+            text=t("dropsync_role_server"),
+            variable=self.var_ds_role,
+            value="server",
+            command=self._on_ds_role_changed,
+        )
+        self.radio_ds_server.pack(side="left", padx=(0, 14))
+
+        self.radio_ds_client = ttk.Radiobutton(
+            row_role,
+            text=t("dropsync_role_client"),
+            variable=self.var_ds_role,
+            value="client",
+            command=self._on_ds_role_changed,
+        )
+        self.radio_ds_client.pack(side="left")
+
+        # Sync Folder
+        row_folder = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        row_folder.pack(fill="x", pady=(0, 8))
+        self.lbl_ds_folder = ttk.Label(row_folder, text=t("dropsync_folder_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_folder.pack(side="left")
+        self.entry_ds_folder = ttk.Entry(row_folder)
+        self.entry_ds_folder.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.btn_ds_browse_folder = ttk.Button(row_folder, text="📂 ...", width=5, command=self._browse_ds_folder)
+        self.btn_ds_browse_folder.pack(side="right")
+
+        # Role-specific container frame (swapped between port and remote url)
+        self.frame_role_options = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        self.frame_role_options.pack(fill="x", pady=(0, 8))
+
+        # Port row (Server mode)
+        self.row_ds_port = tk.Frame(self.frame_role_options, bg="#FFFFFF")
+        self.lbl_ds_port = ttk.Label(self.row_ds_port, text=t("dropsync_port_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_port.pack(side="left")
+        self.entry_ds_port = ttk.Entry(self.row_ds_port, width=12)
+        self.entry_ds_port.pack(side="left")
+
+        # Remote URL row (Client mode)
+        self.row_ds_remote = tk.Frame(self.frame_role_options, bg="#FFFFFF")
+        self.lbl_ds_remote = ttk.Label(self.row_ds_remote, text=t("dropsync_remote_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_remote.pack(side="left")
+        self.entry_ds_remote = ttk.Entry(self.row_ds_remote)
+        self.entry_ds_remote.pack(side="left", fill="x", expand=True)
+
+        # Auth Token row
+        row_token = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        row_token.pack(fill="x", pady=(0, 10))
+        self.lbl_ds_token = ttk.Label(row_token, text=t("dropsync_token_label"), style="Card.TLabel", width=28)
+        self.lbl_ds_token.pack(side="left")
+        self.entry_ds_token = ttk.Entry(row_token, show="•")
+        self.entry_ds_token.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        self.btn_ds_token_eye = ttk.Button(
+            row_token,
+            text="👁",
+            width=3,
+            command=self._toggle_ds_token_visibility,
+        )
+        self.btn_ds_token_eye.pack(side="left", padx=(0, 4))
+
+        self.btn_ds_token_copy = ttk.Button(
+            row_token,
+            text="📋",
+            width=3,
+            command=self._copy_ds_token,
+        )
+        self.btn_ds_token_copy.pack(side="left", padx=(0, 4))
+
+        self.btn_ds_token_gen = ttk.Button(
+            row_token,
+            text="🎲",
+            width=3,
+            command=self._generate_ds_token,
+        )
+        self.btn_ds_token_gen.pack(side="left")
+
+        # Save Button row
+        row_save = tk.Frame(self.card_ds_config, bg="#FFFFFF")
+        row_save.pack(fill="x", pady=(4, 0))
+
+        self.btn_ds_save = ttk.Button(
+            row_save,
+            text=t("dropsync_btn_save"),
+            style="Accent.TButton",
+            command=self._save_dropsync_settings,
+        )
+        self.btn_ds_save.pack(side="left", padx=(0, 12))
+
+        self.lbl_ds_save_status = tk.Label(
+            row_save,
+            text="",
+            bg="#FFFFFF",
+            fg="#0F7B0F",
+            font=(self.font_family, 8),
+        )
+        self.lbl_ds_save_status.pack(side="left")
+
+        # --- Card 3: Sync Activity & State ---
+        self.card_ds_act = tk.LabelFrame(
+            parent,
+            text=f"  📊 {t('dropsync_card_activity')}  ",
+            bg="#FFFFFF",
+            padx=14,
+            pady=10,
+        )
+        self.card_ds_act.pack(fill="both", expand=True, pady=(0, 6))
+
+        # Metrics row
+        row_metrics = tk.Frame(self.card_ds_act, bg="#FFFFFF")
+        row_metrics.pack(fill="x", pady=(0, 8))
+
+        self.lbl_ds_active_files = tk.Label(
+            row_metrics,
+            text=f"📄 {t('dropsync_active_files')} 0",
+            bg="#EBF3FB",
+            fg="#0067C0",
+            padx=10,
+            pady=4,
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_ds_active_files.pack(side="left", padx=(0, 10))
+
+        self.lbl_ds_trash_files = tk.Label(
+            row_metrics,
+            text=f"🗑 {t('dropsync_trash_files')} 0",
+            bg="#F3F3F3",
+            fg="#605E5C",
+            padx=10,
+            pady=4,
+            font=(self.font_family, 9),
+        )
+        self.lbl_ds_trash_files.pack(side="left", padx=(0, 10))
+
+        self.btn_ds_open = ttk.Button(
+            row_metrics,
+            text=t("dropsync_btn_open_folder"),
+            command=self._open_ds_folder,
+        )
+        self.btn_ds_open.pack(side="right")
+
+        # Sync activity Treeview container
+        tree_container = tk.Frame(self.card_ds_act, bg="#FFFFFF")
+        tree_container.pack(fill="both", expand=True, pady=(4, 0))
+
+        cols = ("time", "action", "file", "size", "status")
+        self.tree_ds_log = ttk.Treeview(tree_container, columns=cols, show="headings", height=8)
+
+        self.tree_ds_log.heading("time", text=t("dropsync_log_col_time"))
+        self.tree_ds_log.heading("action", text=t("dropsync_log_col_action"))
+        self.tree_ds_log.heading("file", text=t("dropsync_log_col_file"))
+        self.tree_ds_log.heading("size", text=t("dropsync_log_col_size"))
+        self.tree_ds_log.heading("status", text=t("dropsync_log_col_status"))
+
+        self.tree_ds_log.column("time", width=90, anchor="center")
+        self.tree_ds_log.column("action", width=85, anchor="center")
+        self.tree_ds_log.column("file", width=250, anchor="w")
+        self.tree_ds_log.column("size", width=80, anchor="center")
+        self.tree_ds_log.column("status", width=80, anchor="center")
+
+        ds_scroll = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree_ds_log.yview)
+        self.tree_ds_log.configure(yscrollcommand=ds_scroll.set)
+
+        self.tree_ds_log.pack(side="left", fill="both", expand=True)
+        ds_scroll.pack(side="right", fill="y")
+
+        # Initial data load
+        self._load_dropsync_ui_values()
+        self._refresh_dropsync_status_and_stats()
+
+    def _on_ds_role_changed(self) -> None:
+        role = self.var_ds_role.get()
+        if role == "client":
+            self.row_ds_port.pack_forget()
+            self.row_ds_remote.pack(fill="x")
+        else:
+            self.row_ds_remote.pack_forget()
+            self.row_ds_port.pack(fill="x")
+
+    def _toggle_ds_token_visibility(self) -> None:
+        if not hasattr(self, "entry_ds_token") or not hasattr(self, "btn_ds_token_eye"):
+            return
+        if self.entry_ds_token.cget("show") == "•":
+            self.entry_ds_token.config(show="")
+            self.btn_ds_token_eye.config(text="🙈")
+        else:
+            self.entry_ds_token.config(show="•")
+            self.btn_ds_token_eye.config(text="👁")
+
+    def _copy_ds_token(self) -> None:
+        if not hasattr(self, "entry_ds_token"):
+            return
+        val = self.entry_ds_token.get().strip()
+        if not val:
+            return
+        self.window.clipboard_clear()
+        self.window.clipboard_append(val)
+        if hasattr(self, "lbl_ds_save_status"):
+            self.lbl_ds_save_status.config(text=f"✓ {t('dropsync_token_copied')}", fg="#0F7B0F")
+            self.window.after(3000, lambda: self.lbl_ds_save_status.config(text="") if self._is_window_alive() else None)
+
+    def _generate_ds_token(self) -> None:
+        if not hasattr(self, "entry_ds_token"):
+            return
+        token = secrets.token_hex(24)
+        self.entry_ds_token.delete(0, tk.END)
+        self.entry_ds_token.insert(0, token)
+        self.entry_ds_token.config(show="")
+        if hasattr(self, "btn_ds_token_eye"):
+            self.btn_ds_token_eye.config(text="🙈")
+
+    def _browse_ds_folder(self) -> None:
+        if not hasattr(self, "entry_ds_folder"):
+            return
+        cur = self.entry_ds_folder.get().strip()
+        picked = filedialog.askdirectory(initialdir=cur or str(Path.home()), parent=self.window)
+        if picked:
+            self.entry_ds_folder.delete(0, tk.END)
+            self.entry_ds_folder.insert(0, picked)
+            self._refresh_dropsync_status_and_stats()
+
+    def _open_ds_folder(self) -> None:
+        if not hasattr(self, "entry_ds_folder"):
+            return
+        folder_str = self.entry_ds_folder.get().strip()
+        if folder_str:
+            open_folder_in_explorer(folder_str)
+
+    def _load_dropsync_ui_values(self) -> None:
+        try:
+            cfg = ds_load_config()
+            self.entry_ds_node.delete(0, tk.END)
+            self.entry_ds_node.insert(0, str(cfg.get("node_name", "server-1")))
+
+            role = str(cfg.get("role", "server")).lower()
+            self.var_ds_role.set(role)
+
+            self.entry_ds_folder.delete(0, tk.END)
+            self.entry_ds_folder.insert(0, str(cfg.get("sync_dir", "")))
+
+            self.entry_ds_port.delete(0, tk.END)
+            self.entry_ds_port.insert(0, str(cfg.get("listen_port", 8765)))
+
+            self.entry_ds_remote.delete(0, tk.END)
+            self.entry_ds_remote.insert(0, str(cfg.get("remote_url", "ws://192.168.1.4:8765/ws")))
+
+            self.entry_ds_token.delete(0, tk.END)
+            self.entry_ds_token.insert(0, str(cfg.get("auth_token", "")))
+
+            self._on_ds_role_changed()
+        except Exception as e:
+            print(f"[SettingsDialog] _load_dropsync_ui_values error: {e}")
+
+    def _save_dropsync_settings(self) -> None:
+        try:
+            cfg = ds_load_config()
+            cfg["node_name"] = self.entry_ds_node.get().strip() or "server-1"
+            cfg["role"] = self.var_ds_role.get()
+            cfg["sync_dir"] = self.entry_ds_folder.get().strip()
+            try:
+                cfg["listen_port"] = int(self.entry_ds_port.get().strip() or 8765)
+            except ValueError:
+                cfg["listen_port"] = 8765
+            cfg["remote_url"] = self.entry_ds_remote.get().strip()
+            cfg["auth_token"] = self.entry_ds_token.get().strip()
+
+            ok = ds_save_config(cfg)
+            if ok:
+                if hasattr(self, "lbl_ds_save_status"):
+                    self.lbl_ds_save_status.config(text=f"✓ {t('dropsync_saved_title')}", fg="#0F7B0F")
+                    self.window.after(4000, lambda: self.lbl_ds_save_status.config(text="") if self._is_window_alive() else None)
+                messagebox.showinfo(t("dropsync_saved_title"), t("dropsync_saved_msg"), parent=self.window)
+                self._refresh_dropsync_status_and_stats()
+            else:
+                messagebox.showerror(t("error_title"), "Failed to save DropSync configuration", parent=self.window)
+        except Exception as e:
+            messagebox.showerror(t("error_title"), f"Error saving DropSync settings: {e}", parent=self.window)
+
+    def _action_dropsync_service(self, action: str) -> None:
+        if hasattr(self, "lbl_ds_action_msg"):
+            self.lbl_ds_action_msg.config(text=f"Executing {action}...", fg="#0067C0")
+
+        def worker():
+            ok, msg = ds_control_service(action)
+            time.sleep(0.5)
+            if self._is_window_alive():
+                def _apply():
+                    if hasattr(self, "lbl_ds_action_msg"):
+                        self.lbl_ds_action_msg.config(text=msg, fg="#0F7B0F" if ok else "#C42B1C")
+                    self._refresh_dropsync_status_and_stats()
+                self.window.after(0, _apply)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh_dropsync_status_and_stats(self) -> None:
+        sync_dir = self.entry_ds_folder.get().strip() if hasattr(self, "entry_ds_folder") else None
+
+        def worker():
+            status_info = ds_get_service_status()
+            summary = ds_get_state_summary(sync_dir)
+
+            if not self._is_window_alive():
+                return
+
+            def _update():
+                if not self._is_window_alive():
+                    return
+                # Update status badge
+                if hasattr(self, "lbl_ds_status_badge"):
+                    label = status_info.get("status_label", "Unknown")
+                    if status_info.get("active"):
+                        self.lbl_ds_status_badge.config(text=label, bg="#DEF7EC", fg="#03543F")
+                    elif status_info.get("installed"):
+                        self.lbl_ds_status_badge.config(text=label, bg="#FDE8E8", fg="#9B1C1C")
+                    else:
+                        self.lbl_ds_status_badge.config(text=label, bg="#F3F3F3", fg="#605E5C")
+
+                if hasattr(self, "lbl_ds_sub_detail"):
+                    self.lbl_ds_sub_detail.config(text=status_info.get("sub_text", ""))
+
+                # Update metrics
+                if hasattr(self, "lbl_ds_active_files"):
+                    self.lbl_ds_active_files.config(text=f"📄 {t('dropsync_active_files')} {summary.get('active_files', 0)}")
+                if hasattr(self, "lbl_ds_trash_files"):
+                    self.lbl_ds_trash_files.config(text=f"🗑 {t('dropsync_trash_files')} {summary.get('trash_files', 0)}")
+
+                # Populate Treeview
+                if hasattr(self, "tree_ds_log"):
+                    for item in self.tree_ds_log.get_children():
+                        self.tree_ds_log.delete(item)
+
+                    def fmt_size(sz: int) -> str:
+                        if sz >= 1024 * 1024 * 1024:
+                            return f"{sz / (1024*1024*1024):.1f} GB"
+                        if sz >= 1024 * 1024:
+                            return f"{sz / (1024*1024):.1f} MB"
+                        if sz >= 1024:
+                            return f"{sz / 1024:.1f} KB"
+                        return f"{sz} B"
+
+                    logs = summary.get("logs", [])
+                    for r in logs:
+                        try:
+                            ts = datetime.fromtimestamp(r["timestamp"]).strftime("%H:%M:%S")
+                        except Exception:
+                            ts = ""
+                        act = r.get("action", "")
+                        rel_path = r.get("rel_path", "")
+                        sz_str = fmt_size(r.get("size", 0))
+                        stat = r.get("status", "")
+                        self.tree_ds_log.insert("", "end", values=(ts, act, rel_path, sz_str, stat))
+
+            self.window.after(0, _update)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _build_remote_tab(self, parent: ttk.Frame) -> None:
         self.lbl_rc_hdr = ttk.Label(parent, text=t("remote_header"), style="Header.TLabel")
