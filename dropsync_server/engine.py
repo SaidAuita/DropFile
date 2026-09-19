@@ -84,12 +84,15 @@ class DropSyncEngine:
     async def _record_traffic_stats_loop(self) -> None:
         """Periodically records speed metrics to .dropsync/traffic_stats.json for client GUI monitoring."""
         try:
-            from traffic_monitor import get_traffic_monitor
-        except ImportError:
+            from .traffic_monitor import get_traffic_monitor
+        except Exception:
             try:
-                from ..traffic_monitor import get_traffic_monitor
+                from dropsync_server.traffic_monitor import get_traffic_monitor
             except Exception:
-                return
+                try:
+                    from traffic_monitor import get_traffic_monitor
+                except Exception:
+                    return
 
         stats_file = self.config.sync_dir / ".dropsync" / "traffic_stats.json"
         stats_file.parent.mkdir(parents=True, exist_ok=True)

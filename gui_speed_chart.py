@@ -10,6 +10,8 @@ from __future__ import annotations
 import datetime
 import math
 import sys
+import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, List, Optional, Tuple
@@ -193,55 +195,131 @@ class SpeedChartWidget(tk.Canvas):
         )
 
 
-def fetch_server_traffic_stats(lan_host: Optional[str] = None) -> Optional[dict]:
-    """Reads real-time DropSync server traffic stats via SMB or HTTP API."""
-    import json
-    import time
-    from pathlib import Path
+_SERVER_STATS_CACHE: Optional[dict] = None
+_CACHE_LOCK = threading.Lock()
+_POLLER_THREAD: Optional[threading.Thread] = None
+_POLLER_RUNNING = False
 
-    hosts = []
+
+def _get_candidate_hosts(lan_host: Optional[str] = None) -> List[str]:
+    hosts: List[str] = []
     if lan_host:
         hosts.append(lan_host)
-    for default_h in ["192.168.1.4", "cladovka", "192.168.0.22"]:
-        if default_h not in hosts:
-            hosts.append(default_h)
+
+    is_work = False
+    is_home = False
+    try:
+        import socket
+        local_ips = socket.gethostbyname_ex(socket.gethostname())[2]
+        for ip in local_ips:
+            if ip.startswith("192.168.0."):
+                is_work = True
+            elif ip.startswith("192.168.1."):
+                is_home = True
+    except Exception:
+        pass
+
+    if is_work:
+        priority = ["192.168.0.22", "192.168.1.4", "cladovka"]
+    elif is_home:
+        priority = ["192.168.1.4", "cladovka", "192.168.0.22"]
+    else:
+        priority = ["192.168.0.22", "192.168.1.4", "cladovka"]
+
+    for h in priority:
+        if h not in hosts:
+            hosts.append(h)
+
     try:
         from config import Config
         cfg = Config()
         import urllib.parse
-        parsed = urllib.parse.urlparse(cfg.server_url)
-        h = parsed.hostname
-        if h and h not in hosts:
-            hosts.append(h)
+        for url_str in [cfg.server_url, getattr(cfg, "backup_server_url", None)]:
+            if url_str:
+                parsed = urllib.parse.urlparse(url_str)
+                h = parsed.hostname
+                if h and h not in hosts:
+                    hosts.append(h)
     except Exception:
         pass
 
-    for host in hosts:
-        # 1. Try SMB share: \\<host>\Exchange\.dropsync\traffic_stats.json
-        try:
-            smb_path = Path(rf"\\{host}\Exchange\.dropsync\traffic_stats.json")
-            if smb_path.exists():
-                content = smb_path.read_text(encoding="utf-8")
-                if content:
-                    data = json.loads(content)
-                    if time.time() - float(data.get("timestamp", 0)) < 30.0:
-                        return data
-        except Exception:
-            pass
+    return hosts
 
-        # 2. Try HTTP API: http://<host>:19877/traffic
+
+def _poll_server_traffic_stats_now(lan_host: Optional[str] = None) -> Optional[dict]:
+    """Fast probe: prioritized HTTP API on port 19877, non-blocking fallback to SMB."""
+    import json
+    import socket
+    import urllib.request
+    from pathlib import Path
+
+    hosts = _get_candidate_hosts(lan_host)
+
+    for host in hosts:
+        # 1. Fast HTTP API first (port 19877) — responds in ~15 ms
         try:
-            import urllib.request
             url = f"http://{host}:19877/traffic"
             req = urllib.request.Request(url, headers={"User-Agent": "DropFile-Monitor/1.0"})
-            with urllib.request.urlopen(req, timeout=1.2) as resp:
+            with urllib.request.urlopen(req, timeout=0.6) as resp:
                 raw = resp.read().decode("utf-8")
                 if raw:
                     return json.loads(raw)
         except Exception:
             pass
 
+        # 2. SMB fallback only if TCP 445 is immediately reachable (prevents 45s Win32 hang!)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.12)
+            err = s.connect_ex((host, 445))
+            s.close()
+            if err == 0:
+                for share in ["Exchange", "DropSync"]:
+                    smb_path = Path(rf"\\{host}\{share}\.dropsync\traffic_stats.json")
+                    if smb_path.exists():
+                        content = smb_path.read_text(encoding="utf-8")
+                        if content:
+                            data = json.loads(content)
+                            if time.time() - float(data.get("timestamp", 0)) < 30.0:
+                                return data
+        except Exception:
+            pass
+
     return None
+
+
+def _background_poller_loop() -> None:
+    global _SERVER_STATS_CACHE, _POLLER_RUNNING
+    while _POLLER_RUNNING:
+        try:
+            data = _poll_server_traffic_stats_now()
+            if data:
+                with _CACHE_LOCK:
+                    _SERVER_STATS_CACHE = data
+        except Exception:
+            pass
+        time.sleep(1.0)
+
+
+def fetch_server_traffic_stats(lan_host: Optional[str] = None) -> Optional[dict]:
+    """Reads real-time DropSync server traffic stats without blocking Tkinter UI."""
+    global _POLLER_THREAD, _POLLER_RUNNING, _SERVER_STATS_CACHE
+
+    if not _POLLER_RUNNING:
+        _POLLER_RUNNING = True
+        _POLLER_THREAD = threading.Thread(target=_background_poller_loop, daemon=True, name="ServerStatsPoller")
+        _POLLER_THREAD.start()
+
+    with _CACHE_LOCK:
+        if _SERVER_STATS_CACHE is not None:
+            return _SERVER_STATS_CACHE
+
+    # One-shot immediate probe on startup with tight timeout
+    data = _poll_server_traffic_stats_now(lan_host)
+    if data:
+        with _CACHE_LOCK:
+            _SERVER_STATS_CACHE = data
+    return data
 
 
 class SpeedMonitorCard(tk.Frame):

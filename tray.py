@@ -261,7 +261,22 @@ class DropFileTray:
         return t("tray_copy_name_empty")
 
     def _open_exchange_folder(self, icon=None, item=None) -> None:
-        open_folder_in_explorer(self.config.exchange_path)
+        target = self.config.exchange_path
+        try:
+            import socket
+            for srv_host in ["192.168.0.22", "192.168.1.4"]:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.1)
+                err = s.connect_ex((srv_host, 445))
+                s.close()
+                if err == 0:
+                    srv_path = Path(rf"\\{srv_host}\Exchange")
+                    if srv_path.exists():
+                        target = srv_path
+                        break
+        except Exception:
+            pass
+        open_folder_in_explorer(target)
 
     def _open_output_folder(self, icon=None, item=None) -> None:
         open_folder_in_explorer(self.config.output_path)

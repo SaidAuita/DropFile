@@ -118,8 +118,9 @@ class TestLanShareUtilities(unittest.TestCase):
             # Free letter should not be an active drive
             self.assertFalse(os.path.exists(f"{letter}:\\"))
 
-    @patch("subprocess.run")
-    def test_map_network_drive_success(self, mock_run):
+    @patch("platform_utils.os.path.exists", return_value=False)
+    @patch("platform_utils.subprocess.run")
+    def test_map_network_drive_success(self, mock_run, mock_exists):
         mock_run.return_value = MagicMock(returncode=0, stdout="The command completed successfully.")
         ok, msg = map_network_drive(r"\\192.168.1.4\DropSync", drive_letter="Z")
         self.assertTrue(ok)
@@ -131,8 +132,9 @@ class TestLanShareUtilities(unittest.TestCase):
         self.assertIn("Z:", cmd)
         self.assertIn(r"\\192.168.1.4\DropSync", cmd)
 
-    @patch("subprocess.run")
-    def test_map_network_drive_failure(self, mock_run):
+    @patch("platform_utils.os.path.exists", return_value=False)
+    @patch("platform_utils.subprocess.run")
+    def test_map_network_drive_failure(self, mock_run, mock_exists):
         mock_run.return_value = MagicMock(returncode=2, stderr="System error 67 has occurred. The network name cannot be found.")
         ok, msg = map_network_drive(r"\\invalid_server\Share", drive_letter="Y")
         self.assertFalse(ok)
