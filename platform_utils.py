@@ -6,7 +6,9 @@ Cross-platform support for:
 - Linux
 """
 
+import hashlib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -394,12 +396,22 @@ def open_folder_in_file_manager(folder_path: Path | str) -> None:
                                 child.rmdir()
             except Exception:
                 pass
-            try:
-                res = subprocess.run(["gio", "open", smb_url], capture_output=True, timeout=5)
-                if res.returncode != 0:
-                    subprocess.run(["xdg-open", smb_url])
-            except Exception:
-                subprocess.run(["xdg-open", smb_url])
+            # Try installed GUI file managers directly to handle GVFS / KIO smb URLs reliably
+            opened = False
+            for fm in ["thunar", "nautilus", "caja", "nemo", "dolphin", "pcmanfm"]:
+                fm_bin = shutil.which(fm)
+                if fm_bin:
+                    try:
+                        subprocess.Popen([fm_bin, smb_url])
+                        opened = True
+                        break
+                    except Exception:
+                        pass
+            if not opened:
+                try:
+                    subprocess.Popen(["gio", "open", smb_url])
+                except Exception:
+                    subprocess.Popen(["xdg-open", smb_url])
         return
 
     # Regular local path handling
@@ -413,7 +425,19 @@ def open_folder_in_file_manager(folder_path: Path | str) -> None:
     elif sys.platform.startswith("win"):
         os.startfile(str(p))
     else:
-        subprocess.run(["xdg-open", str(p)])
+        # Launch non-blocking on Linux
+        opened = False
+        for fm in ["thunar", "nautilus", "caja", "nemo", "dolphin", "pcmanfm"]:
+            fm_bin = shutil.which(fm)
+            if fm_bin:
+                try:
+                    subprocess.Popen([fm_bin, str(p)])
+                    opened = True
+                    break
+                except Exception:
+                    pass
+        if not opened:
+            subprocess.Popen(["xdg-open", str(p)])
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -1264,19 +1288,50 @@ def create_network_shortcut(unc_path: str, shortcut_name: str = "DropSync Networ
         desktop_file = desktop / f"{shortcut_name}.desktop"
         try:
             smb_uri = "smb://" + unc_path.replace("\\", "/").lstrip("/")
+            # For Linux desktop environments (XFCE / GNOME / KDE / Cinnamon / MATE),
+            # Type=Application with Exec is required for a desktop shortcut to be executable
+            # without triggering "Broken .desktop file" (Нерабочий .desktop файл) errors.
+            exec_cmd = (
+                f'sh -c "if command -v thunar >/dev/null 2>&1; then exec thunar \'{smb_uri}\'; '
+                f'elif command -v nautilus >/dev/null 2>&1; then exec nautilus \'{smb_uri}\'; '
+                f'elif command -v caja >/dev/null 2>&1; then exec caja \'{smb_uri}\'; '
+                f'elif command -v nemo >/dev/null 2>&1; then exec nemo \'{smb_uri}\'; '
+                f'elif command -v dolphin >/dev/null 2>&1; then exec dolphin \'{smb_uri}\'; '
+                f'elif command -v pcmanfm >/dev/null 2>&1; then exec pcmanfm \'{smb_uri}\'; '
+                f'else gio open \'{smb_uri}\' || xdg-open \'{smb_uri}\'; fi"'
+            )
             content = f"""[Desktop Entry]
 Version=1.0
-Type=Link
+Type=Application
 Name={shortcut_name}
 Comment=DropFile LAN Network Share
-URL={smb_uri}
+Exec={exec_cmd}
 Icon=folder-remote
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=true
 """
             desktop_file.write_text(content, encoding="utf-8")
             os.chmod(desktop_file, 0o755)
+
+            # Mark desktop entry as trusted for XFCE (Thunar 4.18+) and GNOME (Nautilus)
             try:
-                subprocess.run(["gio", "set", str(desktop_file), "metadata::trusted", "true"], capture_output=True, timeout=2)
-                subprocess.run(["gio", "set", str(desktop_file), "metadata::trusted", "yes"], capture_output=True, timeout=2)
+                sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                subprocess.run(
+                    ["gio", "set", "-t", "string", str(desktop_file), "metadata::xfce-exe-checksum", sha256],
+                    capture_output=True,
+                    timeout=2,
+                )
+                subprocess.run(
+                    ["gio", "set", "-t", "string", str(desktop_file), "metadata::trusted", "true"],
+                    capture_output=True,
+                    timeout=2,
+                )
+                subprocess.run(
+                    ["gio", "set", str(desktop_file), "metadata::trusted", "true"],
+                    capture_output=True,
+                    timeout=2,
+                )
             except Exception:
                 pass
             return True, f"Desktop entry created at {desktop_file}"
