@@ -499,17 +499,19 @@ class SpeedMonitorCard(tk.Frame):
         if self.mode == "server":
             s_data = fetch_server_traffic_stats()
             if s_data:
-                node = s_data.get("node_name", "cladovka-server")
+                node = s_data.get("node_name", "")
                 connected = s_data.get("connected", True)
+                node_label = f"● {node}: В СЕТИ" if node else t("speed_status_server_online", default="● СЕРВЕР: В СЕТИ")
+                node_offline = f"○ {node}: ОФЛАЙН" if node else t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН")
                 if connected:
                     self.lbl_status_pill.config(
-                        text=t("speed_status_server_online", default="● СЕРВЕР: В СЕТИ"),
+                        text=node_label,
                         bg="#DCFCE7",
                         fg="#15803D",
                     )
                 else:
                     self.lbl_status_pill.config(
-                        text=t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН"),
+                        text=node_offline,
                         bg="#FEF3C7",
                         fg="#B45309",
                     )
