@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.26.2-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.29.1-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -35,6 +35,23 @@
 
 ## ✨ Features
 
+- 🚀 **Two-Folder Architecture: `Exchange` vs `Output`**:
+  - **`Exchange` (High-Speed Server ⇄ Server DropSync)**:
+    - Powered by a dedicated high-performance WebSocket streaming engine (`dropsync_server`) with delta hashing (SHA-256) and chunked transfer.
+    - Keeps server exchange folders (e.g. Work Server ⇄ Home Server / NAS) perfectly synchronized in real time with zero WebDAV or heavy HTTP overhead.
+    - Native LAN/SMB network share integration (`\\server\Exchange` or mapped drive `Z:`).
+    - Lightweight Linux headless daemon (`dropsync.service`) running on servers.
+  - **`Output` (Client Deliverables & Public Sharing via FileBrowser)**:
+    - Dedicated staging folder for sharing finished files with external clients and customers.
+    - Generates instant public download links (`/share/{hash}`) via FileBrowser REST API.
+    - One-click tray context menu actions: *"🔗 Copy link: «filename»"* and *"📋 Copy filename"*.
+    - Completely isolates client-facing downloads from continuous internal server sync.
+- 📈 **Keenetic-Style Real-Time Traffic & Speed Monitor**:
+  - Dual-area live speed charts (Green for Download/Rx, Blue for Upload/Tx) with dynamic peak auto-scaling.
+  - Interactive mode switch: monitor remote **DropSync Server ⇄ Server** traffic or **Local PC Client** network throughput.
+- 🗂️ **Total Commander Style Dual-Level Progress Bars for Batches & Folders**:
+  - **Single file transfer**: Sleek progress bar with filename, transfer percentage, transferred volume, and live ETA.
+  - **Folder / Batch transfer**: Dual progress bars (Top: current file progress `0 %`, Bottom: overall batch progress `31 %`), batch file counter (`110 / 366`), total batch volume (`183,3 МБ / 598,3 МБ`), and total remaining time ETA (`⏱ Remaining: ~1 min`).
 - 🔄 **Bidirectional Automatic Synchronization**:
   - Real-time local filesystem monitoring via `watchdog` (drop files into the folder and they are instantly uploaded).
   - Background periodic remote polling detects new or modified files on the server and downloads them seamlessly.
@@ -418,6 +435,23 @@ python -m unittest discover tests
 - Успешно работает через любые корпоративные фаерволы (порт 443), прокси (Nginx, Caddy, Traefik), туннели (Cloudflare Tunnel, Keenetic Cloud, Tailscale) или прямое подключение по белому/локальному IP.
 
 ### 🌟 Основные возможности
+- 🚀 **Разделение концепции: папка `Exchange` и папка `Output`**:
+  - **`Exchange` (Высокоскоростная синхронизация Сервер ⇄ Сервер через DropSync)**:
+    - Работает на выделенном движке потоковой передачи по WebSocket (`dropsync_server`) с дельта-хэшированием (SHA-256) и поблочной передачей.
+    - Обеспечивает мгновенную синхронизацию между серверами (например, Рабочий сервер ⇄ Домашний сервер / NAS) без накладных расходов WebDAV или тяжелых HTTP-запросов.
+    - Прямая интеграция с локальными сетевыми ресурсами SMB (`\\server\Exchange` или подключенный диск `Z:`).
+    - Автономный легковесный демон для Linux (`dropsync.service`).
+  - **`Output` (Публикация ссылок для клиентов через FileBrowser)**:
+    - Выделенная папка для передачи готовых макетов, архивов и файлов заказчикам.
+    - Мгновенная генерация публичных ссылок для скачивания (`/share/{hash}`) через REST API FileBrowser.
+    - Копирование ссылки или имени файла в один клик прямо из контекстного меню системного трея (*«🔗 Скопировать ссылку: «файл»»*).
+    - Полная изоляция клиентских файлов от непрерывного внутреннего обмена между серверами.
+- 📈 **Монитор сетевой скорости и трафика в стиле роутеров Keenetic**:
+  - Интерактивный двухсегментный график скорости (зеленая зона — прием/Rx, синяя зона — передача/Tx) с автомасштабированием пиков.
+  - Переключение режимов мониторинга: трафик удаленного **DropSync сервера** или **Локального ПК**.
+- 🗂️ **Двухуровневый индикатор передачи папок в стиле Total Commander**:
+  - **Одиночный файл**: компактный прогресс-бар с именем файла, процентами, объемом и временем ETA.
+  - **Передача папки / пакета файлов**: два независимых прогресс-бара (верхний — текущий файл `0 %`, нижний — весь пакет `31 %`), счетчик обработанных файлов (`110 / 366`), суммарный объем данных (`183,3 МБ / 598,3 МБ`) и общее расчетное время до завершения (`⏱ Осталось: ~1 мин`).
 - 🔄 **Двусторонняя автоматическая синхронизация**: локальный мониторинг через `watchdog` и фоновый периодический опрос сервера.
 - 🌐 **Синхронизация и зеркалирование двух серверов (Сервер 1 ⇄ 2)**:
   - Поддержка основного и резервного сервера FileBrowser с автоматическим переключением (failover) и возвратом (failback).

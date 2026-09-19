@@ -119,7 +119,8 @@ class SpeedChartWidget(tk.Canvas):
         base_y = pad_top + plot_h
 
         if not history:
-            return ("0 бит/с", "0 бит/с", "0 бит/с", "")
+            zero = format_speed(0, lang=lang)
+            return (zero, zero, zero, "")
 
         # Compute max speed for auto-scaling
         all_speeds = [r[1] for r in history] + [r[2] for r in history]
@@ -440,10 +441,15 @@ class SpeedMonitorCard(tk.Frame):
         legend_row = tk.Frame(self, bg="#FFFFFF")
         legend_row.pack(fill="x", padx=12, pady=(0, 8))
 
+        zero_speed = format_speed(0, lang=self.lang)
+        zero_bytes = format_bytes(0, lang=self.lang)
+        rx_init = f"● {t('speed_rx_legend')}: {zero_speed}"
+        tx_init = f"● {t('speed_tx_legend')}: {zero_speed}"
+
         # Rx Legend (Green)
         self.lbl_rx_badge = tk.Label(
             legend_row,
-            text="● Прием: 0 кбит/с",
+            text=rx_init,
             bg="#FFFFFF",
             fg="#16A34A",
             font=("Segoe UI", 9, "bold"),
@@ -453,7 +459,7 @@ class SpeedMonitorCard(tk.Frame):
         # Tx Legend (Blue)
         self.lbl_tx_badge = tk.Label(
             legend_row,
-            text="● Передача: 0 кбит/с",
+            text=tx_init,
             bg="#FFFFFF",
             fg="#0284C7",
             font=("Segoe UI", 9, "bold"),
@@ -475,11 +481,11 @@ class SpeedMonitorCard(tk.Frame):
         self.transfer_box.pack(fill="x", padx=12, pady=(0, 8))
 
         # Row 1: Direction + File name (left) & Percentage (right)
-        t_row1 = tk.Frame(self.transfer_box, bg="#F8FAFC")
-        t_row1.pack(fill="x", pady=(0, 4))
+        self.t_row1 = tk.Frame(self.transfer_box, bg="#F8FAFC")
+        self.t_row1.pack(fill="x", pady=(0, 3))
 
         self.lbl_file_name = tk.Label(
-            t_row1,
+            self.t_row1,
             text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
             bg="#F8FAFC",
             fg="#64748B",
@@ -489,7 +495,7 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_file_name.pack(side="left", fill="x", expand=True)
 
         self.lbl_file_pct = tk.Label(
-            t_row1,
+            self.t_row1,
             text="",
             bg="#F8FAFC",
             fg="#0284C7",
@@ -497,16 +503,46 @@ class SpeedMonitorCard(tk.Frame):
         )
         self.lbl_file_pct.pack(side="right")
 
-        # Row 2: Smooth Progress Bar
-        self.progress_bar = TransferProgressBar(self.transfer_box, height=8, bg="#E2E8F0", bar_color="#0284C7")
-        self.progress_bar.pack(fill="x", pady=(0, 5))
+        # Row 2: File Progress Bar (Current File)
+        self.progress_bar_file = TransferProgressBar(self.transfer_box, height=6, bg="#E2E8F0", bar_color="#0284C7")
+        self.progress_bar_file.pack(fill="x", pady=(0, 4))
+        self.progress_bar = self.progress_bar_file
 
-        # Row 3: Transferred volume / Total volume (left) & ETA (right)
-        t_row3 = tk.Frame(self.transfer_box, bg="#F8FAFC")
-        t_row3.pack(fill="x")
+        # Multi-file Batch Container (Total Commander style: shown when batch_total > 1)
+        self.batch_container = tk.Frame(self.transfer_box, bg="#F8FAFC")
+
+        self.b_row1 = tk.Frame(self.batch_container, bg="#F8FAFC")
+        self.b_row1.pack(fill="x", pady=(1, 2))
+
+        self.lbl_batch_files = tk.Label(
+            self.b_row1,
+            text="",
+            bg="#F8FAFC",
+            fg="#1E293B",
+            font=("Segoe UI", 8, "bold"),
+            anchor="w",
+        )
+        self.lbl_batch_files.pack(side="left")
+
+        self.lbl_batch_pct = tk.Label(
+            self.b_row1,
+            text="",
+            bg="#F8FAFC",
+            fg="#0284C7",
+            font=("Segoe UI", 8, "bold"),
+            anchor="e",
+        )
+        self.lbl_batch_pct.pack(side="right")
+
+        self.progress_bar_batch = TransferProgressBar(self.batch_container, height=7, bg="#E2E8F0", bar_color="#0284C7")
+        self.progress_bar_batch.pack(fill="x", pady=(0, 4))
+
+        # Row 3 / Footer: Volume / Bytes (left) & Total ETA (right)
+        self.t_footer = tk.Frame(self.transfer_box, bg="#F8FAFC")
+        self.t_footer.pack(fill="x")
 
         self.lbl_transfer_bytes = tk.Label(
-            t_row3,
+            self.t_footer,
             text="",
             bg="#F8FAFC",
             fg="#64748B",
@@ -516,7 +552,7 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_transfer_bytes.pack(side="left")
 
         self.lbl_transfer_eta = tk.Label(
-            t_row3,
+            self.t_footer,
             text="",
             bg="#F8FAFC",
             fg="#64748B",
@@ -538,12 +574,12 @@ class SpeedMonitorCard(tk.Frame):
 
         self.lbl_cur_rx_title = tk.Label(col1, text=t("speed_rx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_cur_rx_title.pack(anchor="w")
-        self.lbl_cur_rx_val = tk.Label(col1, text="0 кбит/с", bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_cur_rx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_cur_rx_val.pack(anchor="w", pady=(0, 4))
 
         self.lbl_cur_tx_title = tk.Label(col1, text=t("speed_tx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_cur_tx_title.pack(anchor="w")
-        self.lbl_cur_tx_val = tk.Label(col1, text="0 кбит/с", bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_cur_tx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_cur_tx_val.pack(anchor="w")
 
         # Col 2: Принято & Отправлено
@@ -552,12 +588,12 @@ class SpeedMonitorCard(tk.Frame):
 
         self.lbl_tot_rx_title = tk.Label(col2, text=t("speed_total_rx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_tot_rx_title.pack(anchor="w")
-        self.lbl_tot_rx_val = tk.Label(col2, text="0 КБ", bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_tot_rx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_tot_rx_val.pack(anchor="w", pady=(0, 4))
 
         self.lbl_tot_tx_title = tk.Label(col2, text=t("speed_total_tx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
         self.lbl_tot_tx_title.pack(anchor="w")
-        self.lbl_tot_tx_val = tk.Label(col2, text="0 КБ", bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_tot_tx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
         self.lbl_tot_tx_val.pack(anchor="w")
 
         if auto_start:
@@ -597,8 +633,10 @@ class SpeedMonitorCard(tk.Frame):
             if s_data:
                 node = s_data.get("node_name", "")
                 connected = s_data.get("connected", True)
-                node_label = f"● {node}: В СЕТИ" if node else t("speed_status_server_online", default="● СЕРВЕР: В СЕТИ")
-                node_offline = f"○ {node}: ОФЛАЙН" if node else t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН")
+                online_suffix = t("speed_status_online", default="ONLINE")
+                offline_suffix = t("speed_status_offline", default="OFFLINE")
+                node_label = f"● {node}: {online_suffix}" if node else t("speed_status_server_online", default="● SERVER: ONLINE")
+                node_offline = f"○ {node}: {offline_suffix}" if node else t("speed_status_server_offline", default="○ SERVER: OFFLINE")
                 if connected:
                     self.lbl_status_pill.config(
                         text=node_label,
@@ -618,7 +656,7 @@ class SpeedMonitorCard(tk.Frame):
                 transfer_info = s_data.get("current_transfer")
             else:
                 self.lbl_status_pill.config(
-                    text=t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН"),
+                    text=t("speed_status_server_offline", default="○ SERVER: OFFLINE"),
                     bg="#F1F5F9",
                     fg="#94A3B8",
                 )
@@ -627,7 +665,7 @@ class SpeedMonitorCard(tk.Frame):
         else:
             # Client mode
             self.lbl_status_pill.config(
-                text=t("speed_status_client_active", default="● КЛИЕНТ: АКТИВЕН"),
+                text=t("speed_status_client_active", default="● CLIENT: ACTIVE"),
                 bg="#DCFCE7",
                 fg="#15803D",
             )
@@ -655,23 +693,29 @@ class SpeedMonitorCard(tk.Frame):
         self._update_transfer_ui(transfer_info)
 
     def _update_transfer_ui(self, transfer: Optional[dict]) -> None:
-        """Updates the file transfer progress indicator with file name, progress bar, bytes, and ETA."""
+        """Updates the file transfer progress indicator with file name, progress bar(s), bytes, and ETA."""
         if not transfer or not transfer.get("file_name"):
             self.lbl_file_name.config(
                 text=t("speed_transfer_idle", default="✓ Все файлы синхронизированы"),
                 fg="#64748B",
             )
             self.lbl_file_pct.config(text="")
-            self.progress_bar.set_progress(0, "#CBD5E1")
+            self.progress_bar_file.set_progress(0, "#CBD5E1")
+            try:
+                if self.batch_container.winfo_manager() == "pack":
+                    self.batch_container.pack_forget()
+            except Exception:
+                pass
             self.lbl_transfer_bytes.config(text="")
             self.lbl_transfer_eta.config(text="")
             return
 
         direction = transfer.get("direction", "tx")
-        file_name = str(transfer.get("file_name", ""))
-        # Cleanly truncate overly long file names
-        if len(file_name) > 36:
-            file_name = file_name[:20] + "..." + file_name[-13:]
+        rel_path = transfer.get("rel_path")
+        file_name = str(rel_path or transfer.get("file_name", ""))
+        # Cleanly truncate overly long paths/file names
+        if len(file_name) > 38:
+            file_name = file_name[:18] + "..." + file_name[-17:]
 
         total_bytes = transfer.get("total_size") or transfer.get("total_bytes", 0)
         transferred = transfer.get("transferred_bytes", 0)
@@ -679,9 +723,6 @@ class SpeedMonitorCard(tk.Frame):
         if pct is None:
             pct = round((transferred / total_bytes) * 100.0, 1) if total_bytes > 0 else 0.0
         pct = min(100.0, max(0.0, float(pct)))
-
-        eta_sec = transfer.get("eta_seconds")
-        eta_str = format_eta(eta_sec, lang=self.lang)
 
         is_tx = direction == "tx"
         color = "#0284C7" if is_tx else "#16A34A"  # Blue for upload/tx, Green for download/rx
@@ -691,11 +732,42 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_file_name.config(text=title_text, fg=color)
         pct_display = f"{int(pct)} %" if pct.is_integer() else f"{pct:.1f} %"
         self.lbl_file_pct.config(text=pct_display, fg=color)
-        self.progress_bar.set_progress(pct, color)
+        self.progress_bar_file.set_progress(pct, color)
 
-        bytes_text = f"{format_bytes(transferred, lang=self.lang)} / {format_bytes(total_bytes, lang=self.lang)}"
-        self.lbl_transfer_bytes.config(text=bytes_text)
+        batch_total = transfer.get("batch_total", 1)
+        batch_current = transfer.get("batch_current", 1)
+        batch_bytes_total = transfer.get("batch_bytes_total", total_bytes)
+        batch_bytes_transferred = transfer.get("batch_bytes_transferred", transferred)
+        batch_pct = transfer.get("batch_percent", pct)
 
+        if batch_total > 1:
+            # Multi-file batch transfer (Total Commander style)
+            try:
+                if self.batch_container.winfo_manager() != "pack":
+                    self.batch_container.pack(fill="x", before=self.t_footer)
+            except Exception:
+                self.batch_container.pack(fill="x")
+            self.lbl_batch_files.config(text=f"{batch_current} / {batch_total}")
+            b_pct_val = min(100.0, max(0.0, float(batch_pct)))
+            b_pct_display = f"{int(b_pct_val)} %" if b_pct_val.is_integer() else f"{b_pct_val:.1f} %"
+            self.lbl_batch_pct.config(text=b_pct_display, fg=color)
+            self.progress_bar_batch.set_progress(b_pct_val, color)
+
+            # Footer shows batch volume
+            bytes_text = f"{format_bytes(batch_bytes_transferred, lang=self.lang)} / {format_bytes(batch_bytes_total, lang=self.lang)}"
+            self.lbl_transfer_bytes.config(text=bytes_text)
+        else:
+            # Single file mode
+            try:
+                if self.batch_container.winfo_manager() == "pack":
+                    self.batch_container.pack_forget()
+            except Exception:
+                pass
+            bytes_text = f"{format_bytes(transferred, lang=self.lang)} / {format_bytes(total_bytes, lang=self.lang)}"
+            self.lbl_transfer_bytes.config(text=bytes_text)
+
+        eta_sec = transfer.get("eta_seconds")
+        eta_str = format_eta(eta_sec, lang=self.lang)
         if eta_sec is not None and eta_sec >= 0:
             eta_tpl = t("speed_transfer_eta", eta=eta_str)
             self.lbl_transfer_eta.config(text=eta_tpl)
@@ -779,8 +851,8 @@ class SpeedMonitorWindow:
                 self._owns_root = True
 
         self.window.title(f"{t('app_name')} — {t('speed_monitor_title')}")
-        self.window.geometry("580x430")
-        self.window.minsize(480, 370)
+        self.window.geometry("580x450")
+        self.window.minsize(480, 380)
         self.window.configure(bg="#F8FAFC")
 
         # Set window icon

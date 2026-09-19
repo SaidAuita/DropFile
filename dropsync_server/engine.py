@@ -54,6 +54,7 @@ class DropSyncEngine:
         self._traffic_task: Optional[asyncio.Task] = None
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
         self._current_transfer: Optional[Dict[str, Any]] = None
+        self._batch_transfer: Optional[Dict[str, Any]] = None
 
     async def start(self) -> None:
         """Starts the sync engine, state reconciliation, watcher and transport."""
@@ -109,23 +110,45 @@ class DropSyncEngine:
                 ct = self._current_transfer
                 if ct and ct.get("total_size", 0) > 0:
                     direction = ct.get("direction", "tx")
-                    total_bytes = ct.get("total_size", 0)
-                    transferred = min(ct.get("transferred_bytes", 0), total_bytes)
-                    pct = round((transferred / total_bytes) * 100.0, 1) if total_bytes > 0 else 0.0
+                    file_name = ct.get("file_name", "")
+                    rel_path = ct.get("rel_path", "")
+                    file_bytes = ct.get("total_size", 0)
+                    file_transferred = min(ct.get("transferred_bytes", 0), file_bytes)
+                    file_pct = round((file_transferred / file_bytes) * 100.0, 1) if file_bytes > 0 else 0.0
+
+                    bt = self._batch_transfer
+                    if bt and bt.get("total_files", 0) > 1:
+                        batch_total = bt.get("total_files", 1)
+                        batch_current = min(bt.get("completed_files", 0) + 1, batch_total)
+                        batch_bytes_total = bt.get("total_bytes", file_bytes)
+                        batch_bytes_transferred = min(bt.get("transferred_bytes", file_transferred), batch_bytes_total)
+                        batch_pct = round((batch_bytes_transferred / batch_bytes_total) * 100.0, 1) if batch_bytes_total > 0 else file_pct
+                        rem_bytes = max(0, batch_bytes_total - batch_bytes_transferred)
+                    else:
+                        batch_total = 1
+                        batch_current = 1
+                        batch_bytes_total = file_bytes
+                        batch_bytes_transferred = file_transferred
+                        batch_pct = file_pct
+                        rem_bytes = max(0, file_bytes - file_transferred)
 
                     speed_bps = tx_bps if direction == "tx" else rx_bps
                     eta_sec = None
-                    if speed_bps > 8000 and total_bytes > transferred:
-                        rem_bytes = total_bytes - transferred
+                    if speed_bps > 8000 and rem_bytes > 0:
                         eta_sec = int((rem_bytes * 8) / speed_bps)
 
                     transfer_info = {
                         "direction": direction,
-                        "file_name": ct.get("file_name", ""),
-                        "rel_path": ct.get("rel_path", ""),
-                        "total_bytes": total_bytes,
-                        "transferred_bytes": transferred,
-                        "percent": pct,
+                        "file_name": file_name,
+                        "rel_path": rel_path,
+                        "total_bytes": file_bytes,
+                        "transferred_bytes": file_transferred,
+                        "percent": file_pct,
+                        "batch_current": batch_current,
+                        "batch_total": batch_total,
+                        "batch_bytes_transferred": batch_bytes_transferred,
+                        "batch_bytes_total": batch_bytes_total,
+                        "batch_percent": batch_pct,
                         "eta_seconds": eta_sec,
                     }
 
@@ -320,6 +343,7 @@ class DropSyncEngine:
         local_manifest = self.state_db.get_manifest()
 
         # 1. Check files offered by remote peer
+        to_request = []
         for rel_path, rem_info in remote_manifest.items():
             loc_info = local_manifest.get(rel_path)
             if rem_info.get("deleted", False):
@@ -331,7 +355,18 @@ class DropSyncEngine:
 
             # Remote file is active
             if not loc_info or loc_info.get("deleted", False) or loc_info.get("hash") != rem_info.get("hash"):
-                # Request file from remote
+                to_request.append((rel_path, rem_info.get("size", 0)))
+
+        if to_request:
+            total_req_bytes = sum(s for _, s in to_request)
+            self._batch_transfer = {
+                "direction": "rx",
+                "total_files": len(to_request),
+                "completed_files": 0,
+                "total_bytes": total_req_bytes,
+                "transferred_bytes": 0,
+            }
+            for rel_path, _ in to_request:
                 await peer.send_text(
                     pack_json_message(
                         MSG_FILE_REQUEST,
@@ -340,23 +375,37 @@ class DropSyncEngine:
                 )
 
         # 2. Offer local files that remote is missing or has older
+        to_offer = []
         for rel_path, loc_info in local_manifest.items():
             if loc_info.get("deleted", False):
                 continue
             rem_info = remote_manifest.get(rel_path)
             if not rem_info or (not rem_info.get("deleted", False) and rem_info.get("hash") != loc_info.get("hash")):
                 if not rem_info or loc_info.get("mtime", 0) > rem_info.get("mtime", 0):
-                    await peer.send_text(
-                        pack_json_message(
-                            MSG_FILE_OFFER,
-                            {
-                                "rel_path": rel_path,
-                                "size": loc_info["size"],
-                                "mtime": loc_info["mtime"],
-                                "hash": loc_info["hash"],
-                            },
-                        )
-                    )
+                    to_offer.append((rel_path, loc_info))
+
+        if to_offer and not to_request:
+            total_offer_bytes = sum(info.get("size", 0) for _, info in to_offer)
+            self._batch_transfer = {
+                "direction": "tx",
+                "total_files": len(to_offer),
+                "completed_files": 0,
+                "total_bytes": total_offer_bytes,
+                "transferred_bytes": 0,
+            }
+
+        for rel_path, loc_info in to_offer:
+            await peer.send_text(
+                pack_json_message(
+                    MSG_FILE_OFFER,
+                    {
+                        "rel_path": rel_path,
+                        "size": loc_info["size"],
+                        "mtime": loc_info["mtime"],
+                        "hash": loc_info["hash"],
+                    },
+                )
+            )
 
     async def _stream_file_to_peer(self, peer: PeerConnection, rel_path: str, offset: int = 0) -> None:
         """Streams file chunks in binary frames over the WebSocket."""
@@ -411,6 +460,9 @@ class DropSyncEngine:
                     if self._current_transfer and self._current_transfer.get("rel_path") == rel_path:
                         self._current_transfer["transferred_bytes"] = curr_offset
 
+                    if self._batch_transfer and self._batch_transfer.get("direction") == "tx":
+                        self._batch_transfer["transferred_bytes"] = self._batch_transfer.get("transferred_bytes", 0) + len(chunk)
+
                     # Yield to event loop to allow concurrent messages
                     await asyncio.sleep(0)
 
@@ -419,6 +471,11 @@ class DropSyncEngine:
         except Exception as e:
             print(f"[Engine] Error streaming {rel_path}: {e}")
         finally:
+            if self._batch_transfer and self._batch_transfer.get("direction") == "tx":
+                self._batch_transfer["completed_files"] = self._batch_transfer.get("completed_files", 0) + 1
+                if self._batch_transfer["completed_files"] >= self._batch_transfer.get("total_files", 1):
+                    self._batch_transfer = None
+
             if self._current_transfer and self._current_transfer.get("rel_path") == rel_path and self._current_transfer.get("direction") == "tx":
                 self._current_transfer = None
 
@@ -445,6 +502,9 @@ class DropSyncEngine:
                 else time.time()
             ),
         }
+
+        if self._batch_transfer and self._batch_transfer.get("direction") == "rx":
+            self._batch_transfer["transferred_bytes"] = self._batch_transfer.get("transferred_bytes", 0) + chunk_len
 
         target_path = self.config.sync_dir / rel_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -483,6 +543,12 @@ class DropSyncEngine:
                             {"rel_path": rel_path, "hash": file_hash, "status": "OK"},
                         )
                     )
+
+                    if self._batch_transfer and self._batch_transfer.get("direction") == "rx":
+                        self._batch_transfer["completed_files"] = self._batch_transfer.get("completed_files", 0) + 1
+                        if self._batch_transfer["completed_files"] >= self._batch_transfer.get("total_files", 1):
+                            self._batch_transfer = None
+
                     if self._current_transfer and self._current_transfer.get("rel_path") == rel_path and self._current_transfer.get("direction") == "rx":
                         self._current_transfer = None
                 else:

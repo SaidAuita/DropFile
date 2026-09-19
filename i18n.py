@@ -30,6 +30,11 @@ SUPPORTED_LANGUAGES = {
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "en": {
+        "speed_status_online": "ONLINE",
+        "speed_status_offline": "OFFLINE",
+        "log_autocleanup_older": "Auto-cleanup (older than {days} days)",
+        "log_dedup_removed": "Removed duplicate (hash matches {name})",
+
         "speed_mode_server": "⚡ Server",
         "speed_mode_client": "💻 Client",
         "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
@@ -405,6 +410,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "remote_status_sending": "Sending command to '{target}'...",
     },
     "ru": {
+        "speed_status_online": "В СЕТИ",
+        "speed_status_offline": "ОФЛАЙН",
+        "log_autocleanup_older": "Автоочистка (старше {days} дн.)",
+        "log_dedup_removed": "Удален дубликат (хэш совпадает с {name})",
+
         "speed_mode_server": "⚡ Сервер",
         "speed_mode_client": "💻 Клиент",
         "speed_iface_server": "⚡ DropSync: Сервер ⇄ Сервер",
@@ -780,6 +790,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "remote_status_sending": "Отправка команды на «{target}»...",
     },
     "de": {
+        "speed_status_online": "ONLINE",
+        "speed_status_offline": "OFFLINE",
+        "log_autocleanup_older": "Automatische Bereinigung (älter als {days} Tage)",
+        "log_dedup_removed": "Duplikat entfernt (Hash stimmt mit {name} überein)",
+
         "speed_transfer_uploading": "⬆ Senden: {name}",
         "speed_transfer_downloading": "⬇ Empfangen: {name}",
         "speed_transfer_idle": "✓ Alle Dateien synchronisiert",
@@ -1147,6 +1162,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "fr": {
+        "speed_status_online": "EN LIGNE",
+        "speed_status_offline": "HORS LIGNE",
+        "log_autocleanup_older": "Nettoyage automatique (plus de {days} jours)",
+        "log_dedup_removed": "Doublon supprimé (le hachage correspond à {name})",
+
         "speed_transfer_uploading": "⬆ Envoi: {name}",
         "speed_transfer_downloading": "⬇ Réception: {name}",
         "speed_transfer_idle": "✓ Tous les fichiers sont synchronisés",
@@ -1514,6 +1534,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "es": {
+        "speed_status_online": "EN LÍNEA",
+        "speed_status_offline": "DESCONECTADO",
+        "log_autocleanup_older": "Limpieza automática (más de {days} días)",
+        "log_dedup_removed": "Duplicado eliminado (el hash coincide con {name})",
+
         "speed_transfer_uploading": "⬆ Subiendo: {name}",
         "speed_transfer_downloading": "⬇ Descargando: {name}",
         "speed_transfer_idle": "✓ Todos los archivos sincronizados",
@@ -1881,6 +1906,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "it": {
+        "speed_status_online": "ONLINE",
+        "speed_status_offline": "OFFLINE",
+        "log_autocleanup_older": "Pulizia automatica (più di {days} giorni)",
+        "log_dedup_removed": "Duplicato rimosso (l'hash corrisponde a {name})",
+
         "speed_transfer_uploading": "⬆ Invio: {name}",
         "speed_transfer_downloading": "⬇ Ricezione: {name}",
         "speed_transfer_idle": "✓ Tutti i file sincronizzati",
@@ -2248,6 +2278,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pt": {
+        "speed_status_online": "ONLINE",
+        "speed_status_offline": "OFFLINE",
+        "log_autocleanup_older": "Limpeza automática (mais de {days} dias)",
+        "log_dedup_removed": "Duplicado removido (hash corresponde a {name})",
+
         "speed_transfer_uploading": "⬆ Enviando: {name}",
         "speed_transfer_downloading": "⬇ Recebendo: {name}",
         "speed_transfer_idle": "✓ Todos os arquivos sincronizados",
@@ -2615,6 +2650,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pl": {
+        "speed_status_online": "ONLINE",
+        "speed_status_offline": "OFFLINE",
+        "log_autocleanup_older": "Automatyczne czyszczenie (starsze niż {days} dni)",
+        "log_dedup_removed": "Usunięto duplikat (hash pasuje do {name})",
+
         "speed_transfer_uploading": "⬆ Wysyłanie: {name}",
         "speed_transfer_downloading": "⬇ Pobieranie: {name}",
         "speed_transfer_idle": "✓ Wszystkie pliki zsynchronizowane",
@@ -2982,6 +3022,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "zh": {
+        "speed_status_online": "在线",
+        "speed_status_offline": "离线",
+        "log_autocleanup_older": "自动清理（超过 {days} 天）",
+        "log_dedup_removed": "已删除重复项（哈希与 {name} 匹配）",
+
         "speed_transfer_uploading": "⬆ 正在上传: {name}",
         "speed_transfer_downloading": "⬇ 正在下载: {name}",
         "speed_transfer_idle": "✓ 所有文件已同步",
@@ -3349,6 +3394,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "ja": {
+        "speed_status_online": "オンライン",
+        "speed_status_offline": "オフライン",
+        "log_autocleanup_older": "自動クリーンアップ（{days}日以上経過）",
+        "log_dedup_removed": "重複を削除しました（ハッシュが {name} と一致）",
+
         "speed_transfer_uploading": "⬆ 送信中: {name}",
         "speed_transfer_downloading": "⬇ 受信中: {name}",
         "speed_transfer_idle": "✓ すべてのファイルが同期されました",

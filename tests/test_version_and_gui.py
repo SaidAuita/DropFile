@@ -98,5 +98,69 @@ class TestTrayIcons(unittest.TestCase):
         self.assertTrue(down_pixel[1] > 200, f"Down arrow should be green, got {down_pixel}")
 
 
+class TestSpeedMonitorTransferUI(unittest.TestCase):
+    def setUp(self):
+        import tkinter as tk
+        self.root = tk.Tk()
+        self.root.withdraw()
+
+    def tearDown(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def test_transfer_ui_idle_state(self):
+        from gui_speed_chart import SpeedMonitorCard
+        card = SpeedMonitorCard(self.root, auto_start=False)
+        card._update_transfer_ui(None)
+        self.assertIn("✓", card.lbl_file_name.cget("text"))
+        self.assertEqual(card.lbl_file_pct.cget("text"), "")
+        self.assertEqual(card.lbl_transfer_bytes.cget("text"), "")
+
+    def test_transfer_ui_single_file(self):
+        from gui_speed_chart import SpeedMonitorCard
+        card = SpeedMonitorCard(self.root, auto_start=False)
+        sample = {
+            "direction": "tx",
+            "file_name": "document.pdf",
+            "total_bytes": 1000,
+            "transferred_bytes": 500,
+            "percent": 50.0,
+            "batch_total": 1,
+            "batch_current": 1,
+            "eta_seconds": 10,
+        }
+        card._update_transfer_ui(sample)
+        self.assertIn("document.pdf", card.lbl_file_name.cget("text"))
+        self.assertEqual(card.lbl_file_pct.cget("text"), "50 %")
+        self.assertNotEqual(card.batch_container.winfo_manager(), "pack")
+
+    def test_transfer_ui_batch_mode_total_commander_style(self):
+        from gui_speed_chart import SpeedMonitorCard
+        card = SpeedMonitorCard(self.root, auto_start=False)
+        sample = {
+            "direction": "tx",
+            "file_name": "AAA__00111_.png",
+            "rel_path": "Azbuka/AAA__00111_.png",
+            "total_bytes": 1000000,
+            "transferred_bytes": 0,
+            "percent": 0.0,
+            "batch_total": 366,
+            "batch_current": 110,
+            "batch_bytes_total": 598300000,
+            "batch_bytes_transferred": 183300000,
+            "batch_percent": 31.0,
+            "eta_seconds": 60,
+        }
+        card._update_transfer_ui(sample)
+        self.assertIn("AAA__00111_.png", card.lbl_file_name.cget("text"))
+        self.assertEqual(card.lbl_file_pct.cget("text"), "0 %")
+        self.assertEqual(card.lbl_batch_files.cget("text"), "110 / 366")
+        self.assertEqual(card.lbl_batch_pct.cget("text"), "31 %")
+        self.assertEqual(card.batch_container.winfo_manager(), "pack")
+
+
 if __name__ == "__main__":
     unittest.main()
+

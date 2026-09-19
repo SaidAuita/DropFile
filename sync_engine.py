@@ -1827,7 +1827,7 @@ class SyncEngine:
                     "delete",
                     "cleanup",
                     "success",
-                    f"Автоочистка (старше {retention_days} дн.)",
+                    t("log_autocleanup_older", days=retention_days),
                 )
                 cleaned_count += 1
 
@@ -2091,7 +2091,7 @@ class SyncEngine:
                                 "delete",
                                 "dedup",
                                 "success",
-                                f"Удален дубликат (хэш совпадает с {base_name})",
+                                t("log_dedup_removed", name=base_name),
                             )
                             print(f"[SyncEngine] Deduplicated: {clean_file} -> {base_name} ({dup_size} bytes)")
                     except Exception as e:

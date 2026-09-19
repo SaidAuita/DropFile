@@ -202,9 +202,20 @@ def get_client_transfer() -> Optional[dict]:
 # Formatting helpers (compatible with Russian / English Keenetic style)
 # ---------------------------------------------------------------------------
 
-def format_speed(bps: float, lang: str = "ru") -> str:
-    """Formats bits per second into human-readable rate string (e.g. '2,18 Мбит/с' or '178 кбит/с')."""
-    is_ru = lang == "ru"
+def _resolve_lang(lang: Optional[str] = None) -> str:
+    if lang is not None:
+        return lang
+    try:
+        from i18n import get_current_language
+        return get_current_language()
+    except Exception:
+        return "en"
+
+
+def format_speed(bps: float, lang: Optional[str] = None) -> str:
+    """Formats bits per second into human-readable rate string (e.g. '2,18 Мбит/с' or '178 kbps')."""
+    active_lang = _resolve_lang(lang)
+    is_ru = active_lang == "ru"
     kb = 1000.0
     mb = 1000.0 * 1000.0
     gb = 1000.0 * 1000.0 * 1000.0
@@ -230,9 +241,10 @@ def format_speed(bps: float, lang: str = "ru") -> str:
         return f"{int(bps)} {unit_bps}"
 
 
-def format_bytes(total_bytes: int, lang: str = "ru") -> str:
-    """Formats byte counts into human-readable volume string (e.g. '1,83 ГБ' or '5,42 МБ')."""
-    is_ru = lang == "ru"
+def format_bytes(total_bytes: int, lang: Optional[str] = None) -> str:
+    """Formats byte counts into human-readable volume string (e.g. '1,83 ГБ' or '5.42 MB')."""
+    active_lang = _resolve_lang(lang)
+    is_ru = active_lang == "ru"
     kb = 1024.0
     mb = 1024.0 * 1024.0
     gb = 1024.0 * 1024.0 * 1024.0
@@ -258,11 +270,12 @@ def format_bytes(total_bytes: int, lang: str = "ru") -> str:
         return f"{total_bytes} {unit_b}"
 
 
-def format_eta(seconds: Optional[int], lang: str = "ru") -> str:
-    """Formats estimated time of arrival (ETA) into a clean string (e.g. '~45 сек', '~1 мин 20 сек', '~12 мин')."""
+def format_eta(seconds: Optional[int], lang: Optional[str] = None) -> str:
+    """Formats estimated time of arrival (ETA) into a clean string (e.g. '~45 сек' or '~45s')."""
     if seconds is None or seconds < 0:
         return "—"
-    is_ru = lang == "ru"
+    active_lang = _resolve_lang(lang)
+    is_ru = active_lang == "ru"
     if seconds == 0:
         return "< 1 сек" if is_ru else "< 1s"
     if seconds < 60:
