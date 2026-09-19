@@ -76,5 +76,27 @@ class TestTrayBuildDisplay(unittest.TestCase):
         self.assertFalse(top_item.enabled)
 
 
+class TestTrayIcons(unittest.TestCase):
+    def test_create_tray_icon_states(self):
+        from icons import create_tray_icon
+
+        for state in ["idle", "syncing", "error", "paused"]:
+            for sz in [16, 24, 32, 64]:
+                img = create_tray_icon(state, size=sz)
+                self.assertEqual(img.size, (sz, sz))
+                self.assertEqual(img.mode, "RGBA")
+
+    def test_syncing_icon_has_green_arrows(self):
+        from icons import create_tray_icon
+
+        img = create_tray_icon("syncing", size=64)
+        # Check that vibrant green arrow pixels exist at arrow tip coordinates
+        # Up arrow tip around (21, 10), Down arrow tip around (43, 54)
+        up_pixel = img.getpixel((21, 10))
+        down_pixel = img.getpixel((43, 54))
+        self.assertTrue(up_pixel[1] > 200, f"Up arrow should be green, got {up_pixel}")
+        self.assertTrue(down_pixel[1] > 200, f"Down arrow should be green, got {down_pixel}")
+
+
 if __name__ == "__main__":
     unittest.main()

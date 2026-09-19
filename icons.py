@@ -53,12 +53,35 @@ def create_tray_icon(state: str = "idle", size: int = 64) -> Image.Image:
         draw.line(sc((46, 54, 56, 40)), fill=(255, 255, 255, 255), width=w3)
 
     elif state == "syncing":
-        # Cyan/Blue circle with sync arrows
-        draw.ellipse(badge_bg, fill=(0, 123, 255, 255), outline=(255, 255, 255, 255), width=w2)
-        draw.arc(sc((39, 39, 57, 57)), start=30, end=190, fill=(255, 255, 255, 255), width=w3)
-        draw.arc(sc((39, 39, 57, 57)), start=210, end=370, fill=(255, 255, 255, 255), width=w3)
-        draw.polygon([sc((46, 37)), sc((49, 41)), sc((43, 42))], fill=(255, 255, 255, 255))
-        draw.polygon([sc((50, 59)), sc((47, 55)), sc((53, 54))], fill=(255, 255, 255, 255))
+        # Prominent bold green bidirectional transfer arrows over the cloud (upload & download)
+        green = (0, 230, 118, 255)
+        outline = (10, 25, 47, 255)
+        w_out = max(1, s(2))
+
+        # Up Arrow (Left: Upload)
+        up_poly = [
+            sc((21, 4)),
+            sc((9, 21)),
+            sc((16, 21)),
+            sc((16, 47)),
+            sc((26, 47)),
+            sc((26, 21)),
+            sc((33, 21)),
+        ]
+
+        # Down Arrow (Right: Download)
+        dn_poly = [
+            sc((43, 60)),
+            sc((31, 43)),
+            sc((38, 43)),
+            sc((38, 17)),
+            sc((48, 17)),
+            sc((48, 43)),
+            sc((55, 43)),
+        ]
+
+        draw.polygon(up_poly, fill=green, outline=outline, width=w_out)
+        draw.polygon(dn_poly, fill=green, outline=outline, width=w_out)
 
     elif state == "error":
         # Red circle with white exclamation mark
