@@ -33,12 +33,17 @@ from updater import apply_update, check_for_updates
 from version import __version__, __build__, get_build_number, get_full_version
 from win_utils import (
     create_desktop_shortcut,
+    create_network_shortcut,
+    get_available_drive_letters,
     is_windows_autostart_enabled,
+    map_network_drive,
     open_folder_in_explorer,
     remove_desktop_shortcut,
     restart_dropfile,
     set_windows_autostart,
 )
+from gui_speed_chart import SpeedChartWidget, SpeedMonitorCard, SpeedMonitorWindow
+from urllib.parse import urlparse
 import secrets
 
 try:
@@ -187,6 +192,16 @@ class SettingsDialog:
 
     def _safe_destroy(self) -> None:
         """Destroys Tk window on the UI thread and resets references."""
+        if hasattr(self, "speed_card"):
+            try:
+                self.speed_card.stop()
+            except Exception:
+                pass
+        if hasattr(self, "speed_card_ds"):
+            try:
+                self.speed_card_ds.stop()
+            except Exception:
+                pass
         if self.window is not None:
             try:
                 self.window.destroy()
@@ -392,6 +407,14 @@ class SettingsDialog:
         )
         self.btn_check_update.pack(side="right")
 
+        # Speed Monitor Button
+        self.btn_speed_monitor = ttk.Button(
+            title_row,
+            text=f"📈 {t('speed_monitor_btn')}",
+            command=self._open_speed_monitor,
+        )
+        self.btn_speed_monitor.pack(side="right", padx=(0, 6))
+
         self.lbl_app_subtitle = tk.Label(
             header_bar,
             text=t("app_subtitle"),
@@ -506,6 +529,10 @@ class SettingsDialog:
                 self.window = None
                 self._ui_thread = None
 
+    def _open_speed_monitor(self) -> None:
+        """Opens or focuses standalone floating Speed Monitor window."""
+        SpeedMonitorWindow.show_or_focus(self.window if self._is_window_alive() else None, lang=self.config.language)
+
     def _retranslate_ui(self) -> None:
         """Dynamically retranslates all open window elements when language is changed."""
         if not self._is_window_alive():
@@ -519,6 +546,8 @@ class SettingsDialog:
         self.notebook.tab(self.tab_folders, text=t("tab_folders"))
         self.notebook.tab(self.tab_settings, text=t("tab_settings"))
         self.notebook.tab(self.tab_log, text=t("tab_log"))
+        if hasattr(self, "tab_dropsync"):
+            self.notebook.tab(self.tab_dropsync, text=t("tab_dropsync"))
         if hasattr(self, "tab_remote"):
             self.notebook.tab(self.tab_remote, text=t("tab_remote"))
 
@@ -527,6 +556,8 @@ class SettingsDialog:
         self.btn_cancel.config(text=t("btn_close"))
         if hasattr(self, "btn_check_update"):
             self.btn_check_update.config(text=f"🔍 {t('btn_check_updates')}")
+        if hasattr(self, "btn_speed_monitor"):
+            self.btn_speed_monitor.config(text=f"📈 {t('speed_monitor_btn')}")
 
         # Connection Tab
         self.lbl_conn_hdr.config(text=t("conn_header"))
@@ -589,6 +620,49 @@ class SettingsDialog:
             self.btn_pull_missing.config(text=f"📥 {t('btn_pull_missing')}")
         if hasattr(self, "btn_full_sync"):
             self.btn_full_sync.config(text=f"🔄 {t('btn_full_sync')}")
+
+        # LAN Share Assistant
+        if hasattr(self, "card_lan_share"):
+            self.card_lan_share.config(text=f"  📁 {t('lan_share_card_title')}  ")
+        if hasattr(self, "lbl_lan_server"):
+            self.lbl_lan_server.config(text=t("lan_server_ip_label"))
+        if hasattr(self, "btn_lan_detect"):
+            self.btn_lan_detect.config(text=t("lan_detected_btn"))
+        if hasattr(self, "lbl_lan_ds_title"):
+            self.lbl_lan_ds_title.config(text=t("lan_path_dropsync_label"))
+        if hasattr(self, "lbl_lan_ex_title"):
+            self.lbl_lan_ex_title.config(text=t("lan_path_exchange_label"))
+        if hasattr(self, "btn_ds_lan_open"):
+            self.btn_ds_lan_open.config(text=t("lan_btn_open"))
+        if hasattr(self, "btn_ds_lan_mount"):
+            self.btn_ds_lan_mount.config(text=t("lan_btn_mount"))
+        if hasattr(self, "btn_ds_lan_shortcut"):
+            self.btn_ds_lan_shortcut.config(text=t("lan_btn_shortcut"))
+        if hasattr(self, "btn_ds_lan_copy"):
+            self.btn_ds_lan_copy.config(text=t("lan_btn_copy"))
+        if hasattr(self, "btn_ex_lan_open"):
+            self.btn_ex_lan_open.config(text=t("lan_btn_open"))
+        if hasattr(self, "btn_ex_lan_mount"):
+            self.btn_ex_lan_mount.config(text=t("lan_btn_mount"))
+        if hasattr(self, "btn_ex_lan_shortcut"):
+            self.btn_ex_lan_shortcut.config(text=t("lan_btn_shortcut"))
+        if hasattr(self, "btn_ex_lan_copy"):
+            self.btn_ex_lan_copy.config(text=t("lan_btn_copy"))
+
+        # Speed Cards
+        for sc in (getattr(self, "speed_card", None), getattr(self, "speed_card_ds", None)):
+            if sc is not None:
+                sc.lang = self.config.language
+                if hasattr(sc, "lbl_card_title"):
+                    sc.lbl_card_title.config(text=f"📈 {t('speed_monitor_title')}")
+                if hasattr(sc, "lbl_cur_rx_title"):
+                    sc.lbl_cur_rx_title.config(text=t("speed_rx_label"))
+                if hasattr(sc, "lbl_cur_tx_title"):
+                    sc.lbl_cur_tx_title.config(text=t("speed_tx_label"))
+                if hasattr(sc, "lbl_tot_rx_title"):
+                    sc.lbl_tot_rx_title.config(text=t("speed_total_rx"))
+                if hasattr(sc, "lbl_tot_tx_title"):
+                    sc.lbl_tot_tx_title.config(text=t("speed_total_tx"))
 
         # Settings Tab
         self.lbl_settings_hdr.config(text=t("settings_header"))
@@ -1421,6 +1495,283 @@ class SettingsDialog:
         self.lbl_sync_status.pack(fill="x", pady=(4, 0))
         self.tab_folders.register_autowrap(self.lbl_sync_status)
 
+        # --- Card: LAN Network Shares (Samba / SMB) ---
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
+
+        self.card_lan_share = tk.LabelFrame(
+            parent,
+            text=f"  📁 {t('lan_share_card_title')}  ",
+            bg="#FFFFFF",
+            padx=14,
+            pady=10,
+        )
+        self.card_lan_share.pack(fill="x", pady=(0, 14))
+
+        # Server IP / Host row
+        self.lbl_lan_server = ttk.Label(self.card_lan_share, text=t("lan_server_ip_label"), style="Card.TLabel")
+        self.lbl_lan_server.pack(anchor="w", pady=(0, 2))
+
+        lan_server_row = tk.Frame(self.card_lan_share, bg="#FFFFFF")
+        lan_server_row.pack(fill="x", pady=(0, 10))
+
+        initial_lan_host = self._get_initial_lan_host()
+        self.entry_lan_server = ttk.Entry(lan_server_row, font=(self.font_family, 9))
+        self.entry_lan_server.insert(0, initial_lan_host)
+        self.entry_lan_server.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.entry_lan_server.bind("<KeyRelease>", lambda e: self._update_lan_paths())
+
+        self.btn_lan_detect = ttk.Button(
+            lan_server_row,
+            text=t("lan_detected_btn"),
+            command=self._on_lan_detect_click,
+        )
+        self.btn_lan_detect.pack(side="right")
+
+        # Share 1: DropSync (speed_server)
+        self.lbl_lan_ds_title = ttk.Label(
+            self.card_lan_share,
+            text=t("lan_path_dropsync_label"),
+            style="Card.TLabel",
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_lan_ds_title.pack(anchor="w", pady=(2, 2))
+
+        row_ds_path = tk.Frame(self.card_lan_share, bg="#F1F5F9", padx=8, pady=5)
+        row_ds_path.pack(fill="x", pady=(0, 6))
+
+        self.lbl_unc_dropsync = tk.Label(
+            row_ds_path,
+            text=f"\\\\{initial_lan_host}\\DropSync",
+            bg="#F1F5F9",
+            fg="#0F172A",
+            font=("Consolas", 10),
+            anchor="w",
+        )
+        self.lbl_unc_dropsync.pack(side="left", fill="x", expand=True)
+
+        row_ds_btns = tk.Frame(self.card_lan_share, bg="#FFFFFF")
+        row_ds_btns.pack(fill="x", pady=(0, 12))
+
+        self.btn_ds_lan_open = ttk.Button(
+            row_ds_btns,
+            text=t("lan_btn_open"),
+            command=lambda: self._open_lan_folder("DropSync"),
+        )
+        self.btn_ds_lan_open.pack(side="left", padx=(0, 6))
+
+        self.btn_ds_lan_mount = ttk.Button(
+            row_ds_btns,
+            text=t("lan_btn_mount"),
+            command=lambda: self._mount_lan_drive("DropSync"),
+        )
+        self.btn_ds_lan_mount.pack(side="left", padx=(0, 6))
+
+        self.btn_ds_lan_shortcut = ttk.Button(
+            row_ds_btns,
+            text=t("lan_btn_shortcut"),
+            command=lambda: self._create_lan_shortcut("DropSync", "DropSync Server"),
+        )
+        self.btn_ds_lan_shortcut.pack(side="left", padx=(0, 6))
+
+        self.btn_ds_lan_copy = ttk.Button(
+            row_ds_btns,
+            text=t("lan_btn_copy"),
+            command=lambda: self._copy_lan_path("DropSync"),
+        )
+        self.btn_ds_lan_copy.pack(side="left")
+
+        # Share 2: DropFile (Exchange)
+        self.lbl_lan_ex_title = ttk.Label(
+            self.card_lan_share,
+            text=t("lan_path_exchange_label"),
+            style="Card.TLabel",
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_lan_ex_title.pack(anchor="w", pady=(2, 2))
+
+        row_ex_path = tk.Frame(self.card_lan_share, bg="#F1F5F9", padx=8, pady=5)
+        row_ex_path.pack(fill="x", pady=(0, 6))
+
+        self.lbl_unc_exchange = tk.Label(
+            row_ex_path,
+            text=f"\\\\{initial_lan_host}\\Exchange",
+            bg="#F1F5F9",
+            fg="#0F172A",
+            font=("Consolas", 10),
+            anchor="w",
+        )
+        self.lbl_unc_exchange.pack(side="left", fill="x", expand=True)
+
+        row_ex_btns = tk.Frame(self.card_lan_share, bg="#FFFFFF")
+        row_ex_btns.pack(fill="x", pady=(0, 8))
+
+        self.btn_ex_lan_open = ttk.Button(
+            row_ex_btns,
+            text=t("lan_btn_open"),
+            command=lambda: self._open_lan_folder("Exchange"),
+        )
+        self.btn_ex_lan_open.pack(side="left", padx=(0, 6))
+
+        self.btn_ex_lan_mount = ttk.Button(
+            row_ex_btns,
+            text=t("lan_btn_mount"),
+            command=lambda: self._mount_lan_drive("Exchange"),
+        )
+        self.btn_ex_lan_mount.pack(side="left", padx=(0, 6))
+
+        self.btn_ex_lan_shortcut = ttk.Button(
+            row_ex_btns,
+            text=t("lan_btn_shortcut"),
+            command=lambda: self._create_lan_shortcut("Exchange", "DropFile Exchange"),
+        )
+        self.btn_ex_lan_shortcut.pack(side="left", padx=(0, 6))
+
+        self.btn_ex_lan_copy = ttk.Button(
+            row_ex_btns,
+            text=t("lan_btn_copy"),
+            command=lambda: self._copy_lan_path("Exchange"),
+        )
+        self.btn_ex_lan_copy.pack(side="left")
+
+        # Feedback / status label
+        self.lbl_lan_status = tk.Label(
+            self.card_lan_share,
+            text="",
+            bg="#FFFFFF",
+            fg="#0F7B0F",
+            font=(self.font_family, 8),
+            anchor="w",
+            justify="left",
+        )
+        self.lbl_lan_status.pack(fill="x", pady=(4, 0))
+        self.tab_folders.register_autowrap(self.lbl_lan_status)
+
+        # --- In-tab Live Speed Chart Card ---
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(10, 12))
+        self.speed_card = SpeedMonitorCard(parent, lang=self.config.language, bg="#FFFFFF", auto_start=True)
+        self.speed_card.pack(fill="x", pady=(0, 10))
+
+    def _get_initial_lan_host(self) -> str:
+        candidates = []
+        for u in [getattr(self.config, "server_url", ""), getattr(self.config, "backup_server_url", "")]:
+            if u:
+                try:
+                    h = urlparse(u).hostname
+                    if h and h not in ("localhost", "127.0.0.1") and h not in candidates:
+                        candidates.append(h)
+                except Exception:
+                    pass
+        if candidates:
+            return candidates[0]
+        return "192.168.1.4"
+
+    def _update_lan_paths(self) -> None:
+        host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
+        if not host:
+            host = "SERVER"
+        if hasattr(self, "lbl_unc_dropsync"):
+            self.lbl_unc_dropsync.config(text=f"\\\\{host}\\DropSync")
+        if hasattr(self, "lbl_unc_exchange"):
+            self.lbl_unc_exchange.config(text=f"\\\\{host}\\Exchange")
+
+    def _on_lan_detect_click(self) -> None:
+        if hasattr(self, "lbl_lan_status"):
+            self.lbl_lan_status.config(text="🔍 Searching for server in local network...", fg="#0067C0")
+        def worker():
+            detected = self._detect_lan_server()
+            if self._is_window_alive():
+                def apply_detected():
+                    if hasattr(self, "entry_lan_server"):
+                        self.entry_lan_server.delete(0, "end")
+                        self.entry_lan_server.insert(0, detected)
+                    self._update_lan_paths()
+                    if hasattr(self, "lbl_lan_status"):
+                        self.lbl_lan_status.config(text=f"✅ Server found: {detected}", fg="#0F7B0F")
+                self.window.after(0, apply_detected)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _detect_lan_server(self) -> str:
+        candidates = []
+        for url_str in [getattr(self.config, "server_url", ""), getattr(self.config, "backup_server_url", "")]:
+            if url_str:
+                try:
+                    h = urlparse(url_str).hostname
+                    if h and h not in ("localhost", "127.0.0.1") and h not in candidates:
+                        candidates.append(h)
+                except Exception:
+                    pass
+        for default_h in ["192.168.1.4", "cladovka", "192.168.0.22"]:
+            if default_h not in candidates:
+                candidates.append(default_h)
+
+        import socket
+        for host in candidates:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.35)
+                if s.connect_ex((host, 445)) == 0 or s.connect_ex((host, 8081)) == 0:
+                    s.close()
+                    return host
+                s.close()
+            except Exception:
+                pass
+        return candidates[0] if candidates else "192.168.1.4"
+
+    def _get_unc_path(self, share_name: str) -> str:
+        host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
+        if not host:
+            host = self._get_initial_lan_host()
+        return f"\\\\{host}\\{share_name}"
+
+    def _open_lan_folder(self, share_name: str) -> None:
+        unc = self._get_unc_path(share_name)
+        open_folder_in_explorer(unc)
+        if hasattr(self, "lbl_lan_status"):
+            self.lbl_lan_status.config(text=f"📂 {unc}", fg="#0067C0")
+
+    def _mount_lan_drive(self, share_name: str) -> None:
+        unc = self._get_unc_path(share_name)
+        ok, msg = map_network_drive(unc)
+        if ok:
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"✅ {msg}", fg="#0F7B0F")
+            try:
+                messagebox.showinfo(t("lan_mount_success_title"), msg)
+            except Exception:
+                pass
+        else:
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"⚠️ {msg}", fg="#D97706")
+            try:
+                messagebox.showwarning(t("lan_mount_fail_title"), msg)
+            except Exception:
+                pass
+
+    def _create_lan_shortcut(self, share_name: str, friendly_name: str) -> None:
+        unc = self._get_unc_path(share_name)
+        ok, msg = create_network_shortcut(unc, friendly_name)
+        if ok:
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"✅ {t('lan_shortcut_created', name=friendly_name)}", fg="#0F7B0F")
+            try:
+                messagebox.showinfo("DropFile", t("lan_shortcut_created", name=friendly_name))
+            except Exception:
+                pass
+        else:
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"⚠️ {msg}", fg="#D97706")
+
+    def _copy_lan_path(self, share_name: str) -> None:
+        unc = self._get_unc_path(share_name)
+        try:
+            self.window.clipboard_clear()
+            self.window.clipboard_append(unc)
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"📋 {t('lan_path_copied')} ({unc})", fg="#0067C0")
+        except Exception as e:
+            if hasattr(self, "lbl_lan_status"):
+                self.lbl_lan_status.config(text=f"⚠️ {e}", fg="#D97706")
+
     def _pull_missing_files_ui(self) -> None:
         """Triggers pulling missing files from server in background and updates UI."""
         self._read_form_into_config()
@@ -2210,6 +2561,11 @@ class SettingsDialog:
 
         self.tree_ds_log.pack(side="left", fill="both", expand=True)
         ds_scroll.pack(side="right", fill="y")
+
+        # --- In-tab Live Speed Chart Card for DropSync ---
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
+        self.speed_card_ds = SpeedMonitorCard(parent, lang=self.config.language, bg="#FFFFFF", auto_start=True)
+        self.speed_card_ds.pack(fill="x", pady=(0, 10))
 
         # Initial data load
         self._load_dropsync_ui_values()

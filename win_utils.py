@@ -21,6 +21,9 @@ from platform_utils import (
     release_single_instance_lock,
     send_instance_command,
     stop_running_instance,
+    create_network_shortcut,
+    get_available_drive_letters,
+    map_network_drive,
 )
 
 

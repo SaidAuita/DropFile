@@ -38,6 +38,11 @@ class PeerConnection:
         await self.ws.send(text)
 
     async def send_binary(self, data: bytes) -> None:
+        try:
+            from traffic_monitor import get_traffic_monitor
+            get_traffic_monitor().record_tx(len(data))
+        except Exception:
+            pass
         await self.ws.send(data)
 
 
@@ -207,6 +212,11 @@ class DropSyncTransport:
     async def _process_incoming_message(self, peer: PeerConnection, raw_msg: Any) -> None:
         """Routes message based on text (JSON control) or bytes (binary file chunk)."""
         if isinstance(raw_msg, bytes):
+            try:
+                from traffic_monitor import get_traffic_monitor
+                get_traffic_monitor().record_rx(len(raw_msg))
+            except Exception:
+                pass
             # Binary chunk
             if not peer.authenticated:
                 return

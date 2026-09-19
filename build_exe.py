@@ -47,6 +47,8 @@ def build():
         "--collect-all=requests",
         "--collect-submodules=pystray",
         "--collect-all=dropsync_server",
+        "--hidden-import=traffic_monitor",
+        "--hidden-import=gui_speed_chart",
     ]
 
     # Explicitly bundle sqlite3.dll if found in Python DLLs directory

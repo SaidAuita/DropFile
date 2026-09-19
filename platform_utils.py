@@ -1133,3 +1133,102 @@ def launch_app_detached(executable_path: str, args: str = "") -> Tuple[bool, str
             return False, f"Failed to launch '{clean_path}': {e}"
 
 
+def get_available_drive_letters() -> List[str]:
+    """Returns a list of available (unmounted) drive letters in descending order (Z down to D)."""
+    if not sys.platform.startswith("win"):
+        return []
+    occupied = set()
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        if os.path.exists(f"{letter}:\\"):
+            occupied.add(letter)
+    # Prefer high drive letters: Z, Y, X, W, V...
+    return [c for c in "ZYXWVUTSRQPONMLKJHGFED" if c not in occupied]
+
+
+def map_network_drive(unc_path: str, drive_letter: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Mounts a remote UNC path (e.g. \\\\192.168.1.4\\DropSync) to a Windows drive letter.
+    Returns (success, message).
+    """
+    if not sys.platform.startswith("win"):
+        return False, "Network drive mapping is only supported on Windows."
+
+    norm_path = unc_path.replace("/", "\\")
+    if not norm_path.startswith("\\\\"):
+        return False, f"Invalid UNC path: {unc_path}"
+
+    available = get_available_drive_letters()
+    target_letter = (drive_letter or "").upper().rstrip(":")
+    if not target_letter:
+        if not available:
+            return False, "No free drive letters available."
+        target_letter = available[0]
+
+    drive_str = f"{target_letter}:"
+
+    # If drive already points to this UNC path, report status
+    if os.path.exists(f"{drive_str}\\"):
+        return True, f"Drive {drive_str} is already mounted to {norm_path}."
+
+    try:
+        res = subprocess.run(
+            ["net", "use", drive_str, norm_path, "/persistent:yes"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if res.returncode == 0:
+            return True, f"Drive {drive_str} successfully mounted to {norm_path}."
+        err_msg = res.stderr.strip() or res.stdout.strip()
+        return False, f"net use failed: {err_msg}"
+    except Exception as e:
+        return False, f"Failed to map drive: {e}"
+
+
+def create_network_shortcut(unc_path: str, shortcut_name: str = "DropSync Network") -> Tuple[bool, str]:
+    """Creates a Desktop shortcut (.lnk) pointing directly to a UNC network path. Returns (success, message)."""
+    norm_path = unc_path.replace("/", "\\")
+    desktop = get_desktop_dir()
+
+    if sys.platform.startswith("win"):
+        lnk_name = f"{shortcut_name}.lnk" if not shortcut_name.endswith(".lnk") else shortcut_name
+        shortcut_path = desktop / lnk_name
+        ps_script = f"""
+        $WshShell = New-Object -ComObject WScript.Shell
+        $Shortcut = $WshShell.CreateShortcut('{str(shortcut_path)}')
+        $Shortcut.TargetPath = '{norm_path}'
+        $Shortcut.IconLocation = 'shell32.dll,9'
+        $Shortcut.Description = 'DropSync LAN Network Share'
+        $Shortcut.Save()
+        """
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                check=True,
+                capture_output=True,
+                timeout=5,
+            )
+            return True, f"Shortcut '{lnk_name}' created on Desktop."
+        except Exception as e:
+            print(f"[platform_utils] create_network_shortcut error: {e}")
+            return False, f"Failed to create shortcut: {e}"
+    elif sys.platform == "darwin":
+        link_path = desktop / f"{shortcut_name}.command"
+        try:
+            smb_uri = "smb:" + unc_path.replace("\\", "/")
+            with open(link_path, "w", encoding="utf-8") as f:
+                f.write(f"#!/bin/bash\nopen '{smb_uri}'\n")
+            os.chmod(link_path, 0o755)
+            return True, f"Shortcut created at {link_path}"
+        except Exception as e:
+            return False, str(e)
+    else:
+        desktop_file = desktop / f"{shortcut_name}.desktop"
+        try:
+            smb_uri = "smb://" + unc_path.replace("\\", "/").lstrip("/")
+            with open(desktop_file, "w", encoding="utf-8") as f:
+                f.write(f"[Desktop Entry]\nType=Application\nName={shortcut_name}\nExec=xdg-open {smb_uri}\nIcon=folder-remote\nTerminal=false\n")
+            os.chmod(desktop_file, 0o755)
+            return True, f"Desktop entry created at {desktop_file}"
+        except Exception as e:
+            return False, str(e)

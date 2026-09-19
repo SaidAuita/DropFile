@@ -353,6 +353,13 @@ class DropFileTray:
     def _open_dropsync(self, icon=None, item=None) -> None:
         self.open_settings_dialog(initial_tab="dropsync")
 
+    def _open_speed_monitor(self, icon=None, item=None) -> None:
+        """Opens standalone Keenetic-style Speed Monitor window."""
+        def worker():
+            from gui_speed_chart import SpeedMonitorWindow
+            SpeedMonitorWindow.show_or_focus(lang=self.config.language)
+        threading.Thread(target=worker, daemon=True).start()
+
 
     def _check_updates_from_tray(self, icon, item) -> None:
         """Checks for updates from the tray and notifies user or opens update prompt."""
@@ -456,6 +463,7 @@ class DropFileTray:
                 checked=lambda item: self.config.notify_on_sync,
             ),
             pystray.Menu.SEPARATOR,
+            item(lambda text: f"📈 {t('speed_monitor_btn')}", self._open_speed_monitor),
             item(lambda text: t("tray_remote_menu"), self._open_remote_control),
             item(lambda text: f"⚡ {t('tab_dropsync').strip()}", self._open_dropsync),
             item(lambda text: t("tray_settings"), self._open_settings),

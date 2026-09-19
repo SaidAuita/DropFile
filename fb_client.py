@@ -313,6 +313,11 @@ class FileBrowserClient:
                     for chunk in resp.iter_content(chunk_size=65536):
                         if chunk:
                             f.write(chunk)
+                            try:
+                                from traffic_monitor import get_traffic_monitor
+                                get_traffic_monitor().record_rx(len(chunk))
+                            except Exception:
+                                pass
 
             # Atomic replace
             shutil.move(str(temp_dest), str(dest))
@@ -344,6 +349,7 @@ class FileBrowserClient:
 
         encoded = self._encode_path(remote_path)
         url = f"{self.base_url}/api/resources{encoded}?override=true"
+        file_size = src.stat().st_size
 
         try:
             with open(src, "rb") as f:
@@ -354,7 +360,14 @@ class FileBrowserClient:
                     with open(src, "rb") as f:
                         resp = self.session.post(url, data=f, timeout=self._effective_timeout(3))
 
-            return resp.status_code in (200, 201)
+            if resp.status_code in (200, 201):
+                try:
+                    from traffic_monitor import get_traffic_monitor
+                    get_traffic_monitor().record_tx(file_size)
+                except Exception:
+                    pass
+                return True
+            return False
         except Exception as e:
             print(f"[FileBrowserClient] upload error for {src} -> {remote_path}: {e}")
             return False
