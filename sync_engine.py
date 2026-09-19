@@ -414,8 +414,8 @@ class SyncEngine:
         return {
             "enabled": True,
             "state": "checking",
-            "badge": "⏳ " + t("servers_sync_status_title"),
-            "summary": t("servers_sync_status_title"),
+            "badge": "⏳ " + t("servers_sync_checking"),
+            "summary": t("servers_sync_checking"),
             "server1": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
             "server2": {"online": False, "file_count": 0, "latest_mtime": 0.0, "latest_file": "", "latest_time_str": "-", "error": ""},
             "leader": {"is_self": False, "hostname": "", "client_id": "", "expires_at": 0.0},

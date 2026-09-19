@@ -55,13 +55,15 @@ if sys.platform.startswith("win"):
 class ScrollableTab(ttk.Frame):
     """
     Card-styled scrollable frame for settings tabs that automatically
-    shows a vertical scrollbar only when content overflows visible height.
+    shows a vertical scrollbar only when content overflows visible height,
+    and provides dynamic responsive text wrapping for registered widgets.
     """
     def __init__(self, parent, bg="#FFFFFF", padding=(18, 14)):
         super().__init__(parent, style="Card.TFrame")
         self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, bg=bg)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.content = ttk.Frame(self.canvas, style="Card.TFrame", padding=padding)
+        self._wrap_widgets: list[tuple[Any, int]] = []
 
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self._win_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
@@ -76,12 +78,31 @@ class ScrollableTab(ttk.Frame):
         self.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
         self.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
+    def register_autowrap(self, widget: Any, extra_pad: int = 0) -> None:
+        """Registers a widget (Label/Checkbutton) to automatically adjust wraplength on canvas resize."""
+        self._wrap_widgets.append((widget, extra_pad))
+        try:
+            cur_w = self.canvas.winfo_width()
+            target_w = max(200, (cur_w if cur_w > 80 else 560) - 36 - extra_pad)
+            widget.configure(wraplength=target_w)
+        except Exception:
+            pass
+
     def _on_content_configure(self, event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self._update_scrollbar()
 
     def _on_canvas_configure(self, event):
         self.canvas.itemconfig(self._win_id, width=event.width)
+        # Dynamically recalculate wraplength for all registered widgets
+        usable_w = max(220, event.width - 36)
+        for widget, extra_pad in self._wrap_widgets:
+            try:
+                if widget.winfo_exists():
+                    target_w = max(180, usable_w - extra_pad)
+                    widget.configure(wraplength=target_w)
+            except Exception:
+                pass
         self._update_scrollbar()
 
     def _update_scrollbar(self):
@@ -195,9 +216,9 @@ class SettingsDialog:
         # Set WM_DELETE_WINDOW protocol to cleanly close and reset self.window
         self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # Generous dimensions to fit all content cleanly across scaling factors
-        self.window.geometry("740x660")
-        self.window.minsize(640, 500)
+        # Dimensions to fit all content cleanly across scaling factors
+        self.window.geometry("680x700")
+        self.window.minsize(580, 560)
 
         # Set window icon if icon.ico is available
         ico_path = Path(__file__).resolve().parent / "icon.ico"
@@ -260,7 +281,7 @@ class SettingsDialog:
 
         # Typography configuration
         style.configure("TNotebook", background=bg_window)
-        style.configure("TNotebook.Tab", padding=[16, 7], font=(font_family, 9))
+        style.configure("TNotebook.Tab", padding=[10, 5], font=(font_family, 9))
         style.configure("TFrame", background=bg_window)
         style.configure("Card.TFrame", background=bg_card)
         style.configure("TLabel", background=bg_window, font=(font_family, 9), foreground=fg_text)
@@ -342,6 +363,8 @@ class SettingsDialog:
             font=(self.font_family, 9),
             fg=fg_muted,
             bg="#FFFFFF",
+            justify="left",
+            wraplength=600,
         )
         self.lbl_app_subtitle.pack(anchor="w", pady=(2, 0))
 
@@ -411,13 +434,13 @@ class SettingsDialog:
             except Exception:
                 pass
 
-        # Center on screen
+        # Center on screen while preserving dimensions
         self.window.update_idletasks()
-        w = self.window.winfo_width()
-        h = self.window.winfo_height()
+        w = max(680, self.window.winfo_width())
+        h = max(660, self.window.winfo_height())
         x = max(0, (self.window.winfo_screenwidth() // 2) - (w // 2))
         y = max(0, (self.window.winfo_screenheight() // 2) - (h // 2))
-        self.window.geometry(f"+{x}+{y}")
+        self.window.geometry(f"{w}x{h}+{x}+{y}")
 
         # Bring window to front
         try:
@@ -808,8 +831,10 @@ class SettingsDialog:
             self.frame_server2_body,
             text=t("conn_sync_backup_hint"),
             style="Subheader.TLabel",
+            justify="left",
         )
         self.lbl_sync_backup_hint.pack(anchor="w", pady=(0, 4))
+        self.tab_conn.register_autowrap(self.lbl_sync_backup_hint)
 
         # Warning callout banner
         self.frame_sync_warn = tk.Frame(self.frame_server2_body, bg="#FFF4CE", relief="solid", bd=1, padx=8, pady=6)
@@ -821,35 +846,37 @@ class SettingsDialog:
             bg="#FFF4CE",
             fg="#794B02",
             justify="left",
-            wraplength=520,
             anchor="w",
         )
         self.lbl_sync_warn.pack(fill="x")
+        self.tab_conn.register_autowrap(self.lbl_sync_warn, extra_pad=24)
 
         # Status & Comparison Card
         self.frame_sync_status = tk.Frame(self.frame_server2_body, bg="#F8F9FA", relief="solid", bd=1, padx=10, pady=8)
         self.frame_sync_status.pack(fill="x", pady=(0, 6))
 
-        # Title & Badge row
-        hdr_box = tk.Frame(self.frame_sync_status, bg="#F8F9FA")
-        hdr_box.pack(fill="x", pady=(0, 4))
+        # Title & Badge stacked vertically so neither is ever clipped
         self.lbl_sync_status_title = tk.Label(
-            hdr_box,
+            self.frame_sync_status,
             text=f"📊 {t('servers_sync_status_title')}:",
             font=(self.font_family, 9, "bold"),
             bg="#F8F9FA",
             fg="#202124",
+            anchor="w",
         )
-        self.lbl_sync_status_title.pack(side="left")
+        self.lbl_sync_status_title.pack(fill="x", pady=(0, 2))
 
         self.lbl_sync_status_badge = tk.Label(
-            hdr_box,
+            self.frame_sync_status,
             text="...",
             font=(self.font_family, 9, "bold"),
             bg="#F8F9FA",
             fg="#0067C0",
+            anchor="w",
+            justify="left",
         )
-        self.lbl_sync_status_badge.pack(side="left", padx=(8, 0))
+        self.lbl_sync_status_badge.pack(fill="x", pady=(0, 4))
+        self.tab_conn.register_autowrap(self.lbl_sync_status_badge, extra_pad=24)
 
         # Server 1 details line
         self.lbl_s1_detail = tk.Label(
@@ -859,8 +886,10 @@ class SettingsDialog:
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
+            justify="left",
         )
         self.lbl_s1_detail.pack(fill="x", pady=(1, 1))
+        self.tab_conn.register_autowrap(self.lbl_s1_detail, extra_pad=24)
 
         # Server 2 details line
         self.lbl_s2_detail = tk.Label(
@@ -870,8 +899,10 @@ class SettingsDialog:
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
+            justify="left",
         )
         self.lbl_s2_detail.pack(fill="x", pady=(1, 1))
+        self.tab_conn.register_autowrap(self.lbl_s2_detail, extra_pad=24)
 
         # Coordinator / Leader details line
         self.lbl_leader_detail = tk.Label(
@@ -881,19 +912,21 @@ class SettingsDialog:
             bg="#F8F9FA",
             fg="#5F6368",
             anchor="w",
+            justify="left",
         )
         self.lbl_leader_detail.pack(fill="x", pady=(1, 6))
+        self.tab_conn.register_autowrap(self.lbl_leader_detail, extra_pad=24)
 
         # Action buttons
         btn_box = tk.Frame(self.frame_sync_status, bg="#F8F9FA")
-        btn_box.pack(fill="x")
+        btn_box.pack(fill="x", pady=(0, 2))
 
         self.btn_check_servers = ttk.Button(
             btn_box,
             text=f"🔍 {t('servers_sync_btn_check')}",
             command=self._on_check_servers_status,
         )
-        self.btn_check_servers.pack(side="left", padx=(0, 6))
+        self.btn_check_servers.pack(side="left", padx=(0, 8))
 
         self.btn_sync_servers_now = ttk.Button(
             btn_box,
@@ -902,14 +935,18 @@ class SettingsDialog:
         )
         self.btn_sync_servers_now.pack(side="left")
 
+        # Action status label on its own sub-row below buttons to avoid cramming
         self.lbl_sync_action_status = tk.Label(
-            btn_box,
+            self.frame_sync_status,
             text="",
             font=(self.font_family, 8, "italic"),
             bg="#F8F9FA",
             fg="#5F6368",
+            anchor="w",
+            justify="left",
         )
-        self.lbl_sync_action_status.pack(side="left", padx=(10, 0))
+        self.lbl_sync_action_status.pack(fill="x", pady=(2, 0))
+        self.tab_conn.register_autowrap(self.lbl_sync_action_status, extra_pad=24)
 
         self._on_backup_enable_toggle()
 
@@ -1185,8 +1222,10 @@ class SettingsDialog:
             parent,
             text=t("folders_sub"),
             style="Subheader.TLabel",
+            justify="left",
         )
         self.lbl_folders_sub.pack(anchor="w", pady=(0, 12))
+        self.tab_folders.register_autowrap(self.lbl_folders_sub)
 
         # Local folder
         self.lbl_folders_local = ttk.Label(parent, text=t("folders_local_label"), style="Card.TLabel")
@@ -1232,8 +1271,10 @@ class SettingsDialog:
             parent,
             text=t("folders_remote_hint"),
             style="Subheader.TLabel",
+            justify="left",
         )
         self.lbl_folders_hint.pack(anchor="w")
+        self.tab_folders.register_autowrap(self.lbl_folders_hint)
 
         ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
 
@@ -1245,8 +1286,10 @@ class SettingsDialog:
             parent,
             text=t("sync_tools_sub"),
             style="Subheader.TLabel",
+            justify="left",
         )
         self.lbl_sync_tools_sub.pack(anchor="w", pady=(0, 10))
+        self.tab_folders.register_autowrap(self.lbl_sync_tools_sub)
 
         sync_btns_row = tk.Frame(parent, bg="#FFFFFF")
         sync_btns_row.pack(fill="x", pady=(0, 8))
@@ -1267,8 +1310,9 @@ class SettingsDialog:
         )
         self.btn_full_sync.pack(side="left")
 
-        self.lbl_sync_status = tk.Label(parent, text="", font=(self.font_family, 9), bg="#FFFFFF", anchor="w")
+        self.lbl_sync_status = tk.Label(parent, text="", font=(self.font_family, 9), bg="#FFFFFF", anchor="w", justify="left")
         self.lbl_sync_status.pack(fill="x", pady=(4, 0))
+        self.tab_folders.register_autowrap(self.lbl_sync_status)
 
     def _pull_missing_files_ui(self) -> None:
         """Triggers pulling missing files from server in background and updates UI."""
@@ -1406,7 +1450,7 @@ class SettingsDialog:
 
         # 2. File retention (Auto-cleanup of old files)
         file_ret_row = tk.Frame(parent, bg="#FFFFFF")
-        file_ret_row.pack(fill="x", pady=(0, 5))
+        file_ret_row.pack(fill="x", pady=(0, 2))
         self.lbl_file_ret = ttk.Label(file_ret_row, text=t("settings_file_ret_label"), style="Card.TLabel")
         self.lbl_file_ret.pack(side="left", padx=(0, 8))
 
@@ -1417,10 +1461,13 @@ class SettingsDialog:
         self.spin_file_retention.pack(side="left", padx=(0, 6))
 
         self.lbl_file_ret_hint = ttk.Label(file_ret_row, text=t("settings_disabled_hint"), style="Subheader.TLabel")
-        self.lbl_file_ret_hint.pack(side="left", padx=(0, 10))
+        self.lbl_file_ret_hint.pack(side="left")
 
+        # Cleanup action button on its own row so it is never clipped
+        file_clean_row = tk.Frame(parent, bg="#FFFFFF")
+        file_clean_row.pack(fill="x", pady=(2, 6))
         self.btn_clean_now = ttk.Button(
-            file_ret_row, text=t("settings_clean_now_btn"), command=self._trigger_file_cleanup_now
+            file_clean_row, text=t("settings_clean_now_btn"), command=self._trigger_file_cleanup_now
         )
         self.btn_clean_now.pack(side="left")
 
@@ -1452,18 +1499,19 @@ class SettingsDialog:
         self.combo_conflict.current(1 if self.config.conflict_action == "newer_wins" else 0)
         self.combo_conflict.pack(side="left", fill="x", expand=True)
 
-        # 4b. Deduplication button row (below conflict selector for full visibility)
+        # 4b. Deduplication button and description (description on row below with autowrap)
         dedup_row = tk.Frame(parent, bg="#FFFFFF")
-        dedup_row.pack(fill="x", pady=(2, 6))
+        dedup_row.pack(fill="x", pady=(2, 2))
         self.btn_dedup_now = ttk.Button(
             dedup_row, text=t("settings_dedup_btn"), command=self._trigger_dedup_now
         )
-        self.btn_dedup_now.pack(side="left", padx=(0, 8))
+        self.btn_dedup_now.pack(side="left")
 
         self.lbl_dedup_hint = ttk.Label(
-            dedup_row, text=t("settings_dedup_hint"), style="Subheader.TLabel"
+            parent, text=t("settings_dedup_hint"), style="Subheader.TLabel", justify="left"
         )
-        self.lbl_dedup_hint.pack(side="left", fill="x", expand=True)
+        self.lbl_dedup_hint.pack(fill="x", pady=(0, 6))
+        self.tab_settings.register_autowrap(self.lbl_dedup_hint)
 
         # 5. Interface Language selector with live switching
         lang_row = tk.Frame(parent, bg="#FFFFFF")
@@ -1544,8 +1592,10 @@ class SettingsDialog:
             parent,
             text=t("settings_backup_sub"),
             style="Subheader.TLabel",
+            justify="left",
         )
         self.lbl_backup_sub.pack(anchor="w", pady=(0, 6))
+        self.tab_settings.register_autowrap(self.lbl_backup_sub)
 
         backup_row = tk.Frame(parent, bg="#FFFFFF")
         backup_row.pack(fill="x", pady=(0, 4))
@@ -1708,8 +1758,9 @@ class SettingsDialog:
         self.lbl_rc_hdr = ttk.Label(parent, text=t("remote_header"), style="Header.TLabel")
         self.lbl_rc_hdr.pack(anchor="w", pady=(0, 2))
 
-        self.lbl_rc_sub = ttk.Label(parent, text=t("remote_sub"), style="Subheader.TLabel", wraplength=620, justify="left")
+        self.lbl_rc_sub = ttk.Label(parent, text=t("remote_sub"), style="Subheader.TLabel", justify="left")
         self.lbl_rc_sub.pack(anchor="w", pady=(0, 12))
+        self.tab_remote.register_autowrap(self.lbl_rc_sub)
 
         # --- Card 1: Receiver (Этот компьютер) ---
         self.card1 = tk.LabelFrame(parent, text=f"  💻 {t('remote_receiver_card')}  ", bg="#FFFFFF", padx=14, pady=10)
@@ -1732,7 +1783,7 @@ class SettingsDialog:
         self.lbl_rc_name.pack(side="left")
         self.entry_rc_name = ttk.Entry(row_name, width=28)
         self.entry_rc_name.insert(0, self.config.remote_control_device_name)
-        self.entry_rc_name.pack(side="left", padx=(0, 8))
+        self.entry_rc_name.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         # PIN status & button
         row_pin = tk.Frame(self.card1, bg="#FFFFFF")
@@ -1754,50 +1805,49 @@ class SettingsDialog:
         self.btn_set_pin = ttk.Button(row_pin, text=f"🔑 {t('remote_btn_set_pin')}", command=self._prompt_set_pin)
         self.btn_set_pin.pack(side="left")
 
-        # Permissions checkboxes
-        row_perms = tk.Frame(self.card1, bg="#FFFFFF")
-        row_perms.pack(fill="x", pady=(0, 6))
+        # Permissions checkboxes - stacked vertically for clean display without clipping
+        frame_perms = tk.Frame(self.card1, bg="#FFFFFF")
+        frame_perms.pack(fill="x", pady=(0, 6))
+
         self.var_rc_reboot = tk.BooleanVar(value=self.config.remote_control_allow_reboot)
         self.chk_rc_reboot = ttk.Checkbutton(
-            row_perms,
+            frame_perms,
             text=f"🔄 {t('remote_allow_reboot_chk')}",
             variable=self.var_rc_reboot,
             style="TCheckbutton",
         )
-        self.chk_rc_reboot.pack(side="left", padx=(0, 16))
+        self.chk_rc_reboot.pack(anchor="w", pady=(1, 3))
 
         self.var_rc_procs = tk.BooleanVar(value=self.config.remote_control_allow_process_list)
         self.chk_rc_procs = ttk.Checkbutton(
-            row_perms,
+            frame_perms,
             text=f"📋 {t('remote_allow_procs_chk')}",
             variable=self.var_rc_procs,
             style="TCheckbutton",
         )
-        self.chk_rc_procs.pack(side="left", padx=(0, 16))
+        self.chk_rc_procs.pack(anchor="w", pady=(1, 3))
 
         self.var_rc_launch = tk.BooleanVar(value=self.config.remote_control_allow_launch)
         self.chk_rc_launch = ttk.Checkbutton(
-            row_perms,
+            frame_perms,
             text=f"🚀 {t('remote_allow_launch_chk')}",
             variable=self.var_rc_launch,
             style="TCheckbutton",
         )
-        self.chk_rc_launch.pack(side="left")
+        self.chk_rc_launch.pack(anchor="w", pady=(1, 4))
 
-        # Whitelist section
-        row_wl_hdr = tk.Frame(self.card1, bg="#FFFFFF")
-        row_wl_hdr.pack(fill="x", pady=(8, 4))
-        self.lbl_rc_wl_hdr = ttk.Label(row_wl_hdr, text=t("remote_whitelist_hdr"), style="Card.TLabel")
-        self.lbl_rc_wl_hdr.pack(side="left")
+        # Whitelist section: header and strict-mode checkbox on separate rows
+        self.lbl_rc_wl_hdr = ttk.Label(self.card1, text=t("remote_whitelist_hdr"), style="Card.TLabel")
+        self.lbl_rc_wl_hdr.pack(anchor="w", pady=(8, 3))
 
         self.var_rc_strict_wl = tk.BooleanVar(value=self.config.remote_control_strict_whitelist)
         self.chk_rc_strict_wl = ttk.Checkbutton(
-            row_wl_hdr,
+            self.card1,
             text=t("remote_strict_whitelist_chk"),
             variable=self.var_rc_strict_wl,
             style="TCheckbutton",
         )
-        self.chk_rc_strict_wl.pack(side="right")
+        self.chk_rc_strict_wl.pack(anchor="w", pady=(0, 6))
 
         # Whitelist listbox + scrollbar
         wl_box_frame = tk.Frame(self.card1, bg="#FFFFFF")
@@ -1841,9 +1891,9 @@ class SettingsDialog:
         self.tree_launch_apps.heading("path", text=t("remote_app_path_lbl"))
         self.tree_launch_apps.heading("args", text=t("remote_app_args_lbl"))
 
-        self.tree_launch_apps.column("name", width=140, anchor="w")
-        self.tree_launch_apps.column("path", width=340, anchor="w")
-        self.tree_launch_apps.column("args", width=120, anchor="w")
+        self.tree_launch_apps.column("name", width=120, minwidth=80, anchor="w")
+        self.tree_launch_apps.column("path", width=260, minwidth=140, anchor="w")
+        self.tree_launch_apps.column("args", width=100, minwidth=60, anchor="w")
 
         sb_launch = ttk.Scrollbar(launch_box_frame, orient="vertical", command=self.tree_launch_apps.yview)
         self.tree_launch_apps.configure(yscrollcommand=sb_launch.set)
@@ -1866,59 +1916,59 @@ class SettingsDialog:
         self.card2 = tk.LabelFrame(parent, text=f"  🚀 {t('remote_sender_card')}  ", bg="#FFFFFF", padx=14, pady=10)
         self.card2.pack(fill="x", pady=(0, 10))
 
-        # Target PC selection
+        # Target PC selection: refresh button anchored right, combo expands
         row_target = tk.Frame(self.card2, bg="#FFFFFF")
         row_target.pack(fill="x", pady=(0, 8))
-        self.lbl_rc_target_lbl = ttk.Label(row_target, text=t("remote_target_pc_label"), style="Card.TLabel", width=28)
-        self.lbl_rc_target_lbl.pack(side="left")
-        self.combo_target_device = ttk.Combobox(row_target, width=25)
-        self.combo_target_device.pack(side="left", padx=(0, 8))
-        self.combo_target_device.bind("<<ComboboxSelected>>", self._on_target_device_selected)
+        self.lbl_rc_target_lbl = ttk.Label(row_target, text=t("remote_target_pc_label"), style="Card.TLabel")
+        self.lbl_rc_target_lbl.pack(side="left", padx=(0, 8))
         self.btn_rc_refresh_devices = ttk.Button(row_target, text=t("remote_devices_refresh"), command=self._refresh_remote_devices)
-        self.btn_rc_refresh_devices.pack(side="left")
+        self.btn_rc_refresh_devices.pack(side="right")
+        self.combo_target_device = ttk.Combobox(row_target)
+        self.combo_target_device.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.combo_target_device.bind("<<ComboboxSelected>>", self._on_target_device_selected)
 
         # Action selection
         row_act = tk.Frame(self.card2, bg="#FFFFFF")
         row_act.pack(fill="x", pady=(0, 8))
-        self.lbl_rc_act_lbl = ttk.Label(row_act, text=t("remote_action_label"), style="Card.TLabel", width=28)
-        self.lbl_rc_act_lbl.pack(side="left")
+        self.lbl_rc_act_lbl = ttk.Label(row_act, text=t("remote_action_label"), style="Card.TLabel")
+        self.lbl_rc_act_lbl.pack(side="left", padx=(0, 8))
         self.rc_action_options = [
             t("remote_act_kill"),
             t("remote_act_reboot"),
             t("remote_act_list"),
             t("remote_act_launch"),
         ]
-        self.combo_rc_action = ttk.Combobox(row_act, values=self.rc_action_options, state="readonly", width=36)
+        self.combo_rc_action = ttk.Combobox(row_act, values=self.rc_action_options, state="readonly")
         self.combo_rc_action.current(0)
-        self.combo_rc_action.pack(side="left")
+        self.combo_rc_action.pack(side="left", fill="x", expand=True)
         self.combo_rc_action.bind("<<ComboboxSelected>>", self._on_rc_action_changed)
 
         # Process name row (enabled for kill_process)
         self.row_proc_input = tk.Frame(self.card2, bg="#FFFFFF")
         self.row_proc_input.pack(fill="x", pady=(0, 8))
-        self.lbl_rc_proc_lbl = ttk.Label(self.row_proc_input, text=t("remote_process_name_label"), style="Card.TLabel", width=28)
-        self.lbl_rc_proc_lbl.pack(side="left")
-        self.entry_rc_target_proc = ttk.Entry(self.row_proc_input, width=28)
+        self.lbl_rc_proc_lbl = ttk.Label(self.row_proc_input, text=t("remote_process_name_label"), style="Card.TLabel")
+        self.lbl_rc_proc_lbl.pack(side="left", padx=(0, 8))
+        self.entry_rc_target_proc = ttk.Entry(self.row_proc_input)
         self.entry_rc_target_proc.insert(0, "happ.exe")
-        self.entry_rc_target_proc.pack(side="left")
+        self.entry_rc_target_proc.pack(side="left", fill="x", expand=True)
 
         # Launch app selection row (enabled for launch_app)
         self.row_launch_input = tk.Frame(self.card2, bg="#FFFFFF")
-        self.lbl_rc_app_lbl = ttk.Label(self.row_launch_input, text=t("remote_target_app_label"), style="Card.TLabel", width=28)
-        self.lbl_rc_app_lbl.pack(side="left")
-        self.combo_rc_target_app = ttk.Combobox(self.row_launch_input, state="readonly", width=28)
-        self.combo_rc_target_app.pack(side="left")
+        self.lbl_rc_app_lbl = ttk.Label(self.row_launch_input, text=t("remote_target_app_label"), style="Card.TLabel")
+        self.lbl_rc_app_lbl.pack(side="left", padx=(0, 8))
+        self.combo_rc_target_app = ttk.Combobox(self.row_launch_input, state="readonly")
+        self.combo_rc_target_app.pack(side="left", fill="x", expand=True)
 
         # Target PIN row
         self.row_target_pin = tk.Frame(self.card2, bg="#FFFFFF")
         self.row_target_pin.pack(fill="x", pady=(0, 10))
-        self.lbl_rc_tpin_lbl = ttk.Label(self.row_target_pin, text=t("remote_target_pin_label"), style="Card.TLabel", width=28)
-        self.lbl_rc_tpin_lbl.pack(side="left")
-        self.entry_rc_target_pin = ttk.Entry(self.row_target_pin, show="●", width=20)
-        self.entry_rc_target_pin.pack(side="left", padx=(0, 8))
+        self.lbl_rc_tpin_lbl = ttk.Label(self.row_target_pin, text=t("remote_target_pin_label"), style="Card.TLabel")
+        self.lbl_rc_tpin_lbl.pack(side="left", padx=(0, 8))
         self._target_pin_visible = False
         self.btn_toggle_target_pin = ttk.Button(self.row_target_pin, text="👁", width=3, command=self._toggle_target_pin_visibility)
-        self.btn_toggle_target_pin.pack(side="left")
+        self.btn_toggle_target_pin.pack(side="right")
+        self.entry_rc_target_pin = ttk.Entry(self.row_target_pin, show="●")
+        self.entry_rc_target_pin.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         # Send command button
         row_send = tk.Frame(self.card2, bg="#FFFFFF")
@@ -1931,7 +1981,7 @@ class SettingsDialog:
         )
         self.btn_send_rc_cmd.pack(side="left")
 
-        # Live status message banner
+        # Live status message banner with responsive autowrap
         self.lbl_rc_cmd_status = tk.Label(
             self.card2,
             text="",
@@ -1939,11 +1989,13 @@ class SettingsDialog:
             fg="#202124",
             font=(self.font_family, 9),
             anchor="w",
+            justify="left",
             padx=8,
             pady=4,
             relief="sunken",
         )
         self.lbl_rc_cmd_status.pack(fill="x", pady=(6, 0))
+        self.tab_remote.register_autowrap(self.lbl_rc_cmd_status, extra_pad=28)
 
         # Auto-refresh remote devices on initial build in background
         threading.Thread(target=self._refresh_remote_devices, daemon=True).start()
