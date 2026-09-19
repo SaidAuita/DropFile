@@ -34,10 +34,15 @@ class TestSyncEngine(unittest.TestCase):
         self.assertTrue(self.engine.is_ignored("desktop.ini"))
         self.assertTrue(self.engine.is_ignored("Thumbs.db"))
         self.assertTrue(self.engine.is_ignored(".dropfile_meta"))
+        self.assertTrue(self.engine.is_ignored("speed_server"))
+        self.assertTrue(self.engine.is_ignored("speed_server/sub/nested.txt"))
+        self.assertTrue(self.engine.is_ignored(r"D:\DropFile\speed_server\photo.png"))
+        self.assertTrue(self.engine.is_ignored("/Exchange/speed_server/data.bin"))
 
         self.assertFalse(self.engine.is_ignored("photo.jpg"))
         self.assertFalse(self.engine.is_ignored("report.pdf"))
         self.assertFalse(self.engine.is_ignored("archive.zip"))
+
 
     def test_suppression(self):
         self.engine._suppress("folder/test.txt", duration=1.0)

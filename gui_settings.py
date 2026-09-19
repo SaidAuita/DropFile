@@ -567,11 +567,20 @@ class SettingsDialog:
         self.chk_notify.config(text=t("settings_notify"))
         if hasattr(self, "chk_shortcut"):
             self.chk_shortcut.config(text=t("settings_desktop_shortcut"))
-        self.lbl_ignore.config(text=t("settings_ignore_label"))
+        if hasattr(self, "lbl_exceptions_hdr"):
+            self.lbl_exceptions_hdr.config(text=f"🚫 {t('settings_exceptions_header')}")
+        if hasattr(self, "lbl_exceptions_sub"):
+            self.lbl_exceptions_sub.config(text=t("settings_exceptions_sub"))
+        if hasattr(self, "btn_add_ignore_folder"):
+            self.btn_add_ignore_folder.config(text=t("settings_exceptions_add_folder"))
+        if hasattr(self, "btn_reset_ignore"):
+            self.btn_reset_ignore.config(text=t("settings_exceptions_reset"))
+        self.lbl_ignore.config(text=t("settings_exceptions_hint"))
         self.lbl_backup_hdr.config(text=t("settings_backup_header"))
         self.lbl_backup_sub.config(text=t("settings_backup_sub"))
         self.btn_export.config(text=t("settings_export_btn"))
         self.btn_import.config(text=t("settings_import_btn"))
+
 
         # Log Tab
         self.lbl_log_hdr.config(text=t("log_header"))
@@ -1575,13 +1584,47 @@ class SettingsDialog:
         )
         self.chk_shortcut.pack(anchor="w", pady=(1, 6))
 
-        # Ignore patterns
-        self.lbl_ignore = ttk.Label(parent, text=t("settings_ignore_label"), style="Card.TLabel")
+        # --- Exceptions & Ignored Items Section ---
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(6, 8))
+        self.lbl_exceptions_hdr = ttk.Label(
+            parent, text=f"🚫 {t('settings_exceptions_header')}", style="Header.TLabel"
+        )
+        self.lbl_exceptions_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_exceptions_sub = ttk.Label(
+            parent,
+            text=t("settings_exceptions_sub"),
+            style="Subheader.TLabel",
+            justify="left",
+        )
+        self.lbl_exceptions_sub.pack(anchor="w", pady=(0, 6))
+        self.tab_settings.register_autowrap(self.lbl_exceptions_sub)
+
+        self.lbl_ignore = ttk.Label(parent, text=t("settings_exceptions_hint"), style="Card.TLabel")
         self.lbl_ignore.pack(anchor="w", pady=(0, 2))
+        self.tab_settings.register_autowrap(self.lbl_ignore)
 
         self.entry_ignore = ttk.Entry(parent, font=(self.font_family, 9))
         self.entry_ignore.insert(0, ", ".join(self.config.ignore_patterns))
-        self.entry_ignore.pack(fill="x", pady=(0, 8))
+        self.entry_ignore.pack(fill="x", pady=(0, 6))
+
+        exceptions_btn_row = tk.Frame(parent, bg="#FFFFFF")
+        exceptions_btn_row.pack(fill="x", pady=(0, 8))
+
+        self.btn_add_ignore_folder = ttk.Button(
+            exceptions_btn_row,
+            text=t("settings_exceptions_add_folder"),
+            command=self._add_folder_to_ignore,
+        )
+        self.btn_add_ignore_folder.pack(side="left", padx=(0, 8))
+
+        self.btn_reset_ignore = ttk.Button(
+            exceptions_btn_row,
+            text=t("settings_exceptions_reset"),
+            command=self._reset_ignore_patterns_ui,
+        )
+        self.btn_reset_ignore.pack(side="left")
+
 
         # Backup / Restore settings section
         ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 8))
@@ -1610,7 +1653,32 @@ class SettingsDialog:
         )
         self.btn_import.pack(side="left")
 
+    def _add_folder_to_ignore(self) -> None:
+        """Opens folder dialog to pick a folder to add to exceptions."""
+        base_dir = self.config.local_path
+        chosen = filedialog.askdirectory(initialdir=str(base_dir), parent=self.window)
+        if chosen:
+            chosen_path = Path(chosen)
+            try:
+                rel = chosen_path.relative_to(base_dir)
+                pattern = f"{rel.as_posix()}*"
+            except ValueError:
+                pattern = f"{chosen_path.name}*"
+
+            current = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
+            if pattern not in current:
+                current.append(pattern)
+                self.entry_ignore.delete(0, tk.END)
+                self.entry_ignore.insert(0, ", ".join(current))
+
+    def _reset_ignore_patterns_ui(self) -> None:
+        """Resets ignore patterns entry to factory defaults."""
+        defaults = self.config.reset_ignore_patterns()
+        self.entry_ignore.delete(0, tk.END)
+        self.entry_ignore.insert(0, ", ".join(defaults))
+
     def _on_lang_selected(self, event=None) -> None:
+
         """Called immediately when user chooses a new language in combobox."""
         idx = self.combo_lang.current()
         if 0 <= idx < len(self.lang_codes):
@@ -2868,7 +2936,10 @@ class SettingsDialog:
         if hasattr(self, "entry_ignore"):
             raw_patterns = [p.strip() for p in self.entry_ignore.get().split(",") if p.strip()]
             if raw_patterns:
+                if not any(p in ("speed_server*", "speed_server", "*speed_server*") for p in raw_patterns):
+                    raw_patterns.append("speed_server*")
                 self.config.set("ignore_patterns", raw_patterns)
+
 
         if hasattr(self, "var_rc_enabled"):
             self.config.remote_control_enabled = self.var_rc_enabled.get()

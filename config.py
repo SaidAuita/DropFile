@@ -57,8 +57,10 @@ DEFAULT_CONFIG = {
         "*dropfile_leader*",
         ".DS_Store",
         "*.swp",
+        "speed_server*",
     ],
 }
+
 
 
 def get_app_dir() -> Path:
@@ -103,12 +105,25 @@ class Config:
                     data.update(loaded)
             except Exception as e:
                 print(f"[Config] Error loading config, using defaults: {e}")
+        # Ensure speed_server* is always included in ignore_patterns to isolate DropSync Server
+        patterns = data.get("ignore_patterns")
+        if isinstance(patterns, list):
+            if not any(p in ("speed_server*", "speed_server", "*speed_server*") for p in patterns):
+                patterns.append("speed_server*")
+                data["ignore_patterns"] = patterns
         self._data = data
         try:
             from i18n import set_current_language
             set_current_language(self.language)
         except Exception:
             pass
+
+    def reset_ignore_patterns(self) -> list:
+        """Resets ignore patterns to factory defaults and returns them."""
+        defaults = list(DEFAULT_CONFIG["ignore_patterns"])
+        self._data["ignore_patterns"] = defaults
+        return defaults
+
 
     def save(self) -> None:
         """Saves current configuration to file."""

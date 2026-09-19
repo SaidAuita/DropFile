@@ -572,12 +572,29 @@ class SyncEngine:
 
 
     def is_ignored(self, path: Path | str) -> bool:
-        """Checks if a file or directory matches any ignore pattern."""
-        name = Path(path).name
+        """Checks if a file or directory matches any ignore pattern.
+        Checks both the basename and any directory component in path (e.g. speed_server).
+        """
+        p = Path(path)
+        name = p.name
+        parts = p.parts
+        str_path = str(path).replace("\\", "/").strip("/")
+
         for pattern in self.config.ignore_patterns:
-            if fnmatch.fnmatch(name, pattern):
+            clean_pat = pattern.strip()
+            if not clean_pat:
+                continue
+            # 1. Match basename
+            if fnmatch.fnmatch(name, clean_pat):
+                return True
+            # 2. Match any directory component in the path
+            if any(fnmatch.fnmatch(part, clean_pat) for part in parts):
+                return True
+            # 3. Match relative path string
+            if fnmatch.fnmatch(str_path, clean_pat) or fnmatch.fnmatch(str_path, f"*{clean_pat}*"):
                 return True
         return False
+
 
     def _suppress(self, rel_path: str, duration: float = 3.0) -> None:
         clean = rel_path.replace("\\", "/").lstrip("/")
