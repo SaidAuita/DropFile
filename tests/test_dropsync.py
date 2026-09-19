@@ -22,11 +22,19 @@ from dropsync_server.protocol import (
 )
 from dropsync_server.state_db import StateDatabase
 from dropsync_server.watcher import FileSystemWatcher
-from dropsync_server.engine import DropSyncEngine
+try:
+    import websockets
+    from dropsync_server.engine import DropSyncEngine
+    HAS_WEBSOCKETS = True
+except ImportError:
+    HAS_WEBSOCKETS = False
+    DropSyncEngine = None  # type: ignore
 
 
 class TestDropSync(unittest.TestCase):
     def setUp(self):
+        if not HAS_WEBSOCKETS:
+            self.skipTest("websockets dependency not installed")
         self.test_dir = Path(tempfile.mkdtemp(prefix="dropsync_test_"))
 
     def tearDown(self):
