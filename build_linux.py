@@ -9,14 +9,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from version import __version__
+from version import __version__, get_full_version
 
 
 def build():
     root = Path(__file__).resolve().parent
     icon_path = root / "icon.ico"
 
-    print(f"=== Building DropFile v{__version__} Linux Standalone Executable ===")
+    print(f"=== Building DropFile v{get_full_version()} Linux Standalone Executable ===")
 
     # Prepare PyInstaller command
     pyinstaller_cmd = [

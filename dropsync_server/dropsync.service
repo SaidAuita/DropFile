@@ -1,0 +1,17 @@
+[Unit]
+Description=DropSync Bi-Directional File Synchronization Daemon
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dropsync
+ExecStart=/usr/bin/python3 -m dropsync_server.main --config %h/.dropsync/dropsync.json
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -27,7 +27,7 @@ from platform_utils import (
     spawn_settings_process,
 )
 from sync_engine import SyncEngine
-from version import __version__
+from version import __version__, __build__, get_build_number, get_full_version
 
 
 class DropFileTray:
@@ -46,7 +46,7 @@ class DropFileTray:
             self.settings_dialog.engine = engine
 
         self.current_state = "idle"
-        self.current_status_text = f"DropFile v{__version__}: {t('status_ready')}"
+        self.current_status_text = t("tray_status_prefix", text=t("status_ready"))
         self._icon: Optional[pystray.Icon] = None
         self._lock = threading.Lock()
 
@@ -71,14 +71,14 @@ class DropFileTray:
     def _get_safe_title(self, text: str) -> str:
         """Returns a safe title string for tray icon, avoiding Latin-1 encoding errors in X11."""
         # Use standard ASCII hyphen instead of Unicode em-dash (—)
-        title = f"DropFile - {text}"
+        title = f"DropFile v{__version__} (build {get_build_number()}) - {text}"
         try:
             # On X11 (pystray._xorg), WM_NAME property is strictly Latin-1 encoded
             title.encode("latin-1")
             return title
         except (UnicodeEncodeError, Exception):
             # If text contains Cyrillic or non-Latin-1 characters on X11, fallback to ASCII
-            return f"DropFile v{__version__}"
+            return f"DropFile v{__version__} (build {get_build_number()})"
 
     def update_status(self, text: str, state: str) -> None:
         """Called by sync engine to update tray icon and menu status."""
@@ -97,7 +97,7 @@ class DropFileTray:
                 self._icon.title = self._get_safe_title(text)
             except Exception:
                 try:
-                    self._icon.title = f"DropFile v{__version__}"
+                    self._icon.title = f"DropFile v{__version__} (build {get_build_number()})"
                 except Exception:
                     pass
 
@@ -415,6 +415,7 @@ class DropFileTray:
 
     def _build_menu(self) -> pystray.Menu:
         return pystray.Menu(
+            item(lambda text: f"DropFile v{__version__} (build {get_build_number()})", None, enabled=False),
             item(lambda text: self.current_status_text, None, enabled=False),
             item(
                 lambda text: self._get_servers_sync_label(),
@@ -466,7 +467,7 @@ class DropFileTray:
         self._icon = pystray.Icon(
             name="DropFile",
             icon=initial_img,
-            title=f"DropFile v{__version__}",
+            title=f"DropFile v{__version__} (build {get_build_number()})",
             menu=self._build_menu(),
         )
 
@@ -479,7 +480,7 @@ class DropFileTray:
                 import time
                 time.sleep(1.2)
                 try:
-                    self.send_notification("DropFile", t("tray_running_notify", version=__version__))
+                    self.send_notification("DropFile", t("tray_running_notify", version=get_full_version()))
                 except Exception:
                     pass
             threading.Thread(target=notify_ready, daemon=True).start()

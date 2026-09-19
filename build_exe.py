@@ -10,14 +10,14 @@ import sys
 from pathlib import Path
 
 from icons import create_app_icon_ico
-from version import __version__
+from version import __version__, get_full_version
 
 
 def build():
     root = Path(__file__).resolve().parent
     icon_path = root / "icon.ico"
 
-    print(f"=== Building DropFile v{__version__} Standalone Windows Executable ===")
+    print(f"=== Building DropFile v{get_full_version()} Standalone Windows Executable ===")
 
     # 1. Ensure icon.ico exists
     if not icon_path.exists():

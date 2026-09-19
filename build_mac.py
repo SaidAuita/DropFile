@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from version import __version__
+from version import __version__, get_full_version
 
 
 def build_mac_app() -> Path:
@@ -27,7 +27,7 @@ def build_mac_app() -> Path:
     zip_path = dist_dir / "DropFile-macOS.zip"
 
     print("==================================================================")
-    print(f"       DropFile v{__version__} — Native macOS Application Builder")
+    print(f"       DropFile v{get_full_version()} — Native macOS Application Builder")
     print("==================================================================")
 
     # 1. Ensure PyInstaller is installed

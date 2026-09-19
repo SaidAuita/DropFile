@@ -30,7 +30,7 @@ from fb_client import FileBrowserClient
 from i18n import SUPPORTED_LANGUAGES, get_current_language, set_current_language, t
 from state_db import StateDatabase
 from updater import apply_update, check_for_updates
-from version import __version__
+from version import __version__, __build__, get_build_number, get_full_version
 from win_utils import (
     create_desktop_shortcut,
     is_windows_autostart_enabled,
@@ -319,7 +319,7 @@ class SettingsDialog:
         # Version Pill Badge
         self.lbl_version_badge = tk.Label(
             title_row,
-            text=f"v{__version__}",
+            text=f"v{__version__} (b{get_build_number()})",
             font=(self.font_family, 8, "bold"),
             fg=accent_blue,
             bg="#EBF3FB",
@@ -710,9 +710,14 @@ class SettingsDialog:
         # Server 1 Password
         self.lbl_conn_pwd = ttk.Label(parent, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_conn_pwd.pack(anchor="w", pady=(0, 2))
-        self.entry_pwd = ttk.Entry(parent, font=(self.font_family, 9), show="•")
+        pwd_frame1 = tk.Frame(parent, bg="#FFFFFF")
+        pwd_frame1.pack(fill="x", pady=(0, 8))
+        self.entry_pwd = ttk.Entry(pwd_frame1, font=(self.font_family, 9), show="•")
         self.entry_pwd.insert(0, self.config.password)
-        self.entry_pwd.pack(fill="x", pady=(0, 8))
+        self.entry_pwd.pack(side="left", fill="x", expand=True)
+        self._pwd1_visible = False
+        self.btn_toggle_pwd1 = ttk.Button(pwd_frame1, text="👁", width=3, command=self._toggle_pwd1_visibility)
+        self.btn_toggle_pwd1.pack(side="right", padx=(6, 0))
 
         # Test Server 1 button & status indicator
         test_frame1 = tk.Frame(parent, bg="#FFFFFF")
@@ -762,9 +767,14 @@ class SettingsDialog:
         # Server 2 Password
         self.lbl_backup_pwd = ttk.Label(self.frame_server2_body, text=t("conn_pwd_label"), style="Card.TLabel")
         self.lbl_backup_pwd.pack(anchor="w", pady=(0, 2))
-        self.entry_backup_pwd = ttk.Entry(self.frame_server2_body, font=(self.font_family, 9), show="•")
+        pwd_frame2 = tk.Frame(self.frame_server2_body, bg="#FFFFFF")
+        pwd_frame2.pack(fill="x", pady=(0, 8))
+        self.entry_backup_pwd = ttk.Entry(pwd_frame2, font=(self.font_family, 9), show="•")
         self.entry_backup_pwd.insert(0, self.config.backup_password)
-        self.entry_backup_pwd.pack(fill="x", pady=(0, 8))
+        self.entry_backup_pwd.pack(side="left", fill="x", expand=True)
+        self._pwd2_visible = False
+        self.btn_toggle_pwd2 = ttk.Button(pwd_frame2, text="👁", width=3, command=self._toggle_pwd2_visibility)
+        self.btn_toggle_pwd2.pack(side="right", padx=(6, 0))
 
         # Test Server 2 button & status indicator
         test_frame2 = tk.Frame(self.frame_server2_body, bg="#FFFFFF")
@@ -960,6 +970,8 @@ class SettingsDialog:
             self.entry_backup_user.config(state=state)
         if hasattr(self, "entry_backup_pwd"):
             self.entry_backup_pwd.config(state=state)
+        if hasattr(self, "btn_toggle_pwd2"):
+            self.btn_toggle_pwd2.config(state=state)
         if hasattr(self, "btn_test2"):
             self.btn_test2.config(state=state)
         if hasattr(self, "chk_sync_backup"):
@@ -1103,6 +1115,16 @@ class SettingsDialog:
                 self.window.after(0, on_done)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _toggle_pwd1_visibility(self) -> None:
+        self._pwd1_visible = not getattr(self, "_pwd1_visible", False)
+        self.entry_pwd.config(show="" if self._pwd1_visible else "•")
+        self.btn_toggle_pwd1.config(text="🔒" if self._pwd1_visible else "👁")
+
+    def _toggle_pwd2_visibility(self) -> None:
+        self._pwd2_visible = not getattr(self, "_pwd2_visible", False)
+        self.entry_backup_pwd.config(show="" if self._pwd2_visible else "•")
+        self.btn_toggle_pwd2.config(text="🔒" if self._pwd2_visible else "👁")
 
     def _test_connection(self) -> None:
         self.lbl_test_status.config(text=t("conn_testing"), fg="#0067C0")
@@ -1927,14 +1949,64 @@ class SettingsDialog:
         threading.Thread(target=self._refresh_remote_devices, daemon=True).start()
 
     def _prompt_set_pin(self) -> None:
-        pin = simpledialog.askstring(
-            t("remote_pin_prompt_title"),
-            t("remote_pin_prompt_msg"),
-            show="●",
-            parent=self.window,
-        )
-        if pin is not None:
-            clean_pin = pin.strip()
+        top = tk.Toplevel(self.window)
+        top.title(t("remote_pin_prompt_title"))
+        top.transient(self.window)
+        top.grab_set()
+        top.resizable(False, False)
+        top.configure(bg="#FFFFFF")
+
+        lbl = ttk.Label(top, text=t("remote_pin_prompt_msg"), style="Card.TLabel")
+        lbl.pack(padx=16, pady=(16, 8), anchor="w")
+
+        pframe = tk.Frame(top, bg="#FFFFFF")
+        pframe.pack(padx=16, pady=(0, 16), fill="x")
+
+        ent = ttk.Entry(pframe, font=(self.font_family, 10), show="●")
+        ent.pack(side="left", fill="x", expand=True)
+        ent.focus_set()
+
+        pin_visible = False
+
+        def toggle_pin_vis():
+            nonlocal pin_visible
+            pin_visible = not pin_visible
+            ent.config(show="" if pin_visible else "●")
+            btn_eye.config(text="🔒" if pin_visible else "👁")
+
+        btn_eye = ttk.Button(pframe, text="👁", width=3, command=toggle_pin_vis)
+        btn_eye.pack(side="right", padx=(6, 0))
+
+        btn_frame = tk.Frame(top, bg="#F9FAFB")
+        btn_frame.pack(fill="x", side="bottom")
+
+        result = [None]
+
+        def on_ok(event=None):
+            result[0] = ent.get()
+            top.destroy()
+
+        def on_cancel(event=None):
+            top.destroy()
+
+        ent.bind("<Return>", on_ok)
+        top.bind("<Escape>", on_cancel)
+
+        # Center on parent window
+        top.update_idletasks()
+        w = max(380, top.winfo_reqwidth())
+        h = top.winfo_reqheight() + 60
+        x = self.window.winfo_x() + (self.window.winfo_width() - w) // 2
+        y = self.window.winfo_y() + (self.window.winfo_height() - h) // 2
+        top.geometry(f"{w}x{h}+{max(0, x)}+{max(0, y)}")
+
+        ttk.Button(btn_frame, text=t("btn_cancel"), command=on_cancel).pack(side="right", padx=12, pady=10)
+        ttk.Button(btn_frame, text=t("btn_save"), style="Accent.TButton", command=on_ok).pack(side="right", pady=10)
+
+        self.window.wait_window(top)
+
+        if result[0] is not None:
+            clean_pin = result[0].strip()
             self.config.remote_control_pin = clean_pin
             has_pin = bool(clean_pin)
             self.lbl_rc_pin_val.config(
