@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
     "password": "",
     "remote_path": "/DropFile",
     "local_path": str(Path.home() / "Desktop" / "DropFile"),
+    "exchange_path": str(Path.home() / "Desktop" / "DropFile" / "Exchange"),
+    "output_path": str(Path.home() / "Desktop" / "DropFile" / "Output"),
+    "output_remote_path": "/Output",
+    "auto_copy_share_link": True,
     "backup_server_enabled": False,
     "backup_server_url": "",
     "backup_username": "",
@@ -58,6 +62,8 @@ DEFAULT_CONFIG = {
         ".DS_Store",
         "*.swp",
         "speed_server*",
+        "Exchange*",
+        "exchange*",
     ],
 }
 
@@ -105,12 +111,14 @@ class Config:
                     data.update(loaded)
             except Exception as e:
                 print(f"[Config] Error loading config, using defaults: {e}")
-        # Ensure speed_server* is always included in ignore_patterns to isolate DropSync Server
+        # Ensure speed_server* and Exchange* are always included in ignore_patterns to isolate DropSync Server
         patterns = data.get("ignore_patterns")
         if isinstance(patterns, list):
             if not any(p in ("speed_server*", "speed_server", "*speed_server*") for p in patterns):
                 patterns.append("speed_server*")
-                data["ignore_patterns"] = patterns
+            if not any(p in ("Exchange*", "exchange*", "Exchange", "exchange") for p in patterns):
+                patterns.append("Exchange*")
+            data["ignore_patterns"] = patterns
         self._data = data
         try:
             from i18n import set_current_language
@@ -311,6 +319,64 @@ class Config:
     def local_path(self, value: str | Path) -> None:
         p = Path(value).expanduser()
         self._data["local_path"] = str(p.resolve())
+
+    @property
+    def exchange_path(self) -> Path:
+        raw = self._data.get("exchange_path")
+        if not raw:
+            p = self.local_path / "Exchange"
+            self._data["exchange_path"] = str(p)
+            return p
+        return Path(str(raw).strip())
+
+    @exchange_path.setter
+    def exchange_path(self, value: str | Path) -> None:
+        p = Path(value).expanduser()
+        self._data["exchange_path"] = str(p.resolve())
+
+    @property
+    def output_path(self) -> Path:
+        raw = self._data.get("output_path")
+        if not raw:
+            p = self.local_path / "Output"
+            self._data["output_path"] = str(p)
+            return p
+        return Path(str(raw).strip())
+
+    @output_path.setter
+    def output_path(self, value: str | Path) -> None:
+        p = Path(value).expanduser()
+        self._data["output_path"] = str(p.resolve())
+
+    @property
+    def output_remote_path(self) -> str:
+        p = str(self._data.get("output_remote_path", "/Output")).strip()
+        if not p.startswith("/"):
+            p = "/" + p
+        return p.rstrip("/") or "/"
+
+    @output_remote_path.setter
+    def output_remote_path(self, value: str) -> None:
+        p = str(value).strip()
+        if not p.startswith("/"):
+            p = "/" + p
+        self._data["output_remote_path"] = p.rstrip("/") or "/"
+
+    @property
+    def auto_copy_share_link(self) -> bool:
+        return bool(self._data.get("auto_copy_share_link", True))
+
+    @auto_copy_share_link.setter
+    def auto_copy_share_link(self, value: bool) -> None:
+        self._data["auto_copy_share_link"] = bool(value)
+
+    def ensure_directories(self) -> None:
+        """Ensures that Exchange and Output local directories exist."""
+        try:
+            self.exchange_path.mkdir(parents=True, exist_ok=True)
+            self.output_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"[Config] Error creating directories: {e}")
 
     @property
     def poll_interval(self) -> int:

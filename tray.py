@@ -57,7 +57,7 @@ class DropFileTray:
             self.engine.on_share_ready = self._on_share_ready
 
     def _on_share_ready(self, item_info: dict, notify: bool = True) -> None:
-        """Called when a file has just uploaded and its share link is prepared."""
+        """Called when a file has just uploaded to Output and its share link is prepared."""
         if self._icon:
             try:
                 self._icon.menu = self._build_menu()
@@ -66,7 +66,11 @@ class DropFileTray:
                 print(f"[Tray] Error updating menu on share ready: {e}")
         if notify:
             name = item_info.get("name", "File")
-            self.send_notification(t("notify_file_uploaded"), t("notify_share_ready", name=name))
+            url = item_info.get("share_url", "")
+            self.send_notification(
+                t("notify_output_published_title"),
+                t("notify_output_published_msg", name=name, url=url),
+            )
 
     def _get_safe_title(self, text: str) -> str:
         """Returns a safe title string for tray icon, avoiding Latin-1 encoding errors in X11."""
@@ -245,8 +249,8 @@ class DropFileTray:
         if item and item.get("name"):
             raw_name = item["name"]
             short_name = raw_name if len(raw_name) <= 24 else raw_name[:21] + "..."
-            return t("tray_copy_link", name=short_name)
-        return t("tray_copy_link_empty")
+            return t("tray_copy_output_link", name=short_name)
+        return t("tray_copy_output_empty")
 
     def _get_name_label(self) -> str:
         item = self._get_last_item()
@@ -256,7 +260,13 @@ class DropFileTray:
             return t("tray_copy_name", name=short_name)
         return t("tray_copy_name_empty")
 
-    def _open_local_folder(self, icon, item) -> None:
+    def _open_exchange_folder(self, icon=None, item=None) -> None:
+        open_folder_in_explorer(self.config.exchange_path)
+
+    def _open_output_folder(self, icon=None, item=None) -> None:
+        open_folder_in_explorer(self.config.output_path)
+
+    def _open_local_folder(self, icon=None, item=None) -> None:
         open_folder_in_explorer(self.config.local_path)
 
     def _copy_share_link(self, icon, item) -> None:
@@ -427,14 +437,10 @@ class DropFileTray:
         return pystray.Menu(
             item(lambda text: f"DropFile v{__version__} (build {get_build_number()})", None, enabled=False),
             item(lambda text: self.current_status_text, None, enabled=False),
-            item(
-                lambda text: self._get_servers_sync_label(),
-                None,
-                enabled=False,
-                visible=lambda item: bool(self.config.backup_server_enabled and self.config.sync_backup_server),
-            ),
             pystray.Menu.SEPARATOR,
-            item(lambda text: t("tray_open_folder"), self._open_local_folder, default=True),
+            item(lambda text: t("tray_open_exchange"), self._open_exchange_folder, default=True),
+            item(lambda text: t("tray_open_output"), self._open_output_folder),
+            pystray.Menu.SEPARATOR,
             item(
                 lambda text: self._get_share_label(),
                 self._copy_share_link,
@@ -446,29 +452,12 @@ class DropFileTray:
                 enabled=lambda item: self._is_share_enabled(),
             ),
             pystray.Menu.SEPARATOR,
-            item(lambda text: t("tray_sync_now"), self._sync_now),
-            item(
-                lambda text: f"⚡ {t('servers_sync_btn_sync')}",
-                self._sync_servers_mirror_tray,
-                visible=lambda item: bool(self.config.backup_server_enabled and self.config.sync_backup_server),
-            ),
-            item(lambda text: t("tray_pull_missing"), self._pull_missing),
-            item(
-                lambda text: t("tray_resume") if self.engine.is_paused() else t("tray_pause"),
-                self._toggle_pause,
-            ),
-            item(
-                lambda text: t("tray_notifications"),
-                self._toggle_notifications,
-                checked=lambda item: self.config.notify_on_sync,
-            ),
-            pystray.Menu.SEPARATOR,
             item(lambda text: f"📈 {t('speed_monitor_btn')}", self._open_speed_monitor),
-            item(lambda text: t("tray_remote_menu"), self._open_remote_control),
             item(lambda text: f"⚡ {t('tab_dropsync').strip()}", self._open_dropsync),
+            item(lambda text: t("tray_remote_menu"), self._open_remote_control),
+            item(lambda text: t("tray_open_web"), self._open_web),
             item(lambda text: t("tray_settings"), self._open_settings),
             item(lambda text: t("tray_check_updates"), self._check_updates_from_tray),
-            item(lambda text: t("tray_open_web"), self._open_web),
             pystray.Menu.SEPARATOR,
             item(lambda text: t("tray_exit"), self._exit_app),
         )

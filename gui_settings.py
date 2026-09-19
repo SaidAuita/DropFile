@@ -1408,111 +1408,75 @@ class SettingsDialog:
         self.lbl_folders_sub.pack(anchor="w", pady=(0, 12))
         self.tab_folders.register_autowrap(self.lbl_folders_sub)
 
-        # Local folder
-        self.lbl_folders_local = ttk.Label(parent, text=t("folders_local_label"), style="Card.TLabel")
-        self.lbl_folders_local.pack(anchor="w", pady=(0, 2))
-
-        local_row = tk.Frame(parent, bg="#FFFFFF")
-        local_row.pack(fill="x", pady=(0, 6))
-
-        self.entry_local = ttk.Entry(local_row, font=(self.font_family, 9))
-        self.entry_local.insert(0, str(self.config.local_path))
-        self.entry_local.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
-        self.btn_browse = ttk.Button(local_row, text=t("folders_browse_btn"), command=self._browse_local_folder)
-        self.btn_browse.pack(side="right")
-
-        # Action helpers for local folder
-        btns_row = tk.Frame(parent, bg="#FFFFFF")
-        btns_row.pack(fill="x", pady=(0, 12))
-
-        self.btn_open = ttk.Button(
-            btns_row,
-            text=t("folders_open_btn"),
-            command=lambda: open_folder_in_explorer(self.entry_local.get()),
-        )
-        self.btn_open.pack(side="left", padx=(0, 8))
-
-        self.btn_shortcut = ttk.Button(
-            btns_row, text=t("folders_shortcut_btn"), command=self._create_shortcut
-        )
-        self.btn_shortcut.pack(side="left")
-
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 12))
-
-        # Remote folder
-        self.lbl_folders_remote = ttk.Label(parent, text=t("folders_remote_label"), style="Card.TLabel")
-        self.lbl_folders_remote.pack(anchor="w", pady=(0, 2))
-
-        self.entry_remote = ttk.Entry(parent, font=(self.font_family, 9))
-        self.entry_remote.insert(0, self.config.remote_path)
-        self.entry_remote.pack(fill="x", pady=(0, 4))
-
-        self.lbl_folders_hint = ttk.Label(
+        # -------------------------------------------------------------
+        # CARD 1: Exchange Folder (High-speed server sync via DropSync)
+        # -------------------------------------------------------------
+        self.card_exchange = tk.LabelFrame(
             parent,
-            text=t("folders_remote_hint"),
-            style="Subheader.TLabel",
-            justify="left",
-        )
-        self.lbl_folders_hint.pack(anchor="w")
-        self.tab_folders.register_autowrap(self.lbl_folders_hint)
-
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
-
-        # --- Server Synchronization Tools ---
-        self.lbl_sync_tools_hdr = ttk.Label(parent, text=t("sync_tools_header"), style="Header.TLabel")
-        self.lbl_sync_tools_hdr.pack(anchor="w", pady=(0, 2))
-
-        self.lbl_sync_tools_sub = ttk.Label(
-            parent,
-            text=t("sync_tools_sub"),
-            style="Subheader.TLabel",
-            justify="left",
-        )
-        self.lbl_sync_tools_sub.pack(anchor="w", pady=(0, 10))
-        self.tab_folders.register_autowrap(self.lbl_sync_tools_sub)
-
-        sync_btns_row = tk.Frame(parent, bg="#FFFFFF")
-        sync_btns_row.pack(fill="x", pady=(0, 8))
-
-        # Button: Pull Missing Files
-        self.btn_pull_missing = ttk.Button(
-            sync_btns_row,
-            text=f"📥 {t('btn_pull_missing')}",
-            command=self._pull_missing_files_ui,
-        )
-        self.btn_pull_missing.pack(side="left", padx=(0, 8))
-
-        # Button: Full Resync
-        self.btn_full_sync = ttk.Button(
-            sync_btns_row,
-            text=f"🔄 {t('btn_full_sync')}",
-            command=self._full_sync_ui,
-        )
-        self.btn_full_sync.pack(side="left")
-
-        self.lbl_sync_status = tk.Label(parent, text="", font=(self.font_family, 9), bg="#FFFFFF", anchor="w", justify="left")
-        self.lbl_sync_status.pack(fill="x", pady=(4, 0))
-        self.tab_folders.register_autowrap(self.lbl_sync_status)
-
-        # --- Card: LAN Network Shares (Samba / SMB) ---
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(14, 12))
-
-        self.card_lan_share = tk.LabelFrame(
-            parent,
-            text=f"  📁 {t('lan_share_card_title')}  ",
+            text=f"  📁 {t('folders_exchange_header')}  ",
             bg="#FFFFFF",
             padx=14,
             pady=10,
         )
-        self.card_lan_share.pack(fill="x", pady=(0, 14))
+        self.card_exchange.pack(fill="x", pady=(0, 14))
 
-        # Server IP / Host row
-        self.lbl_lan_server = ttk.Label(self.card_lan_share, text=t("lan_server_ip_label"), style="Card.TLabel")
-        self.lbl_lan_server.pack(anchor="w", pady=(0, 2))
+        self.lbl_ex_desc = ttk.Label(
+            self.card_exchange,
+            text=t("folders_exchange_desc"),
+            style="Subheader.TLabel",
+            justify="left",
+        )
+        self.lbl_ex_desc.pack(anchor="w", pady=(0, 8))
+        self.tab_folders.register_autowrap(self.lbl_ex_desc)
 
-        lan_server_row = tk.Frame(self.card_lan_share, bg="#FFFFFF")
-        lan_server_row.pack(fill="x", pady=(0, 10))
+        self.lbl_ex_local = ttk.Label(self.card_exchange, text=t("folders_local_label"), style="Card.TLabel")
+        self.lbl_ex_local.pack(anchor="w", pady=(0, 2))
+
+        ex_local_row = tk.Frame(self.card_exchange, bg="#FFFFFF")
+        ex_local_row.pack(fill="x", pady=(0, 6))
+
+        self.entry_exchange = ttk.Entry(ex_local_row, font=(self.font_family, 9))
+        self.entry_exchange.insert(0, str(getattr(self.config, "exchange_path", self.config.local_path / "Exchange")))
+        self.entry_exchange.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        self.btn_browse_exchange = ttk.Button(
+            ex_local_row,
+            text=t("folders_browse_btn"),
+            command=self._browse_exchange_folder,
+        )
+        self.btn_browse_exchange.pack(side="right")
+
+        # Action buttons for Exchange folder
+        ex_btns_row = tk.Frame(self.card_exchange, bg="#FFFFFF")
+        ex_btns_row.pack(fill="x", pady=(0, 10))
+
+        self.btn_open_exchange = ttk.Button(
+            ex_btns_row,
+            text=t("folders_open_exchange_btn"),
+            command=lambda: open_folder_in_explorer(self.entry_exchange.get()),
+        )
+        self.btn_open_exchange.pack(side="left", padx=(0, 8))
+
+        self.btn_shortcut_exchange = ttk.Button(
+            ex_btns_row,
+            text=t("folders_shortcut_exchange_btn"),
+            command=self._create_exchange_shortcut,
+        )
+        self.btn_shortcut_exchange.pack(side="left")
+
+        # LAN / SMB Access subsection
+        ttk.Separator(self.card_exchange, orient="horizontal").pack(fill="x", pady=(6, 8))
+
+        self.lbl_lan_title = ttk.Label(
+            self.card_exchange,
+            text=f"🌐 {t('lan_path_exchange_label')} (SMB / Windows Share)",
+            style="Card.TLabel",
+            font=(self.font_family, 9, "bold"),
+        )
+        self.lbl_lan_title.pack(anchor="w", pady=(0, 4))
+
+        lan_server_row = tk.Frame(self.card_exchange, bg="#FFFFFF")
+        lan_server_row.pack(fill="x", pady=(0, 6))
 
         initial_lan_host = self._get_initial_lan_host()
         self.entry_lan_server = ttk.Entry(lan_server_row, font=(self.font_family, 9))
@@ -1527,69 +1491,7 @@ class SettingsDialog:
         )
         self.btn_lan_detect.pack(side="right")
 
-        # Share 1: DropSync (speed_server)
-        self.lbl_lan_ds_title = ttk.Label(
-            self.card_lan_share,
-            text=t("lan_path_dropsync_label"),
-            style="Card.TLabel",
-            font=(self.font_family, 9, "bold"),
-        )
-        self.lbl_lan_ds_title.pack(anchor="w", pady=(2, 2))
-
-        row_ds_path = tk.Frame(self.card_lan_share, bg="#F1F5F9", padx=8, pady=5)
-        row_ds_path.pack(fill="x", pady=(0, 6))
-
-        self.lbl_unc_dropsync = tk.Label(
-            row_ds_path,
-            text=f"\\\\{initial_lan_host}\\DropSync",
-            bg="#F1F5F9",
-            fg="#0F172A",
-            font=("Consolas", 10),
-            anchor="w",
-        )
-        self.lbl_unc_dropsync.pack(side="left", fill="x", expand=True)
-
-        row_ds_btns = tk.Frame(self.card_lan_share, bg="#FFFFFF")
-        row_ds_btns.pack(fill="x", pady=(0, 12))
-
-        self.btn_ds_lan_open = ttk.Button(
-            row_ds_btns,
-            text=t("lan_btn_open"),
-            command=lambda: self._open_lan_folder("DropSync"),
-        )
-        self.btn_ds_lan_open.pack(side="left", padx=(0, 6))
-
-        self.btn_ds_lan_mount = ttk.Button(
-            row_ds_btns,
-            text=t("lan_btn_mount"),
-            command=lambda: self._mount_lan_drive("DropSync"),
-        )
-        self.btn_ds_lan_mount.pack(side="left", padx=(0, 6))
-
-        self.btn_ds_lan_shortcut = ttk.Button(
-            row_ds_btns,
-            text=t("lan_btn_shortcut"),
-            command=lambda: self._create_lan_shortcut("DropSync", "DropSync Server"),
-        )
-        self.btn_ds_lan_shortcut.pack(side="left", padx=(0, 6))
-
-        self.btn_ds_lan_copy = ttk.Button(
-            row_ds_btns,
-            text=t("lan_btn_copy"),
-            command=lambda: self._copy_lan_path("DropSync"),
-        )
-        self.btn_ds_lan_copy.pack(side="left")
-
-        # Share 2: DropFile (Exchange)
-        self.lbl_lan_ex_title = ttk.Label(
-            self.card_lan_share,
-            text=t("lan_path_exchange_label"),
-            style="Card.TLabel",
-            font=(self.font_family, 9, "bold"),
-        )
-        self.lbl_lan_ex_title.pack(anchor="w", pady=(2, 2))
-
-        row_ex_path = tk.Frame(self.card_lan_share, bg="#F1F5F9", padx=8, pady=5)
+        row_ex_path = tk.Frame(self.card_exchange, bg="#F1F5F9", padx=8, pady=5)
         row_ex_path.pack(fill="x", pady=(0, 6))
 
         self.lbl_unc_exchange = tk.Label(
@@ -1602,40 +1504,39 @@ class SettingsDialog:
         )
         self.lbl_unc_exchange.pack(side="left", fill="x", expand=True)
 
-        row_ex_btns = tk.Frame(self.card_lan_share, bg="#FFFFFF")
-        row_ex_btns.pack(fill="x", pady=(0, 8))
+        row_ex_lan_btns = tk.Frame(self.card_exchange, bg="#FFFFFF")
+        row_ex_lan_btns.pack(fill="x", pady=(0, 4))
 
         self.btn_ex_lan_open = ttk.Button(
-            row_ex_btns,
+            row_ex_lan_btns,
             text=t("lan_btn_open"),
             command=lambda: self._open_lan_folder("Exchange"),
         )
         self.btn_ex_lan_open.pack(side="left", padx=(0, 6))
 
         self.btn_ex_lan_mount = ttk.Button(
-            row_ex_btns,
+            row_ex_lan_btns,
             text=t("lan_btn_mount"),
             command=lambda: self._mount_lan_drive("Exchange"),
         )
         self.btn_ex_lan_mount.pack(side="left", padx=(0, 6))
 
         self.btn_ex_lan_shortcut = ttk.Button(
-            row_ex_btns,
+            row_ex_lan_btns,
             text=t("lan_btn_shortcut"),
             command=lambda: self._create_lan_shortcut("Exchange", "DropFile Exchange"),
         )
         self.btn_ex_lan_shortcut.pack(side="left", padx=(0, 6))
 
         self.btn_ex_lan_copy = ttk.Button(
-            row_ex_btns,
+            row_ex_lan_btns,
             text=t("lan_btn_copy"),
             command=lambda: self._copy_lan_path("Exchange"),
         )
         self.btn_ex_lan_copy.pack(side="left")
 
-        # Feedback / status label
         self.lbl_lan_status = tk.Label(
-            self.card_lan_share,
+            self.card_exchange,
             text="",
             bg="#FFFFFF",
             fg="#0F7B0F",
@@ -1646,8 +1547,122 @@ class SettingsDialog:
         self.lbl_lan_status.pack(fill="x", pady=(4, 0))
         self.tab_folders.register_autowrap(self.lbl_lan_status)
 
-        # --- In-tab Live Speed Chart Card ---
-        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(10, 12))
+        # -------------------------------------------------------------
+        # CARD 2: Output Folder (Public Sharing via File Browser)
+        # -------------------------------------------------------------
+        self.card_output = tk.LabelFrame(
+            parent,
+            text=f"  📤 {t('folders_output_header')}  ",
+            bg="#FFFFFF",
+            padx=14,
+            pady=10,
+        )
+        self.card_output.pack(fill="x", pady=(0, 14))
+
+        self.lbl_out_desc = ttk.Label(
+            self.card_output,
+            text=t("folders_output_desc"),
+            style="Subheader.TLabel",
+            justify="left",
+        )
+        self.lbl_out_desc.pack(anchor="w", pady=(0, 8))
+        self.tab_folders.register_autowrap(self.lbl_out_desc)
+
+        self.lbl_out_local = ttk.Label(self.card_output, text=t("folders_local_label"), style="Card.TLabel")
+        self.lbl_out_local.pack(anchor="w", pady=(0, 2))
+
+        out_local_row = tk.Frame(self.card_output, bg="#FFFFFF")
+        out_local_row.pack(fill="x", pady=(0, 6))
+
+        self.entry_output = ttk.Entry(out_local_row, font=(self.font_family, 9))
+        self.entry_output.insert(0, str(getattr(self.config, "output_path", self.config.local_path / "Output")))
+        self.entry_output.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.entry_local = self.entry_output  # Backwards compatibility alias
+
+        self.btn_browse_output = ttk.Button(
+            out_local_row,
+            text=t("folders_browse_btn"),
+            command=self._browse_output_folder,
+        )
+        self.btn_browse_output.pack(side="right")
+
+        out_btns_row = tk.Frame(self.card_output, bg="#FFFFFF")
+        out_btns_row.pack(fill="x", pady=(0, 8))
+
+        self.btn_open_output = ttk.Button(
+            out_btns_row,
+            text=t("folders_open_output_btn"),
+            command=lambda: open_folder_in_explorer(self.entry_output.get()),
+        )
+        self.btn_open_output.pack(side="left", padx=(0, 8))
+
+        self.btn_shortcut_output = ttk.Button(
+            out_btns_row,
+            text=t("folders_shortcut_output_btn"),
+            command=self._create_output_shortcut,
+        )
+        self.btn_shortcut_output.pack(side="left")
+
+        # Remote Path in File Browser
+        self.lbl_out_remote = ttk.Label(self.card_output, text=t("folders_remote_label"), style="Card.TLabel")
+        self.lbl_out_remote.pack(anchor="w", pady=(8, 2))
+
+        self.entry_output_remote = ttk.Entry(self.card_output, font=(self.font_family, 9))
+        self.entry_output_remote.insert(0, getattr(self.config, "output_remote_path", "/Output"))
+        self.entry_output_remote.pack(fill="x", pady=(0, 4))
+        self.entry_remote = self.entry_output_remote  # Backwards compatibility alias
+
+        self.lbl_out_remote_hint = ttk.Label(
+            self.card_output,
+            text=t("folders_remote_hint"),
+            style="Subheader.TLabel",
+            justify="left",
+        )
+        self.lbl_out_remote_hint.pack(anchor="w", pady=(0, 8))
+        self.tab_folders.register_autowrap(self.lbl_out_remote_hint)
+
+        # Auto-copy link checkbox
+        self.var_auto_copy_link = tk.BooleanVar(value=bool(getattr(self.config, "auto_copy_share_link", True)))
+        self.chk_auto_copy_link = ttk.Checkbutton(
+            self.card_output,
+            text=t("folders_auto_copy_link"),
+            variable=self.var_auto_copy_link,
+        )
+        self.chk_auto_copy_link.pack(anchor="w", pady=(2, 8))
+
+        # Sync helpers for Output folder
+        out_sync_row = tk.Frame(self.card_output, bg="#FFFFFF")
+        out_sync_row.pack(fill="x", pady=(2, 4))
+
+        self.btn_pull_missing = ttk.Button(
+            out_sync_row,
+            text=f"📥 {t('btn_pull_missing')}",
+            command=self._pull_missing_files_ui,
+        )
+        self.btn_pull_missing.pack(side="left", padx=(0, 8))
+
+        self.btn_full_sync = ttk.Button(
+            out_sync_row,
+            text=f"🔄 {t('btn_full_sync')}",
+            command=self._full_sync_ui,
+        )
+        self.btn_full_sync.pack(side="left")
+
+        self.lbl_sync_status = tk.Label(
+            self.card_output,
+            text="",
+            font=(self.font_family, 9),
+            bg="#FFFFFF",
+            anchor="w",
+            justify="left",
+        )
+        self.lbl_sync_status.pack(fill="x", pady=(4, 0))
+        self.tab_folders.register_autowrap(self.lbl_sync_status)
+
+        # -------------------------------------------------------------
+        # CARD 3: Speed Monitor
+        # -------------------------------------------------------------
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(4, 12))
         self.speed_card = SpeedMonitorCard(parent, lang=self.config.language, bg="#FFFFFF", auto_start=True)
         self.speed_card.pack(fill="x", pady=(0, 10))
 
@@ -1871,18 +1886,19 @@ class SettingsDialog:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _browse_local_folder(self) -> None:
-        chosen = filedialog.askdirectory(initialdir=self.entry_local.get())
-        if chosen:
-            self.entry_local.delete(0, tk.END)
-            self.entry_local.insert(0, chosen)
+    def _browse_exchange_folder(self) -> None:
+        init_dir = self.entry_exchange.get() if hasattr(self, "entry_exchange") else ""
+        chosen = filedialog.askdirectory(initialdir=init_dir)
+        if chosen and hasattr(self, "entry_exchange"):
+            self.entry_exchange.delete(0, tk.END)
+            self.entry_exchange.insert(0, chosen)
 
-    def _create_shortcut(self) -> None:
-        path = self.entry_local.get().strip()
+    def _create_exchange_shortcut(self) -> None:
+        path = self.entry_exchange.get().strip() if hasattr(self, "entry_exchange") else ""
         if not path:
             return
         Path(path).mkdir(parents=True, exist_ok=True)
-        ok = create_desktop_shortcut(path)
+        ok = create_desktop_shortcut(path, shortcut_name="Exchange", force=True)
         if ok:
             messagebox.showinfo(
                 t("shortcut_success_title"),
@@ -1891,6 +1907,34 @@ class SettingsDialog:
             )
         else:
             messagebox.showerror(t("shortcut_fail_title"), t("shortcut_fail_msg"), parent=self.window)
+
+    def _browse_output_folder(self) -> None:
+        init_dir = self.entry_output.get() if hasattr(self, "entry_output") else ""
+        chosen = filedialog.askdirectory(initialdir=init_dir)
+        if chosen and hasattr(self, "entry_output"):
+            self.entry_output.delete(0, tk.END)
+            self.entry_output.insert(0, chosen)
+
+    def _create_output_shortcut(self) -> None:
+        path = self.entry_output.get().strip() if hasattr(self, "entry_output") else ""
+        if not path:
+            return
+        Path(path).mkdir(parents=True, exist_ok=True)
+        ok = create_desktop_shortcut(path, shortcut_name="Output", force=True)
+        if ok:
+            messagebox.showinfo(
+                t("shortcut_success_title"),
+                t("shortcut_success_msg", path=path),
+                parent=self.window,
+            )
+        else:
+            messagebox.showerror(t("shortcut_fail_title"), t("shortcut_fail_msg"), parent=self.window)
+
+    def _browse_local_folder(self) -> None:
+        self._browse_output_folder()
+
+    def _create_shortcut(self) -> None:
+        self._create_output_shortcut()
 
     def _build_settings_tab(self, parent: ttk.Frame) -> None:
         self.lbl_settings_hdr = ttk.Label(parent, text=t("settings_header"), style="Header.TLabel")
@@ -3826,11 +3870,25 @@ class SettingsDialog:
         if hasattr(self, "entry_backup_pwd"):
             self.config.backup_password = self.entry_backup_pwd.get()
 
-        if hasattr(self, "entry_local"):
+        if hasattr(self, "entry_exchange"):
+            self.config.exchange_path = self.entry_exchange.get().strip()
+        if hasattr(self, "entry_output"):
+            self.config.output_path = self.entry_output.get().strip()
+            self.config.local_path = self.entry_output.get().strip()
+        elif hasattr(self, "entry_local"):
             self.config.local_path = self.entry_local.get().strip()
-        if hasattr(self, "entry_remote"):
+            self.config.output_path = self.entry_local.get().strip()
+
+        if hasattr(self, "entry_output_remote"):
+            self.config.output_remote_path = self.entry_output_remote.get().strip()
+            self.config.remote_path = self.entry_output_remote.get().strip()
+            self.config.backup_remote_path = self.entry_output_remote.get().strip()
+        elif hasattr(self, "entry_remote"):
             self.config.remote_path = self.entry_remote.get().strip()
             self.config.backup_remote_path = self.entry_remote.get().strip()
+
+        if hasattr(self, "var_auto_copy_link"):
+            self.config.auto_copy_share_link = self.var_auto_copy_link.get()
 
         if hasattr(self, "spin_poll"):
             try:
@@ -3930,12 +3988,25 @@ class SettingsDialog:
         if hasattr(self, "_on_backup_enable_toggle"):
             self._on_backup_enable_toggle()
 
-        self.entry_local.delete(0, tk.END)
-        self.entry_local.insert(0, str(self.config.local_path))
+        if hasattr(self, "entry_exchange"):
+            self.entry_exchange.delete(0, tk.END)
+            self.entry_exchange.insert(0, str(getattr(self.config, "exchange_path", "")))
+        if hasattr(self, "entry_output"):
+            self.entry_output.delete(0, tk.END)
+            self.entry_output.insert(0, str(getattr(self.config, "output_path", "")))
+        elif hasattr(self, "entry_local"):
+            self.entry_local.delete(0, tk.END)
+            self.entry_local.insert(0, str(self.config.local_path))
 
+        if hasattr(self, "entry_output_remote"):
+            self.entry_output_remote.delete(0, tk.END)
+            self.entry_output_remote.insert(0, getattr(self.config, "output_remote_path", "/Output"))
+        elif hasattr(self, "entry_remote"):
+            self.entry_remote.delete(0, tk.END)
+            self.entry_remote.insert(0, self.config.remote_path)
 
-        self.entry_remote.delete(0, tk.END)
-        self.entry_remote.insert(0, self.config.remote_path)
+        if hasattr(self, "var_auto_copy_link"):
+            self.var_auto_copy_link.set(getattr(self.config, "auto_copy_share_link", True))
 
         self.spin_poll.set(self.config.poll_interval)
         self.spin_file_retention.set(self.config.file_retention_days)

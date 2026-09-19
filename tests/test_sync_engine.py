@@ -43,6 +43,49 @@ class TestSyncEngine(unittest.TestCase):
         self.assertFalse(self.engine.is_ignored("report.pdf"))
         self.assertFalse(self.engine.is_ignored("archive.zip"))
 
+    def test_exchange_folder_ignored_from_fb_sync(self):
+        """Ensures that any file inside config.exchange_path is strictly ignored by FileBrowser SyncEngine."""
+        self.config.ensure_directories()
+        self.assertTrue(self.config.exchange_path.exists())
+        self.assertTrue(self.config.output_path.exists())
+
+        test_exchange_file = self.config.exchange_path / "work_file.bin"
+        self.assertTrue(self.engine.is_ignored(str(test_exchange_file)))
+        self.assertTrue(self.engine.is_ignored("Exchange/file.zip"))
+        self.assertTrue(self.engine.is_ignored(r"Exchange\file.zip"))
+
+        test_output_file = self.config.output_path / "client_share.pdf"
+        self.assertFalse(self.engine.is_ignored(str(test_output_file)))
+
+    def test_auto_copy_share_link(self):
+        """Ensures _record_uploaded_item auto-copies the link if auto_copy_share_link is True."""
+        copied = []
+        import platform_utils
+        orig_copy = platform_utils.copy_to_clipboard
+        orig_share = self.client.get_or_create_share_link
+        try:
+            platform_utils.copy_to_clipboard = lambda text: copied.append(text)
+            self.client.get_or_create_share_link = lambda path: "https://fb.example.com/share/abcdef123"
+            self.config.auto_copy_share_link = True
+
+            dummy_file = self.temp_dir / "catalog.pdf"
+            dummy_file.write_text("sample")
+            self.engine._record_uploaded_item(dummy_file, "catalog.pdf", "/Output/catalog.pdf")
+
+            self.assertEqual(copied, ["https://fb.example.com/share/abcdef123"])
+            self.assertEqual(self.engine.last_uploaded_item["name"], "catalog.pdf")
+            self.assertEqual(self.engine.last_uploaded_item["share_url"], "https://fb.example.com/share/abcdef123")
+
+            # When disabled, should not copy
+            copied.clear()
+            self.client.get_or_create_share_link = lambda path: "https://fb.example.com/share/xyz789"
+            self.config.auto_copy_share_link = False
+            self.engine._record_uploaded_item(dummy_file, "catalog.pdf", "/Output/catalog.pdf")
+            self.assertEqual(copied, [])
+        finally:
+            platform_utils.copy_to_clipboard = orig_copy
+            self.client.get_or_create_share_link = orig_share
+
 
     def test_suppression(self):
         self.engine._suppress("folder/test.txt", duration=1.0)

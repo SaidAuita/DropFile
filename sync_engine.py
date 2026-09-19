@@ -573,12 +573,21 @@ class SyncEngine:
 
     def is_ignored(self, path: Path | str) -> bool:
         """Checks if a file or directory matches any ignore pattern.
-        Checks both the basename and any directory component in path (e.g. speed_server).
+        Checks both the basename and any directory component in path (e.g. speed_server, Exchange).
         """
         p = Path(path)
         name = p.name
         parts = p.parts
         str_path = str(path).replace("\\", "/").strip("/")
+
+        # Always isolate Exchange folder from FileBrowser synchronization
+        try:
+            ex_res = self.config.exchange_path.resolve()
+            p_res = p.resolve()
+            if p_res == ex_res or ex_res in p_res.parents:
+                return True
+        except Exception:
+            pass
 
         for pattern in self.config.ignore_patterns:
             clean_pat = pattern.strip()
@@ -627,13 +636,18 @@ class SyncEngine:
             return
 
         self._running = True
-        self.config.local_path.mkdir(parents=True, exist_ok=True)
+        self.config.ensure_directories()
 
         # Start Watchdog with graceful fallback to PollingObserver (crucial for macOS VMs)
         handler = LocalFolderHandler(self)
         try:
             self._observer = Observer()
             self._observer.schedule(handler, str(self.config.local_path), recursive=True)
+            try:
+                if self.config.output_path.resolve() != self.config.local_path.resolve() and self.config.output_path.exists():
+                    self._observer.schedule(handler, str(self.config.output_path), recursive=True)
+            except Exception:
+                pass
             self._observer.start()
         except Exception as e:
             print(f"[SyncEngine] Native observer failed ({e}), falling back to PollingObserver...")
@@ -641,6 +655,11 @@ class SyncEngine:
                 from watchdog.observers.polling import PollingObserver
                 self._observer = PollingObserver()
                 self._observer.schedule(handler, str(self.config.local_path), recursive=True)
+                try:
+                    if self.config.output_path.resolve() != self.config.local_path.resolve() and self.config.output_path.exists():
+                        self._observer.schedule(handler, str(self.config.output_path), recursive=True)
+                except Exception:
+                    pass
                 self._observer.start()
             except Exception as e2:
                 print(f"[SyncEngine] PollingObserver fallback failed: {e2}")
@@ -1617,6 +1636,15 @@ class SyncEngine:
             "remote_path": remote_dest,
             "share_url": share_url or f"{self.client.base_url}/files{remote_dest}",
         }
+
+        # Automatically copy share link to clipboard for Output folder uploads
+        if getattr(self.config, "auto_copy_share_link", True) and self.last_uploaded_item.get("share_url"):
+            try:
+                from platform_utils import copy_to_clipboard
+                copy_to_clipboard(self.last_uploaded_item["share_url"])
+            except Exception as e:
+                print(f"[SyncEngine] Error copying share link to clipboard: {e}")
+
         self._notify_share_ready(self.last_uploaded_item, notify=True)
 
     def _init_last_uploaded_from_history(self) -> None:
