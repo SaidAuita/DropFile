@@ -604,42 +604,28 @@ class SettingsDialog:
 
 
         # Folders Tab
-        self.lbl_folders_hdr.config(text=t("folders_header"))
-        self.lbl_folders_sub.config(text=t("folders_sub"))
-        self.lbl_folders_local.config(text=t("folders_local_label"))
-        self.btn_browse.config(text=t("folders_browse_btn"))
-        self.btn_open.config(text=t("folders_open_btn"))
-        self.btn_shortcut.config(text=t("folders_shortcut_btn"))
-        self.lbl_folders_remote.config(text=t("folders_remote_label"))
-        self.lbl_folders_hint.config(text=t("folders_remote_hint"))
-        if hasattr(self, "lbl_sync_tools_hdr"):
-            self.lbl_sync_tools_hdr.config(text=t("sync_tools_header"))
-        if hasattr(self, "lbl_sync_tools_sub"):
-            self.lbl_sync_tools_sub.config(text=t("sync_tools_sub"))
-        if hasattr(self, "btn_pull_missing"):
-            self.btn_pull_missing.config(text=f"📥 {t('btn_pull_missing')}")
-        if hasattr(self, "btn_full_sync"):
-            self.btn_full_sync.config(text=f"🔄 {t('btn_full_sync')}")
+        if hasattr(self, "lbl_folders_hdr"):
+            self.lbl_folders_hdr.config(text=t("folders_header"))
+        if hasattr(self, "lbl_folders_sub"):
+            self.lbl_folders_sub.config(text=t("folders_sub"))
 
-        # LAN Share Assistant
-        if hasattr(self, "card_lan_share"):
-            self.card_lan_share.config(text=f"  📁 {t('lan_share_card_title')}  ")
-        if hasattr(self, "lbl_lan_server"):
-            self.lbl_lan_server.config(text=t("lan_server_ip_label"))
+        # Card 1: Exchange
+        if hasattr(self, "card_exchange"):
+            self.card_exchange.config(text=f"  📁 {t('folders_exchange_header')}  ")
+        if hasattr(self, "lbl_ex_desc"):
+            self.lbl_ex_desc.config(text=t("folders_exchange_desc"))
+        if hasattr(self, "lbl_ex_local"):
+            self.lbl_ex_local.config(text=t("folders_local_label"))
+        if hasattr(self, "btn_browse_exchange"):
+            self.btn_browse_exchange.config(text=t("folders_browse_btn"))
+        if hasattr(self, "btn_open_exchange"):
+            self.btn_open_exchange.config(text=t("folders_open_exchange_btn"))
+        if hasattr(self, "btn_shortcut_exchange"):
+            self.btn_shortcut_exchange.config(text=t("folders_shortcut_exchange_btn"))
+        if hasattr(self, "lbl_lan_title"):
+            self.lbl_lan_title.config(text=f"🌐 {t('lan_path_exchange_label')} (SMB / Windows Share)")
         if hasattr(self, "btn_lan_detect"):
             self.btn_lan_detect.config(text=t("lan_detected_btn"))
-        if hasattr(self, "lbl_lan_ds_title"):
-            self.lbl_lan_ds_title.config(text=t("lan_path_dropsync_label"))
-        if hasattr(self, "lbl_lan_ex_title"):
-            self.lbl_lan_ex_title.config(text=t("lan_path_exchange_label"))
-        if hasattr(self, "btn_ds_lan_open"):
-            self.btn_ds_lan_open.config(text=t("lan_btn_open"))
-        if hasattr(self, "btn_ds_lan_mount"):
-            self.btn_ds_lan_mount.config(text=t("lan_btn_mount"))
-        if hasattr(self, "btn_ds_lan_shortcut"):
-            self.btn_ds_lan_shortcut.config(text=t("lan_btn_shortcut"))
-        if hasattr(self, "btn_ds_lan_copy"):
-            self.btn_ds_lan_copy.config(text=t("lan_btn_copy"))
         if hasattr(self, "btn_ex_lan_open"):
             self.btn_ex_lan_open.config(text=t("lan_btn_open"))
         if hasattr(self, "btn_ex_lan_mount"):
@@ -648,6 +634,30 @@ class SettingsDialog:
             self.btn_ex_lan_shortcut.config(text=t("lan_btn_shortcut"))
         if hasattr(self, "btn_ex_lan_copy"):
             self.btn_ex_lan_copy.config(text=t("lan_btn_copy"))
+
+        # Card 2: Output
+        if hasattr(self, "card_output"):
+            self.card_output.config(text=f"  📤 {t('folders_output_header')}  ")
+        if hasattr(self, "lbl_out_desc"):
+            self.lbl_out_desc.config(text=t("folders_output_desc"))
+        if hasattr(self, "lbl_out_local"):
+            self.lbl_out_local.config(text=t("folders_local_label"))
+        if hasattr(self, "btn_browse_output"):
+            self.btn_browse_output.config(text=t("folders_browse_btn"))
+        if hasattr(self, "btn_open_output"):
+            self.btn_open_output.config(text=t("folders_open_output_btn"))
+        if hasattr(self, "btn_shortcut_output"):
+            self.btn_shortcut_output.config(text=t("folders_shortcut_output_btn"))
+        if hasattr(self, "lbl_out_remote"):
+            self.lbl_out_remote.config(text=t("folders_remote_label"))
+        if hasattr(self, "lbl_out_remote_hint"):
+            self.lbl_out_remote_hint.config(text=t("folders_remote_hint"))
+        if hasattr(self, "chk_auto_copy_link"):
+            self.chk_auto_copy_link.config(text=t("folders_auto_copy_link"))
+        if hasattr(self, "btn_pull_missing"):
+            self.btn_pull_missing.config(text=f"📥 {t('btn_pull_missing')}")
+        if hasattr(self, "btn_full_sync"):
+            self.btn_full_sync.config(text=f"🔄 {t('btn_full_sync')}")
 
         # Speed Cards
         for sc in (getattr(self, "speed_card", None), getattr(self, "speed_card_ds", None)):

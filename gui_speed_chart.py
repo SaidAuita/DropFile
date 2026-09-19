@@ -201,7 +201,8 @@ class SpeedMonitorCard(tk.Frame):
     """
 
     def __init__(self, parent: Any, lang: str = "ru", auto_start: bool = True, **kwargs: Any):
-        super().__init__(parent, bg="#FFFFFF", **kwargs)
+        kwargs.setdefault("bg", "#FFFFFF")
+        super().__init__(parent, **kwargs)
         self.lang = lang
         self._is_alive = True
 

@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from icons import create_app_icon_ico
@@ -76,7 +77,13 @@ def build():
         print(f"Size: {size_mb:.2f} MB")
         print("=" * 60)
 
-        # Also deploy to parent directory (e.g. C:\_CODE\Utilites\DropFile.exe)
+        # Stop running instances before copying to deploy targets so files are not locked
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "DropFile.exe"], capture_output=True)
+            time.sleep(0.5)
+        except Exception:
+            pass
+
         for deploy_target in [root.parent / "DropFile.exe", Path("D:/DropFile_exe/DropFile.exe")]:
             if deploy_target.parent.exists():
                 try:
