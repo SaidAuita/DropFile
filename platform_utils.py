@@ -368,8 +368,46 @@ def is_autostart_enabled() -> bool:
 
 def open_folder_in_file_manager(folder_path: Path | str) -> None:
     """Opens a folder in Finder on macOS, File Explorer on Windows, or default manager on Linux."""
-    p = Path(folder_path)
-    p.mkdir(parents=True, exist_ok=True)
+    folder_str = str(folder_path).strip()
+    is_network = folder_str.startswith(("\\\\", "//", "smb://"))
+
+    if is_network:
+        # Network path handling (UNC / SMB)
+        clean = folder_str.replace("\\", "/").lstrip("/")
+        if sys.platform.startswith("win"):
+            unc = "\\\\" + clean.replace("/", "\\")
+            try:
+                os.startfile(unc)
+            except Exception:
+                subprocess.run(["explorer.exe", unc])
+        elif sys.platform == "darwin":
+            smb_url = f"smb://{clean}"
+            subprocess.run(["open", smb_url])
+        else:
+            smb_url = f"smb://{clean}"
+            # Clean up accidental literal backslash directories if created earlier
+            try:
+                for base in [Path.home() / "Desktop" / "DropFile", Path.home() / "DropFile", Path.cwd()]:
+                    if base.is_dir():
+                        for child in base.iterdir():
+                            if child.name.startswith("\\") and child.is_dir() and not any(child.iterdir()):
+                                child.rmdir()
+            except Exception:
+                pass
+            try:
+                res = subprocess.run(["gio", "open", smb_url], capture_output=True, timeout=5)
+                if res.returncode != 0:
+                    subprocess.run(["xdg-open", smb_url])
+            except Exception:
+                subprocess.run(["xdg-open", smb_url])
+        return
+
+    # Regular local path handling
+    p = Path(folder_path).expanduser().resolve()
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     if sys.platform == "darwin":
         subprocess.run(["open", str(p)])
     elif sys.platform.startswith("win"):
@@ -1226,9 +1264,21 @@ def create_network_shortcut(unc_path: str, shortcut_name: str = "DropSync Networ
         desktop_file = desktop / f"{shortcut_name}.desktop"
         try:
             smb_uri = "smb://" + unc_path.replace("\\", "/").lstrip("/")
-            with open(desktop_file, "w", encoding="utf-8") as f:
-                f.write(f"[Desktop Entry]\nType=Application\nName={shortcut_name}\nExec=xdg-open {smb_uri}\nIcon=folder-remote\nTerminal=false\n")
+            content = f"""[Desktop Entry]
+Version=1.0
+Type=Link
+Name={shortcut_name}
+Comment=DropFile LAN Network Share
+URL={smb_uri}
+Icon=folder-remote
+"""
+            desktop_file.write_text(content, encoding="utf-8")
             os.chmod(desktop_file, 0o755)
+            try:
+                subprocess.run(["gio", "set", str(desktop_file), "metadata::trusted", "true"], capture_output=True, timeout=2)
+                subprocess.run(["gio", "set", str(desktop_file), "metadata::trusted", "yes"], capture_output=True, timeout=2)
+            except Exception:
+                pass
             return True, f"Desktop entry created at {desktop_file}"
         except Exception as e:
             return False, str(e)

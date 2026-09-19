@@ -1714,6 +1714,9 @@ class SettingsDialog:
         self.speed_card.pack(fill="x", pady=(0, 10))
 
     def _get_initial_lan_host(self) -> str:
+        saved = getattr(self.config, "lan_server_host", "").strip()
+        if saved:
+            return saved
         candidates = []
         for u in [getattr(self.config, "server_url", ""), getattr(self.config, "backup_server_url", "")]:
             if u:
@@ -1746,6 +1749,11 @@ class SettingsDialog:
                     if hasattr(self, "entry_lan_server"):
                         self.entry_lan_server.delete(0, "end")
                         self.entry_lan_server.insert(0, detected)
+                    self.config.lan_server_host = detected
+                    try:
+                        self.config.save()
+                    except Exception:
+                        pass
                     self._update_lan_paths()
                     if hasattr(self, "lbl_lan_status"):
                         self.lbl_lan_status.config(text=f"✅ Server found: {detected}", fg="#0F7B0F")
@@ -3968,6 +3976,8 @@ class SettingsDialog:
 
         if hasattr(self, "entry_exchange"):
             self.config.exchange_path = self.entry_exchange.get().strip()
+        if hasattr(self, "entry_lan_server"):
+            self.config.lan_server_host = self.entry_lan_server.get().strip()
         if hasattr(self, "entry_output"):
             self.config.output_path = self.entry_output.get().strip()
             self.config.local_path = self.entry_output.get().strip()
@@ -4087,6 +4097,11 @@ class SettingsDialog:
         if hasattr(self, "entry_exchange"):
             self.entry_exchange.delete(0, tk.END)
             self.entry_exchange.insert(0, str(getattr(self.config, "exchange_path", "")))
+        if hasattr(self, "entry_lan_server"):
+            current_lan = self.config.lan_server_host or self._get_initial_lan_host()
+            self.entry_lan_server.delete(0, tk.END)
+            self.entry_lan_server.insert(0, current_lan)
+            self._update_lan_paths()
         if hasattr(self, "entry_output"):
             self.entry_output.delete(0, tk.END)
             self.entry_output.insert(0, str(getattr(self.config, "output_path", "")))

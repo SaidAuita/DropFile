@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     "exchange_path": "",
     "output_path": "",
     "output_remote_path": "/Output",
+    "lan_server_host": "",
     "auto_copy_share_link": True,
     "backup_server_enabled": False,
     "backup_server_url": "",
@@ -486,6 +487,14 @@ class Config:
     def exchange_path(self, value: str | Path) -> None:
         p = Path(value).expanduser()
         self._data["exchange_path"] = str(p.resolve())
+
+    @property
+    def lan_server_host(self) -> str:
+        return str(self._data.get("lan_server_host", "")).strip()
+
+    @lan_server_host.setter
+    def lan_server_host(self, value: str) -> None:
+        self._data["lan_server_host"] = str(value).strip()
 
     @property
     def output_path(self) -> Path:
