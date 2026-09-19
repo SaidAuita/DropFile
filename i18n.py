@@ -30,6 +30,13 @@ SUPPORTED_LANGUAGES = {
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "en": {
+        "speed_mode_server": "⚡ Server",
+        "speed_mode_client": "💻 Client",
+        "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
+        "speed_iface_client": "💻 DropFile: Local Client",
+        "speed_status_server_online": "● SERVER: ONLINE",
+        "speed_status_server_offline": "○ SERVER: OFFLINE",
+        "speed_status_client_active": "● CLIENT: ACTIVE",
         "folders_exchange_header": "📁 Exchange Folder (Inter-Server Sync)",
         "folders_exchange_desc": "High-speed internal replication between home and work servers via DropSync. Completely independent of File Browser.",
         "folders_output_header": "📤 Output Folder (Public Sharing / File Browser)",
@@ -393,6 +400,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "remote_status_sending": "Sending command to '{target}'...",
     },
     "ru": {
+        "speed_mode_server": "⚡ Сервер",
+        "speed_mode_client": "💻 Клиент",
+        "speed_iface_server": "⚡ DropSync: Сервер ⇄ Сервер",
+        "speed_iface_client": "💻 DropFile: Клиент ПК",
+        "speed_status_server_online": "● СЕРВЕР: В СЕТИ",
+        "speed_status_server_offline": "○ СЕРВЕР: ОФЛАЙН",
+        "speed_status_client_active": "● КЛИЕНТ: АКТИВЕН",
         "folders_exchange_header": "📁 Папка обмена «Exchange» (Синхронизация серверов)",
         "folders_exchange_desc": "Скоростная внутренняя репликация между домашним и рабочим серверами через DropSync. Полностью отвязана от File Browser.",
         "folders_output_header": "📤 Папка публикации «Output» (File Browser / Ссылки)",
@@ -756,6 +770,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "remote_status_sending": "Отправка команды на «{target}»...",
     },
     "de": {
+        "speed_mode_server": "⚡ Server",
+        "speed_mode_client": "💻 Client",
+        "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
+        "speed_iface_client": "💻 DropFile: Lokaler Client",
+        "speed_status_server_online": "● SERVER: ONLINE",
+        "speed_status_server_offline": "○ SERVER: OFFLINE",
+        "speed_status_client_active": "● CLIENT: AKTIV",
         "folders_exchange_header": "📁 Exchange-Ordner (Server-Synchronisation)",
         "folders_exchange_desc": "Interne Hochgeschwindigkeits-Replikation über DropSync. Unabhängig von File Browser.",
         "folders_output_header": "📤 Output-Ordner (Freigabe / File Browser)",
@@ -1110,6 +1131,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "fr": {
+        "speed_mode_server": "⚡ Serveur",
+        "speed_mode_client": "💻 Client",
+        "speed_iface_server": "⚡ DropSync: Serveur ⇄ Serveur",
+        "speed_iface_client": "💻 DropFile: Client Local",
+        "speed_status_server_online": "● SERVEUR: EN LIGNE",
+        "speed_status_server_offline": "○ SERVEUR: HORS LIGNE",
+        "speed_status_client_active": "● CLIENT: ACTIF",
         "folders_exchange_header": "📁 Dossier Exchange (Synchronisation serveurs)",
         "folders_exchange_desc": "Réplication interne haute vitesse via DropSync. Indépendant de File Browser.",
         "folders_output_header": "📤 Dossier Output (Partage / File Browser)",
@@ -1464,6 +1492,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "es": {
+        "speed_mode_server": "⚡ Servidor",
+        "speed_mode_client": "💻 Cliente",
+        "speed_iface_server": "⚡ DropSync: Servidor ⇄ Servidor",
+        "speed_iface_client": "💻 DropFile: Cliente Local",
+        "speed_status_server_online": "● SERVIDOR: EN LÍNEA",
+        "speed_status_server_offline": "○ SERVIDOR: DESCONECTADO",
+        "speed_status_client_active": "● CLIENTE: ACTIVO",
         "folders_exchange_header": "📁 Carpeta Exchange (Sincronización entre servidores)",
         "folders_exchange_desc": "Replicación interna de alta velocidad mediante DropSync. Independiente de File Browser.",
         "folders_output_header": "📤 Carpeta Output (Publicación / File Browser)",
@@ -1818,6 +1853,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "it": {
+        "speed_mode_server": "⚡ Server",
+        "speed_mode_client": "💻 Client",
+        "speed_iface_server": "⚡ DropSync: Server ⇄ Server",
+        "speed_iface_client": "💻 DropFile: Client Locale",
+        "speed_status_server_online": "● SERVER: ONLINE",
+        "speed_status_server_offline": "○ SERVER: OFFLINE",
+        "speed_status_client_active": "● CLIENT: ATTIVO",
         "folders_exchange_header": "📁 Cartella Exchange (Sincronizzazione server)",
         "folders_exchange_desc": "Replica interna ad alta velocità tramite DropSync. Indipendente da File Browser.",
         "folders_output_header": "📤 Cartella Output (Condivisione / File Browser)",
@@ -2172,6 +2214,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pt": {
+        "speed_mode_server": "⚡ Servidor",
+        "speed_mode_client": "💻 Cliente",
+        "speed_iface_server": "⚡ DropSync: Servidor ⇄ Servidor",
+        "speed_iface_client": "💻 DropFile: Cliente Local",
+        "speed_status_server_online": "● SERVIDOR: ONLINE",
+        "speed_status_server_offline": "○ SERVIDOR: OFFLINE",
+        "speed_status_client_active": "● CLIENTE: ATIVO",
         "folders_exchange_header": "📁 Pasta Exchange (Sincronização entre servidores)",
         "folders_exchange_desc": "Replicação interna de alta velocidade via DropSync. Independente do File Browser.",
         "folders_output_header": "📤 Pasta Output (Compartilhamento / File Browser)",
@@ -2526,6 +2575,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "pl": {
+        "speed_mode_server": "⚡ Serwer",
+        "speed_mode_client": "💻 Klient",
+        "speed_iface_server": "⚡ DropSync: Serwer ⇄ Serwer",
+        "speed_iface_client": "💻 DropFile: Klient Lokalny",
+        "speed_status_server_online": "● SERWER: ONLINE",
+        "speed_status_server_offline": "○ SERWER: OFFLINE",
+        "speed_status_client_active": "● KLIENT: AKTYWNY",
         "folders_exchange_header": "📁 Folder Exchange (Synchronizacja serwerów)",
         "folders_exchange_desc": "Wewnętrzna szybka replikacja między serwerami przez DropSync. Niezależna od File Browser.",
         "folders_output_header": "📤 Folder Output (Udostępnianie / File Browser)",
@@ -2880,6 +2936,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "zh": {
+        "speed_mode_server": "⚡ 服务器",
+        "speed_mode_client": "💻 客户端",
+        "speed_iface_server": "⚡ DropSync: 服务器 ⇄ 服务器",
+        "speed_iface_client": "💻 DropFile: 本地客户端",
+        "speed_status_server_online": "● 服务器：在线",
+        "speed_status_server_offline": "○ 服务器：离线",
+        "speed_status_client_active": "● 客户端：活跃",
         "folders_exchange_header": "📁 Exchange 交换文件夹（服务器同步）",
         "folders_exchange_desc": "通过 DropSync 在家庭和工作服务器之间高速同步，完全脱离 File Browser。",
         "folders_output_header": "📤 Output 发布文件夹（File Browser / 外部分享）",
@@ -3234,6 +3297,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 
     },
     "ja": {
+        "speed_mode_server": "⚡ サーバー",
+        "speed_mode_client": "💻 クライアント",
+        "speed_iface_server": "⚡ DropSync: サーバー ⇄ サーバー",
+        "speed_iface_client": "💻 DropFile: ローカルクライアント",
+        "speed_status_server_online": "● サーバー：オンライン",
+        "speed_status_server_offline": "○ サーバー：オフライン",
+        "speed_status_client_active": "● クライアント：アクティブ",
         "folders_exchange_header": "📁 Exchange 共有フォルダー（サーバー同期）",
         "folders_exchange_desc": "DropSyncによるサーバー間の高速直接レプリケーション。File Browserとは完全に独立。",
         "folders_output_header": "📤 Output 公開フォルダー（File Browser / 共有リンク）",

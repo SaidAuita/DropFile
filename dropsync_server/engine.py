@@ -6,6 +6,7 @@ Handles full-duplex chunk streaming, delta verification, conflict resolution, an
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import time
@@ -50,6 +51,7 @@ class DropSyncEngine:
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
+        self._traffic_task: Optional[asyncio.Task] = None
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
 
     async def start(self) -> None:
@@ -68,11 +70,56 @@ class DropSyncEngine:
         # Start transport (server listening / client reconnect)
         await self.transport.start()
 
+        # Start periodic traffic stats recorder
+        self._traffic_task = asyncio.create_task(self._record_traffic_stats_loop())
+
     async def stop(self) -> None:
         self._running = False
+        if self._traffic_task and not self._traffic_task.done():
+            self._traffic_task.cancel()
         self.watcher.stop()
         await self.transport.stop()
         print("[Engine] DropSync Engine stopped.")
+
+    async def _record_traffic_stats_loop(self) -> None:
+        """Periodically records speed metrics to .dropsync/traffic_stats.json for client GUI monitoring."""
+        try:
+            from traffic_monitor import get_traffic_monitor
+        except ImportError:
+            try:
+                from ..traffic_monitor import get_traffic_monitor
+            except Exception:
+                return
+
+        stats_file = self.config.sync_dir / ".dropsync" / "traffic_stats.json"
+        stats_file.parent.mkdir(parents=True, exist_ok=True)
+
+        while self._running:
+            try:
+                tm = get_traffic_monitor()
+                rx_bps, tx_bps = tm.get_current_speeds_bps()
+                tot_rx, tot_tx = tm.get_totals()
+                history = tm.get_history(seconds=60)
+                stats = {
+                    "timestamp": time.time(),
+                    "node_name": self.config.node_name,
+                    "role": self.config.role,
+                    "connected": self.transport.is_connected,
+                    "peer_count": len(self.transport.active_peers),
+                    "rx_bps": rx_bps,
+                    "tx_bps": tx_bps,
+                    "total_rx": tot_rx,
+                    "total_tx": tot_tx,
+                    "history": history,
+                }
+                tmp_f = stats_file.with_suffix(".tmp")
+                tmp_f.write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")
+                tmp_f.replace(stats_file)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                pass
+            await asyncio.sleep(1.0)
 
     # --- Local Scanning & Indexing ---
 

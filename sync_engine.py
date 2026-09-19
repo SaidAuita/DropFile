@@ -99,10 +99,29 @@ class SyncEngine:
 
     @property
     def active_remote_path(self) -> str:
-        """Returns the remote directory path for the currently active server."""
-        if self.active_server_index == 2:
-            return self.config.backup_remote_path
-        return self.config.remote_path
+        """Returns the remote directory path for FileBrowser (Output folder)."""
+        if getattr(self, "active_server_index", 1) == 2:
+            rem = getattr(self.config, "backup_remote_path", None) or getattr(self.config, "output_remote_path", "/Output")
+        else:
+            rem = getattr(self.config, "remote_path", None) or getattr(self.config, "output_remote_path", "/Output")
+        if not rem or rem in ("/Exchange", "/DropFile"):
+            rem = getattr(self.config, "output_remote_path", "/Output")
+        if not rem.startswith("/"):
+            rem = "/" + rem
+        return rem.rstrip("/") or "/Output"
+
+    @property
+    def sync_root(self) -> Path:
+        """Returns the local sync directory for FileBrowser (Output folder)."""
+        out_p = getattr(self.config, "output_path", None)
+        loc_p = getattr(self.config, "local_path", None)
+        if out_p and out_p.exists():
+            if loc_p and loc_p.exists() and out_p != loc_p:
+                if str(loc_p) in str(out_p):
+                    return out_p
+                return loc_p
+            return out_p
+        return loc_p or (Path.home() / "Desktop" / "DropFile" / "Output")
 
     def get_active_server_label(self) -> str:
         """Returns server indicator label (e.g. '[Сервер 1]' or '[Сервер 2]' or '[Сервер 1 ⇄ 2]') if backup server is enabled."""
@@ -706,10 +725,14 @@ class SyncEngine:
         if not self._running or self._paused:
             return
 
+        p = Path(local_abs_path)
         try:
-            rel = os.path.relpath(local_abs_path, str(self.config.local_path)).replace("\\", "/")
-        except ValueError:
-            return
+            rel = str(p.relative_to(self.sync_root)).replace("\\", "/")
+        except (ValueError, Exception):
+            try:
+                rel = str(p.relative_to(self.config.local_path)).replace("\\", "/")
+            except (ValueError, Exception):
+                return
 
         if self.is_ignored(local_abs_path):
             return
@@ -725,10 +748,14 @@ class SyncEngine:
         if not self._running or self._paused:
             return
 
+        p = Path(local_abs_path)
         try:
-            rel = os.path.relpath(local_abs_path, str(self.config.local_path)).replace("\\", "/")
-        except ValueError:
-            return
+            rel = str(p.relative_to(self.sync_root)).replace("\\", "/")
+        except (ValueError, Exception):
+            try:
+                rel = str(p.relative_to(self.config.local_path)).replace("\\", "/")
+            except (ValueError, Exception):
+                return
 
         clean_rel = rel.strip("/.")
         if not clean_rel or self.is_ignored(local_abs_path):
@@ -926,7 +953,7 @@ class SyncEngine:
         if not clean_rel:
             return
 
-        local_dir = self.config.local_path / clean_rel
+        local_dir = self.sync_root / clean_rel
 
         with self._sync_lock:
             if event_type == "deleted" or not local_dir.exists():
@@ -996,7 +1023,7 @@ class SyncEngine:
         if not self.config.server_url or not self.config.username:
             return
 
-        local_file = self.config.local_path / rel_path
+        local_file = self.sync_root / rel_path
         clean_rel = rel_path.replace("\\", "/").strip("/.")
 
         with self._sync_lock:
@@ -1172,12 +1199,15 @@ class SyncEngine:
 
             root_prefix = active_remote.strip("/")
 
+            def _extract_rel(p: str) -> str:
+                clean = p.strip("/")
+                for pref in (root_prefix, "Output", "DropFile", getattr(self.config, "remote_path", "").strip("/")):
+                    if pref and clean.lower().startswith(pref.lower()):
+                        return clean[len(pref):].strip("/.")
+                return clean.strip("/.")
+
             for item in remote_items:
-                clean_p = item.path.strip("/")
-                if clean_p.lower().startswith(root_prefix.lower()):
-                    rel = clean_p[len(root_prefix):].strip("/.")
-                else:
-                    rel = clean_p.strip("/.")
+                rel = _extract_rel(item.path)
                 if not rel or self.is_ignored(rel):
                     continue
 
@@ -1186,23 +1216,24 @@ class SyncEngine:
                 else:
                     remote_files[rel] = item
 
-            # 3. Scan local filesystem
+            # 3. Scan local filesystem (Output folder for FileBrowser)
+            sync_root = self.sync_root
             local_dirs: Set[str] = set()
             local_files: Dict[str, Path] = {}
-            if self.config.local_path.exists():
-                for root, dirs, files in os.walk(self.config.local_path):
+            if sync_root.exists():
+                for root, dirs, files in os.walk(sync_root):
                     # Filter ignored directories in-place so os.walk does not descend into them
                     dirs[:] = [d for d in dirs if not self.is_ignored(Path(root) / d)]
                     for d in dirs:
                         full_d = Path(root) / d
-                        rel_d = str(full_d.relative_to(self.config.local_path)).replace("\\", "/").strip("/.")
+                        rel_d = str(full_d.relative_to(sync_root)).replace("\\", "/").strip("/.")
                         if rel_d:
                             local_dirs.add(rel_d)
                     for file in files:
                         full_path = Path(root) / file
                         if self.is_ignored(full_path):
                             continue
-                        rel = str(full_path.relative_to(self.config.local_path)).replace("\\", "/").strip("/.")
+                        rel = str(full_path.relative_to(sync_root)).replace("\\", "/").strip("/.")
                         if rel:
                             local_files[rel] = full_path
 
@@ -1249,7 +1280,7 @@ class SyncEngine:
                             self.state_db.log_sync(d, "delete", "local->remote", "error", "Remote directory delete failed")
                     else:
                         # New directory from another computer -> create locally
-                        local_target_dir = self.config.local_path / d
+                        local_target_dir = sync_root / d
                         local_target_dir.mkdir(parents=True, exist_ok=True)
                         rec = FileRecord(rel_path=d, is_dir=True, last_sync_time=time.time())
                         self.state_db.upsert_record(rec)
@@ -1260,7 +1291,7 @@ class SyncEngine:
                 elif in_local and not in_remote:
                     if in_state:
                         # Directory was deleted remotely on the server!
-                        local_dir_path = self.config.local_path / d
+                        local_dir_path = sync_root / d
                         # Check if local folder contains any untracked (new) files
                         has_untracked_files = any(
                             (rel == d or rel.startswith(d + "/")) and rel not in state_records
@@ -1394,7 +1425,7 @@ class SyncEngine:
                             self.state_db.log_sync(rel, "delete", "local->remote", "success")
                     else:
                         # New remote file from another computer -> Download it
-                        target = self.config.local_path / rel
+                        target = sync_root / rel
                         self._download_remote_file(rel, r_item, target)
                         downloads_count += 1
 
@@ -1469,19 +1500,21 @@ class SyncEngine:
             remote_items = self.client.list_recursive(active_remote)
             root_prefix = active_remote.strip("/")
 
+            def _extract_rel(p: str) -> str:
+                clean = p.strip("/")
+                for pref in (root_prefix, "Output", "DropFile", getattr(self.config, "remote_path", "").strip("/")):
+                    if pref and clean.lower().startswith(pref.lower()):
+                        return clean[len(pref):].strip("/.")
+                return clean.strip("/.")
 
             # 1. First pass: ensure all directories exist locally and track them
             for item in remote_items:
-                clean_p = item.path.strip("/")
-                if clean_p.lower().startswith(root_prefix.lower()):
-                    rel = clean_p[len(root_prefix):].strip("/.")
-                else:
-                    rel = clean_p.strip("/.")
+                rel = _extract_rel(item.path)
                 if not rel or self.is_ignored(rel):
                     continue
 
                 if item.is_dir:
-                    (self.config.local_path / rel).mkdir(parents=True, exist_ok=True)
+                    (self.sync_root / rel).mkdir(parents=True, exist_ok=True)
                     rec = FileRecord(rel_path=rel, is_dir=True, last_sync_time=time.time())
                     self.state_db.upsert_record(rec)
 
@@ -1490,15 +1523,11 @@ class SyncEngine:
                 if item.is_dir:
                     continue
 
-                clean_p = item.path.strip("/")
-                if clean_p.lower().startswith(root_prefix.lower()):
-                    rel = clean_p[len(root_prefix):].lstrip("/")
-                else:
-                    rel = clean_p
+                rel = _extract_rel(item.path)
                 if not rel or self.is_ignored(rel):
                     continue
 
-                local_target = self.config.local_path / rel
+                local_target = self.sync_root / rel
                 need_download = False
 
                 if not local_target.exists():
@@ -1648,7 +1677,7 @@ class SyncEngine:
         self._notify_share_ready(self.last_uploaded_item, notify=True)
 
     def _init_last_uploaded_from_history(self) -> None:
-        """Restores last_uploaded_item from the most recent upload in sync_history."""
+        """Restores last_uploaded_item from Output folder files or sync_history."""
         self._history_loaded = True
         base_url = self.client.base_url or self.config.server_url
         if not base_url:
@@ -1658,29 +1687,62 @@ class SyncEngine:
         if not self.client.password and self.config.password:
             self.client.password = self.config.password
 
+        # 1. Prefer newest file from Output folder (primary sharing directory)
+        output_candidate = None
         try:
-            with self.state_db._get_connection() as conn:
-                cur = conn.execute(
-                    "SELECT rel_path FROM sync_history WHERE action = 'upload' AND direction = 'local->remote' AND status = 'success' ORDER BY id DESC LIMIT 1"
-                )
-                row = cur.fetchone()
-                if row:
-                    rel = row["rel_path"]
-                    clean_rel = rel.replace("\\", "/").lstrip("/")
-                    name = Path(clean_rel).name
+            out_root = self.sync_root
+            if out_root.exists():
+                output_files = [f for f in out_root.rglob("*") if f.is_file() and not self.is_ignored(f)]
+                if output_files:
+                    # Pick newest file considering either modification time or creation/paste time
+                    newest_file = max(
+                        output_files,
+                        key=lambda f: max(f.stat().st_mtime, getattr(f.stat(), "st_ctime", 0)),
+                    )
+                    clean_rel = str(newest_file.relative_to(out_root)).replace("\\", "/").strip("/.")
                     remote_dest = f"{self.active_remote_path}/{clean_rel}"
-                    share_url = self.client.get_or_create_share_link(remote_dest)
-                    self.last_uploaded_item = {
-                        "name": name,
+                    try:
+                        share_url = self.client.get_or_create_share_link(remote_dest)
+                    except Exception:
+                        share_url = f"{base_url}/files{remote_dest}"
+                    output_candidate = {
+                        "name": newest_file.name,
                         "rel_path": clean_rel,
                         "remote_path": remote_dest,
                         "share_url": share_url or f"{base_url}/files{remote_dest}",
                     }
-
-                    self._notify_share_ready(self.last_uploaded_item, notify=False)
-                    print(f"[SyncEngine] Restored last uploaded item: {name} -> {self.last_uploaded_item['share_url']}")
         except Exception as e:
-            print(f"[SyncEngine] Error restoring last uploaded item from history: {e}")
+            print(f"[SyncEngine] Error initializing from Output folder: {e}")
+
+        # 2. Check sync_history row as fallback if Output is empty
+        history_item = None
+        if not output_candidate:
+            try:
+                with self.state_db._get_connection() as conn:
+                    cur = conn.execute(
+                        "SELECT rel_path, timestamp FROM sync_history WHERE action = 'upload' AND direction = 'local->remote' AND status = 'success' ORDER BY id DESC LIMIT 1"
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        rel = row["rel_path"]
+                        clean_rel = rel.replace("\\", "/").lstrip("/")
+                        name = Path(clean_rel).name
+                        remote_dest = f"{self.active_remote_path}/{clean_rel}"
+                        share_url = self.client.get_or_create_share_link(remote_dest)
+                        history_item = {
+                            "name": name,
+                            "rel_path": clean_rel,
+                            "remote_path": remote_dest,
+                            "share_url": share_url or f"{base_url}/files{remote_dest}",
+                        }
+            except Exception as e:
+                print(f"[SyncEngine] Error querying sync_history: {e}")
+
+        self.last_uploaded_item = output_candidate or history_item
+
+        if self.last_uploaded_item:
+            self._notify_share_ready(self.last_uploaded_item, notify=False)
+            print(f"[SyncEngine] Initialized last uploaded item: {self.last_uploaded_item['name']} -> {self.last_uploaded_item['share_url']}")
 
     def cleanup_old_files(self, retention_days: Optional[int] = None) -> int:
         """Removes files older than retention_days both locally and remotely.
@@ -1703,13 +1765,13 @@ class SyncEngine:
             all_rel_paths = set(state_records.keys())
 
             # 2. Gather all existing local files
-            if self.config.local_path.exists():
-                for root, _, files in os.walk(self.config.local_path):
+            if self.sync_root.exists():
+                for root, _, files in os.walk(self.sync_root):
                     for file in files:
                         full_path = Path(root) / file
                         if self.is_ignored(full_path):
                             continue
-                        rel = str(full_path.relative_to(self.config.local_path)).replace("\\", "/")
+                        rel = str(full_path.relative_to(self.sync_root)).replace("\\", "/")
                         all_rel_paths.add(rel)
 
             for rel in all_rel_paths:
@@ -1720,7 +1782,7 @@ class SyncEngine:
                     continue
 
                 clean_rel = rel.replace("\\", "/").lstrip("/")
-                local_file = self.config.local_path / clean_rel
+                local_file = self.sync_root / clean_rel
                 rec = state_records.get(clean_rel)
 
                 # Determine file age timestamp safely
@@ -1774,9 +1836,9 @@ class SyncEngine:
                     self.last_uploaded_item = None
 
             # 3. Clean up any empty local subdirectories
-            if self.config.local_path.exists():
-                for root, dirs, files in os.walk(self.config.local_path, topdown=False):
-                    if Path(root) != self.config.local_path and not dirs and not files:
+            if self.sync_root.exists():
+                for root, dirs, files in os.walk(self.sync_root, topdown=False):
+                    if Path(root) != self.sync_root and not dirs and not files:
                         try:
                             os.rmdir(root)
                         except Exception:
@@ -1980,10 +2042,10 @@ class SyncEngine:
         freed_bytes = 0
 
         with self._sync_lock:
-            if not self.config.local_path.exists():
+            if not self.sync_root.exists():
                 return 0, 0
 
-            for root, _, files in os.walk(self.config.local_path):
+            for root, _, files in os.walk(self.sync_root):
                 for file in files:
                     clean_file = file
                     base_name = re.sub(pattern, "", clean_file, flags=re.IGNORECASE).strip()
@@ -2007,7 +2069,7 @@ class SyncEngine:
 
                         if h_dup and h_dup == h_base:
                             # 100% duplicate! Remove it locally
-                            rel_dup = str(full_dup.relative_to(self.config.local_path)).replace("\\", "/")
+                            rel_dup = str(full_dup.relative_to(self.sync_root)).replace("\\", "/")
                             self._suppress(rel_dup, duration=5.0)
                             full_dup.unlink()
                             freed_bytes += dup_size

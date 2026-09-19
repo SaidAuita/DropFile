@@ -39,7 +39,10 @@ class PeerConnection:
 
     async def send_binary(self, data: bytes) -> None:
         try:
-            from traffic_monitor import get_traffic_monitor
+            try:
+                from .traffic_monitor import get_traffic_monitor
+            except ImportError:
+                from traffic_monitor import get_traffic_monitor
             get_traffic_monitor().record_tx(len(data))
         except Exception:
             pass
@@ -65,6 +68,10 @@ class DropSyncTransport:
         self._server: Optional[Any] = None
         self._running = False
         self._client_task: Optional[asyncio.Task] = None
+
+    @property
+    def is_connected(self) -> bool:
+        return bool(self.active_peers)
 
     def _build_server_ssl_context(self) -> Optional[ssl.SSLContext]:
         if not self.config.ssl_enabled:
@@ -213,7 +220,10 @@ class DropSyncTransport:
         """Routes message based on text (JSON control) or bytes (binary file chunk)."""
         if isinstance(raw_msg, bytes):
             try:
-                from traffic_monitor import get_traffic_monitor
+                try:
+                    from .traffic_monitor import get_traffic_monitor
+                except ImportError:
+                    from traffic_monitor import get_traffic_monitor
                 get_traffic_monitor().record_rx(len(raw_msg))
             except Exception:
                 pass

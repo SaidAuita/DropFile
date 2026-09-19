@@ -193,11 +193,62 @@ class SpeedChartWidget(tk.Canvas):
         )
 
 
+def fetch_server_traffic_stats(lan_host: Optional[str] = None) -> Optional[dict]:
+    """Reads real-time DropSync server traffic stats via SMB or HTTP API."""
+    import json
+    import time
+    from pathlib import Path
+
+    hosts = []
+    if lan_host:
+        hosts.append(lan_host)
+    for default_h in ["192.168.1.4", "cladovka", "192.168.0.22"]:
+        if default_h not in hosts:
+            hosts.append(default_h)
+    try:
+        from config import Config
+        cfg = Config()
+        import urllib.parse
+        parsed = urllib.parse.urlparse(cfg.server_url)
+        h = parsed.hostname
+        if h and h not in hosts:
+            hosts.append(h)
+    except Exception:
+        pass
+
+    for host in hosts:
+        # 1. Try SMB share: \\<host>\Exchange\.dropsync\traffic_stats.json
+        try:
+            smb_path = Path(rf"\\{host}\Exchange\.dropsync\traffic_stats.json")
+            if smb_path.exists():
+                content = smb_path.read_text(encoding="utf-8")
+                if content:
+                    data = json.loads(content)
+                    if time.time() - float(data.get("timestamp", 0)) < 30.0:
+                        return data
+        except Exception:
+            pass
+
+        # 2. Try HTTP API: http://<host>:19877/traffic
+        try:
+            import urllib.request
+            url = f"http://{host}:19877/traffic"
+            req = urllib.request.Request(url, headers={"User-Agent": "DropFile-Monitor/1.0"})
+            with urllib.request.urlopen(req, timeout=1.2) as resp:
+                raw = resp.read().decode("utf-8")
+                if raw:
+                    return json.loads(raw)
+        except Exception:
+            pass
+
+    return None
+
+
 class SpeedMonitorCard(tk.Frame):
     """
-    Self-contained card component containing the SpeedChartWidget,
-    live legend badges, and session volume counters.
+    Self-contained widget containing header, dual-area speed chart, and 4-metric statistics grid.
     Can be embedded into any settings tab or window.
+    Supports toggling between DropSync Server traffic and local DropFile Client traffic.
     """
 
     def __init__(self, parent: Any, lang: str = "ru", auto_start: bool = True, **kwargs: Any):
@@ -206,31 +257,72 @@ class SpeedMonitorCard(tk.Frame):
         self.lang = lang
         self._is_alive = True
 
+        try:
+            from config import Config
+            self.mode = Config().speed_monitor_mode
+        except Exception:
+            self.mode = "server"
+
         self.monitor = get_traffic_monitor()
 
-        # --- Top Header Row: Interface badge & Live status ---
+        # --- Top Header Row: Interface badge, Mode Toggle & Live status ---
         top_row = tk.Frame(self, bg="#FFFFFF")
         top_row.pack(fill="x", padx=12, pady=(8, 4))
 
         self.lbl_iface = tk.Label(
             top_row,
-            text="Ethernet / DropSync LAN",
+            text="",
             bg="#FFFFFF",
             fg="#1E293B",
             font=("Segoe UI", 10, "bold"),
         )
         self.lbl_iface.pack(side="left")
 
+        # Right box containing toggle and status pill
+        right_box = tk.Frame(top_row, bg="#FFFFFF")
+        right_box.pack(side="right")
+
+        toggle_frame = tk.Frame(right_box, bg="#F1F5F9", padx=2, pady=2)
+        toggle_frame.pack(side="left", padx=(0, 10))
+
+        self.btn_mode_server = tk.Button(
+            toggle_frame,
+            text=t("speed_mode_server", default="⚡ Сервер"),
+            font=("Segoe UI", 8, "bold"),
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            padx=8,
+            pady=2,
+            command=lambda: self.set_mode("server"),
+        )
+        self.btn_mode_server.pack(side="left")
+
+        self.btn_mode_client = tk.Button(
+            toggle_frame,
+            text=t("speed_mode_client", default="💻 Клиент"),
+            font=("Segoe UI", 8, "bold"),
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            padx=8,
+            pady=2,
+            command=lambda: self.set_mode("client"),
+        )
+        self.btn_mode_client.pack(side="left")
+
         self.lbl_status_pill = tk.Label(
-            top_row,
-            text=f"● {t('status_connected') if hasattr(t, '__call__') else 'ПОДКЛЮЧЕНО'}",
+            right_box,
+            text="",
             bg="#DCFCE7",
             fg="#15803D",
             padx=8,
             pady=2,
             font=("Segoe UI", 8, "bold"),
         )
-        self.lbl_status_pill.pack(side="right")
+        self.lbl_status_pill.pack(side="left")
+
+        self._update_toggle_styles()
 
         # --- Canvas Speed Chart ---
         self.chart = SpeedChartWidget(self, width=540, height=140, history_seconds=60, bg="#FFFFFF")
@@ -298,12 +390,73 @@ class SpeedMonitorCard(tk.Frame):
         if auto_start:
             self._schedule_tick()
 
+    def set_mode(self, mode: str) -> None:
+        """Switches monitoring mode between 'server' and 'client'."""
+        self.mode = "client" if mode == "client" else "server"
+        try:
+            from config import Config
+            cfg = Config()
+            cfg.speed_monitor_mode = self.mode
+            cfg.save()
+        except Exception:
+            pass
+        self._update_toggle_styles()
+        self.update_view()
+
+    def _update_toggle_styles(self) -> None:
+        if self.mode == "server":
+            self.btn_mode_server.config(bg="#0284C7", fg="#FFFFFF")
+            self.btn_mode_client.config(bg="#F1F5F9", fg="#64748B")
+            self.lbl_iface.config(text=t("speed_iface_server", default="⚡ DropSync: Сервер ⇄ Сервер"))
+        else:
+            self.btn_mode_server.config(bg="#F1F5F9", fg="#64748B")
+            self.btn_mode_client.config(bg="#0284C7", fg="#FFFFFF")
+            self.lbl_iface.config(text=t("speed_iface_client", default="💻 DropFile: Клиент ПК"))
+
     def update_view(self) -> None:
-        """Pulls latest metrics from TrafficMonitor and redraws chart."""
+        """Pulls latest metrics from selected source (Server or Client) and redraws chart."""
         if not self._is_alive:
             return
 
-        history = self.monitor.get_history(seconds=60)
+        if self.mode == "server":
+            s_data = fetch_server_traffic_stats()
+            if s_data:
+                node = s_data.get("node_name", "cladovka-server")
+                connected = s_data.get("connected", True)
+                if connected:
+                    self.lbl_status_pill.config(
+                        text=t("speed_status_server_online", default="● СЕРВЕР: В СЕТИ"),
+                        bg="#DCFCE7",
+                        fg="#15803D",
+                    )
+                else:
+                    self.lbl_status_pill.config(
+                        text=t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН"),
+                        bg="#FEF3C7",
+                        fg="#B45309",
+                    )
+
+                history = s_data.get("history", [])
+                tot_rx = s_data.get("total_rx", 0)
+                tot_tx = s_data.get("total_tx", 0)
+            else:
+                self.lbl_status_pill.config(
+                    text=t("speed_status_server_offline", default="○ СЕРВЕР: ОФЛАЙН"),
+                    bg="#F1F5F9",
+                    fg="#94A3B8",
+                )
+                history = []
+                tot_rx, tot_tx = 0, 0
+        else:
+            # Client mode
+            self.lbl_status_pill.config(
+                text=t("speed_status_client_active", default="● КЛИЕНТ: АКТИВЕН"),
+                bg="#DCFCE7",
+                fg="#15803D",
+            )
+            history = self.monitor.get_history(seconds=60)
+            tot_rx, tot_tx = self.monitor.get_totals()
+
         rx_str, tx_str, peak_str, time_str = self.chart.render(history, lang=self.lang)
 
         # Update legend text
@@ -317,7 +470,6 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_cur_tx_val.config(text=tx_str)
 
         # Update session totals
-        tot_rx, tot_tx = self.monitor.get_totals()
         self.lbl_tot_rx_val.config(text=format_bytes(tot_rx, lang=self.lang))
         self.lbl_tot_tx_val.config(text=format_bytes(tot_tx, lang=self.lang))
 

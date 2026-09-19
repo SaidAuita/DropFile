@@ -34,6 +34,49 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+async def _start_http_status_server(engine: DropSyncEngine, port: int = 19877):
+    async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        try:
+            line = await asyncio.wait_for(reader.readline(), timeout=3.0)
+            req = line.decode("utf-8", errors="ignore")
+            while True:
+                h = await asyncio.wait_for(reader.readline(), timeout=1.0)
+                if not h or h in (b"\r\n", b"\n"):
+                    break
+
+            stats_file = engine.config.sync_dir / ".dropsync" / "traffic_stats.json"
+            if stats_file.exists():
+                body = stats_file.read_bytes()
+            else:
+                body = b"{}"
+
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json; charset=utf-8\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + body
+            )
+            writer.write(resp)
+            await writer.drain()
+        except Exception:
+            pass
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    try:
+        server = await asyncio.start_server(_handle_client, "0.0.0.0", port)
+        print(f"[DropSync] HTTP traffic monitor API listening on port {port}")
+        return server
+    except Exception as e:
+        print(f"[DropSync] Notice: HTTP stats server not started on port {port} ({e})")
+        return None
+
+
 async def run_daemon(config: Config) -> None:
     engine = DropSyncEngine(config)
 
@@ -51,11 +94,18 @@ async def run_daemon(config: Config) -> None:
             pass
 
     await engine.start()
+    http_srv = await _start_http_status_server(engine)
     print("[DropSync] Daemon running. Press Ctrl+C to stop.")
 
     try:
         await stop_event.wait()
     finally:
+        if http_srv:
+            try:
+                http_srv.close()
+                await http_srv.wait_closed()
+            except Exception:
+                pass
         await engine.stop()
 
 

@@ -46,6 +46,7 @@ GEMINI.md
 *.bak
 *.rar
 *.zip
+scratch/
 
 # OS generated files
 Thumbs.db

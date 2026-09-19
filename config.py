@@ -15,9 +15,9 @@ DEFAULT_CONFIG = {
     "username": "",
     "password": "",
     "remote_path": "/DropFile",
-    "local_path": str(Path.home() / "Desktop" / "DropFile"),
-    "exchange_path": str(Path.home() / "Desktop" / "DropFile" / "Exchange"),
-    "output_path": str(Path.home() / "Desktop" / "DropFile" / "Output"),
+    "local_path": "",
+    "exchange_path": "",
+    "output_path": "",
     "output_remote_path": "/Output",
     "auto_copy_share_link": True,
     "backup_server_enabled": False,
@@ -119,7 +119,39 @@ class Config:
             if not any(p in ("Exchange*", "exchange*", "Exchange", "exchange") for p in patterns):
                 patterns.append("Exchange*")
             data["ignore_patterns"] = patterns
+
+        migrated = False
+        is_default_app_dir = (self.config_dir == get_app_dir())
+        default_out = (Path.home() / "Desktop" / "DropFile" / "Output") if is_default_app_dir else (self.config_dir / "Output")
+        default_ex = (Path.home() / "Desktop" / "DropFile" / "Exchange") if is_default_app_dir else (self.config_dir / "Exchange")
+
+        out_p = data.get("output_path")
+        if not out_p:
+            data["output_path"] = str(default_out)
+            data["local_path"] = str(default_out)
+            migrated = True
+        elif data.get("local_path") != out_p:
+            data["local_path"] = out_p
+            migrated = True
+
+        if not data.get("exchange_path"):
+            data["exchange_path"] = str(default_ex)
+            migrated = True
+
+        if not data.get("output_remote_path") or data.get("output_remote_path") in ("/DropFile", "/Exchange"):
+            data["output_remote_path"] = "/Output"
+            migrated = True
+
+        if "speed_monitor_mode" not in data:
+            data["speed_monitor_mode"] = "server"
+            migrated = True
+
         self._data = data
+        if migrated and self.config_file.exists():
+            try:
+                self.save()
+            except Exception:
+                pass
         try:
             from i18n import set_current_language
             set_current_language(self.language)
@@ -369,6 +401,14 @@ class Config:
     @auto_copy_share_link.setter
     def auto_copy_share_link(self, value: bool) -> None:
         self._data["auto_copy_share_link"] = bool(value)
+
+    @property
+    def speed_monitor_mode(self) -> str:
+        return str(self._data.get("speed_monitor_mode", "server")).lower()
+
+    @speed_monitor_mode.setter
+    def speed_monitor_mode(self, value: str) -> None:
+        self._data["speed_monitor_mode"] = "client" if str(value).lower() == "client" else "server"
 
     def ensure_directories(self) -> None:
         """Ensures that Exchange and Output local directories exist."""
