@@ -8,7 +8,7 @@ import os
 import socket
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 DEFAULT_CONFIG = {
     "server_url": "",
@@ -96,6 +96,103 @@ def get_app_dir() -> Path:
     return target
 
 
+def find_server_exchange_path() -> Optional[Path]:
+    """
+    On a Linux server or host running DropSync / Samba, detects the actual
+    local physical folder for exchange/speed_server.
+    Checks:
+    1. ~/.dropsync/dropsync.json -> sync_dir
+    2. ~/speed_server
+    3. /etc/samba/smb.conf -> [Exchange] or [speed_server] path
+    4. /srv/speed_server or /var/speed_server
+    """
+    try:
+        # 1. ~/.dropsync/dropsync.json
+        ds_cfg = Path.home() / ".dropsync" / "dropsync.json"
+        if ds_cfg.exists():
+            try:
+                with open(ds_cfg, "r", encoding="utf-8") as f:
+                    ds_data = json.load(f)
+                    sdir = ds_data.get("sync_dir")
+                    if sdir:
+                        p = Path(sdir).expanduser().resolve()
+                        if p.is_dir():
+                            return p
+            except Exception:
+                pass
+
+        # 2. ~/speed_server
+        p_home = (Path.home() / "speed_server").resolve()
+        if p_home.is_dir():
+            return p_home
+
+        # 3. Samba smb.conf on Linux
+        smb_conf = Path("/etc/samba/smb.conf")
+        if smb_conf.exists():
+            try:
+                with open(smb_conf, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                in_target_section = False
+                for line in lines:
+                    line_s = line.strip()
+                    if line_s.startswith("[") and line_s.endswith("]"):
+                        sec = line_s[1:-1].strip().lower()
+                        in_target_section = sec in ("exchange", "speed_server", "dropfile")
+                    elif in_target_section and "=" in line_s and not line_s.startswith(("#", ";")):
+                        k, v = line_s.split("=", 1)
+                        if k.strip().lower() == "path":
+                            cand = Path(v.strip()).expanduser().resolve()
+                            if cand.is_dir():
+                                return cand
+            except Exception:
+                pass
+
+        # 4. Standard Linux paths
+        for cand_str in ("/srv/speed_server", "/var/speed_server"):
+            p_cand = Path(cand_str)
+            if p_cand.is_dir():
+                return p_cand.resolve()
+    except Exception:
+        pass
+    return None
+
+
+def ensure_server_exchange_symlink(server_ex: Path) -> bool:
+    """
+    On Linux, if ~/Desktop/DropFile/Exchange is empty or missing,
+    creates a symlink to the real server exchange directory.
+    This ensures file managers and Desktop navigation show real server files immediately.
+    """
+    if not sys.platform.startswith("linux") or not server_ex.is_dir():
+        return False
+    try:
+        desktop_ex = Path.home() / "Desktop" / "DropFile" / "Exchange"
+        if desktop_ex.is_symlink():
+            try:
+                if desktop_ex.resolve() == server_ex.resolve():
+                    return True
+                desktop_ex.unlink()
+            except Exception:
+                return False
+        elif desktop_ex.exists():
+            if desktop_ex.is_dir():
+                try:
+                    # Do not overwrite if user has actual files in it
+                    if any(desktop_ex.iterdir()):
+                        return False
+                    desktop_ex.rmdir()
+                except Exception:
+                    return False
+            else:
+                return False
+
+        desktop_ex.parent.mkdir(parents=True, exist_ok=True)
+        desktop_ex.symlink_to(server_ex, target_is_directory=True)
+        return True
+    except Exception:
+        return False
+
+
 class Config:
     def __init__(self, config_dir: Path = None):
         self.config_dir = config_dir or get_app_dir()
@@ -136,9 +233,23 @@ class Config:
             data["local_path"] = out_p
             migrated = True
 
-        if not data.get("exchange_path"):
-            data["exchange_path"] = str(default_ex)
+        server_ex = find_server_exchange_path()
+        current_ex = data.get("exchange_path")
+        if not current_ex:
+            data["exchange_path"] = str(server_ex or default_ex)
             migrated = True
+        elif server_ex and current_ex != str(server_ex):
+            try:
+                p_cur = Path(current_ex).expanduser().resolve()
+                p_def = default_ex.expanduser().resolve()
+                if p_cur == p_def or not p_cur.exists() or (p_cur.is_dir() and not any(p_cur.iterdir())):
+                    data["exchange_path"] = str(server_ex)
+                    migrated = True
+            except Exception:
+                pass
+
+        if server_ex and sys.platform.startswith("linux"):
+            ensure_server_exchange_symlink(server_ex)
 
         if not data.get("output_remote_path") or data.get("output_remote_path") in ("/DropFile", "/Exchange"):
             data["output_remote_path"] = "/Output"
@@ -357,11 +468,19 @@ class Config:
     @property
     def exchange_path(self) -> Path:
         raw = self._data.get("exchange_path")
-        if not raw:
-            p = self.local_path / "Exchange"
+        if not raw or str(raw).strip() == "":
+            server_ex = find_server_exchange_path()
+            p = server_ex if server_ex else (self.local_path / "Exchange")
             self._data["exchange_path"] = str(p)
             return p
-        return Path(str(raw).strip())
+        p = Path(str(raw).strip()).expanduser()
+        default_desktop = (Path.home() / "Desktop" / "DropFile" / "Exchange")
+        if p == default_desktop or not p.exists() or (p.is_dir() and not any(p.iterdir())):
+            server_ex = find_server_exchange_path()
+            if server_ex and server_ex != p:
+                self._data["exchange_path"] = str(server_ex)
+                return server_ex
+        return p
 
     @exchange_path.setter
     def exchange_path(self, value: str | Path) -> None:
@@ -415,6 +534,9 @@ class Config:
     def ensure_directories(self) -> None:
         """Ensures that Exchange and Output local directories exist."""
         try:
+            server_ex = find_server_exchange_path()
+            if server_ex and sys.platform.startswith("linux"):
+                ensure_server_exchange_symlink(server_ex)
             self.exchange_path.mkdir(parents=True, exist_ok=True)
             self.output_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:

@@ -161,6 +161,27 @@ class TestSpeedMonitorTransferUI(unittest.TestCase):
         self.assertEqual(card.batch_container.winfo_manager(), "pack")
 
 
+class TestServerExchangeDetection(unittest.TestCase):
+    def test_find_server_exchange_path_mocked(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from config import find_server_exchange_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_server = Path(tmpdir) / "speed_server"
+            mock_server.mkdir()
+
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
+                detected = find_server_exchange_path()
+                self.assertIsNotNone(detected)
+                self.assertEqual(detected.resolve(), mock_server.resolve())
+
+    def test_settings_dialog_has_autodetect_exchange_button(self):
+        from gui_settings import SettingsDialog
+        self.assertTrue(hasattr(SettingsDialog, "_autodetect_exchange_folder"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

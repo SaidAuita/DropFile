@@ -622,6 +622,8 @@ class SettingsDialog:
             self.btn_open_exchange.config(text=t("folders_open_exchange_btn"))
         if hasattr(self, "btn_shortcut_exchange"):
             self.btn_shortcut_exchange.config(text=t("folders_shortcut_exchange_btn"))
+        if hasattr(self, "btn_autodetect_exchange"):
+            self.btn_autodetect_exchange.config(text=t("folders_autodetect_exchange_btn"))
         if hasattr(self, "lbl_lan_title"):
             self.lbl_lan_title.config(text=f"🌐 {t('lan_path_exchange_label')} (SMB / Windows Share)")
         if hasattr(self, "btn_lan_detect"):
@@ -1502,6 +1504,13 @@ class SettingsDialog:
         )
         self.btn_shortcut_exchange.pack(side="left")
 
+        self.btn_autodetect_exchange = ttk.Button(
+            ex_btns_row,
+            text=t("folders_autodetect_exchange_btn"),
+            command=self._autodetect_exchange_folder,
+        )
+        self.btn_autodetect_exchange.pack(side="left", padx=(8, 0))
+
         # LAN / SMB Access subsection
         ttk.Separator(self.card_exchange, orient="horizontal").pack(fill="x", pady=(6, 8))
 
@@ -1945,6 +1954,28 @@ class SettingsDialog:
             )
         else:
             messagebox.showerror(t("shortcut_fail_title"), t("shortcut_fail_msg"), parent=self.window)
+
+    def _autodetect_exchange_folder(self) -> None:
+        from config import find_server_exchange_path, ensure_server_exchange_symlink
+        found = find_server_exchange_path()
+        if found:
+            self.entry_exchange.delete(0, tk.END)
+            self.entry_exchange.insert(0, str(found))
+            self.config.exchange_path = found
+            self.config.save()
+            if sys.platform.startswith("linux"):
+                ensure_server_exchange_symlink(found)
+            messagebox.showinfo(
+                t("folders_autodetect_title"),
+                t("folders_autodetect_success", path=str(found)),
+                parent=self.window,
+            )
+        else:
+            messagebox.showwarning(
+                t("folders_autodetect_title"),
+                t("folders_autodetect_not_found"),
+                parent=self.window,
+            )
 
     def _browse_output_folder(self) -> None:
         init_dir = self.entry_output.get() if hasattr(self, "entry_output") else ""
