@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.29.1-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.29.2-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -144,6 +144,46 @@ DropFile easily scales from a single user to an entire department or company. De
     - **Simultaneous Edit Protection**: If two team members genuinely modify a file with different content, DropFile protects both versions: `filename (Conflict ComputerName YYYY-MM-DD_HH-MM-SS).ext` (or choose *Newer file wins* in Settings).
     - **One-Click Deduplication**: The built-in *🔍 Deduplicate Copies* tool scans the sync folder and removes redundant conflict files whose SHA-256 matches the original file.
     - **Disk Space Management**: Set **Auto-cleanup files older than 30 days** in Settings across team PCs so temporary exchange files do not consume infinite disk space.
+
+---
+
+## 🛠️ Network Client Setup & Deployment Guide
+
+How do you set up DropFile on an employee or team member's computer in your network?
+
+### 1. Fast Local Network Exchange (DropSync SMB / Drive `Z:`)
+*Best for everyday team workflows when users just need to drop files into the shared exchange.*
+- **Is auto-detection enough?** **Yes!** For standard setups on the same local network:
+  1. Open DropFile Settings ➔ **Folders** tab.
+  2. Click **"🔍 Auto-detect"** in the LAN / SMB section. DropFile scans your network and resolves the local server (e.g., `\\192.168.1.100\Exchange`).
+  3. Click **"📁 Mount Drive"** to automatically assign drive letter `Z:` in Windows Explorer, or click **"🔗 Create Shortcut"** for a Desktop icon.
+  4. Done! Any files dropped into drive `Z:` are instantly synchronized across servers and workstations in real time via WebSocket DropSync.
+- **What if auto-detection fails?** (e.g. firewalls blocking port scans, isolated subnets, or separate VLANs):
+  - **Manual IP entry**: In the **"LAN / SMB Server"** box, simply type the server's IP address or hostname (e.g., `192.168.1.100` or `nas.local`). The UNC path updates to `\\192.168.1.100\Exchange`. Then click **"Mount Drive"**.
+  - **Manual Browse**: Click the **"Browse..."** button next to the Exchange path and pick any existing network share or local directory.
+  - **Direct config**: Set `"exchange_path": "Z:\\"` (or `"\\\\192.168.1.100\\Exchange"`) directly in `config.json`.
+
+---
+
+### 2. Client Public Links & Remote Sync (FileBrowser `Output` Folder)
+*Required when an employee needs to send download links to external clients or sync while working remotely.*
+1. Open Settings ➔ **Connection** tab:
+   - **Server URL**: Enter the FileBrowser address (e.g., `http://192.168.1.100:8080` or your public domain `https://cloud.example.com`).
+   - **Username & Password**: Enter the employee's FileBrowser user credentials.
+   - Click **"⚡ Test Connection"** to verify.
+2. In the **Folders** tab, verify the **`Output`** directory.
+3. When files are saved into `Output`, right-click the DropFile tray icon to copy an instant public share link (`/share/{hash}`) ready to send.
+
+---
+
+### 3. ⚡ Zero-Setup Portable Deployment for Admins (5-Second Rollout)
+You don't need to manually configure every PC:
+1. Grab the generic template from [`examples/portable_setup/config.json`](examples/portable_setup/config.json).
+2. Edit it with your company's server URL, credentials, and drive paths.
+3. Place `config.json` in the same directory as `DropFile.exe` (on a network share or USB drive).
+4. When the user launches `DropFile.exe`, it runs in portable mode, reads `config.json` automatically, and connects with zero prompts!
+
+Alternatively, configure one PC, click **"Export Settings"** in the Settings tab, and let other users click **"Import Settings"**.
 
 ---
 
@@ -527,6 +567,46 @@ DropFile отлично подходит как для личного испол
    - **Защита от реальных конфликтов**: если двое сотрудников внесли разные изменения в один и тот же файл, DropFile сохранит обе версии: `Имя (Conflict ИмяПК ГГГГ-ММ-ДД_ЧЧ-ММ-СС).расширение` (или можно выбрать *«Побеждает более новый»* в Настройках).
    - **Встроенная дедупликация в 1 клик**: кнопка *«🔍 Очистить дубликаты»* в Настройках сканирует папку и удаляет избыточные файлы конфликтов, чей хэш на 100% совпадает с оригиналом.
    - **Автоматическая гигиена диска**: включите на компьютерах опцию **«Автоочистка файлов старше 30 дней»**, чтобы завершенные рабочие обмены не забивали диск до бесконечности.
+
+---
+
+### 🛠️ Руководство по настройке клиента у пользователя сети
+
+Как настроить DropFile на компьютере сотрудника в локальной сети и что делать при возникновении вопросов?
+
+#### 1. Быстрый обмен в локальной сети (DropSync SMB / Сетевой диск `Z:`)
+*Основной сценарий, если сотрудникам нужно просто скидывать и забирать файлы из общего обмена.*
+- **Достаточно ли автоопределения?** **Да, в 95% случаев!**
+  1. В окне Настроек перейдите на вкладку **«Папки» (Folders)**.
+  2. В блоке SMB нажмите кнопку **«🔍 Автоопределение»**. Программа опросит сеть и подставит рабочий адрес сервера (например, `\\192.168.1.100\Exchange`).
+  3. Нажмите кнопку **«📁 Подключить диск»** (назначает букву `Z:` в Проводнике) или **«🔗 Создать ярлык»** (на Рабочем столе).
+  4. Всё готово! Пользователь просто копирует файлы на диск `Z:`, а серверный демон DropSync автоматически транслирует их по WebSocket на второй сервер или коллегам.
+- **Что делать, если автоопределение не сработало?** (например, фаервол блокирует сканирование, компьютеры находятся в разных подсетях или VLAN):
+  - **Ручной ввод IP/имени**: В поле **«Сервер LAN / SMB»** сотрите текст и вручную впишите IP-адрес или сетевое имя сервера (например, `192.168.1.100` или `nas.local`). Строка UNC-пути автоматически обновится на `\\192.168.1.100\Exchange`. После этого нажмите «Подключить диск».
+  - **Кнопка «Обзор»**: Нажмите кнопку «Обзор» у поля Exchange и укажите уже подключенную сетевую папку или диск вручную через стандартный диалог Windows.
+  - **Через `config.json`**: В файле конфигурации укажите `"exchange_path": "Z:\\"` или `"\\\\192.168.1.100\\Exchange"`.
+
+---
+
+#### 2. Ссылки для клиентов и работа вне офиса (Папка `Output` через FileBrowser)
+*Требуется, если сотруднику нужно генерировать публичные ссылки для заказчиков или синхронизировать файлы при работе из дома.*
+1. В Настройках перейдите на вкладку **«Подключение»**:
+   - **Адрес сервера (URL)**: введите адрес FileBrowser (например, `http://192.168.1.100:8080` в офисе или внешний домен/туннель `https://cloud.example.com` для удаленки).
+   - **Логин и пароль**: учетная запись пользователя в FileBrowser.
+   - Нажмите **«⚡ Проверить подключение»**.
+2. Во вкладке **«Папки»** проверьте путь к папке **`Output`**.
+3. Теперь при сохранении файла в `Output` в меню трея в 1 клик доступно действие: *«🔗 Скопировать ссылку на файл»* (`/share/{hash}`).
+
+---
+
+#### 3. ⚡ Развертывание за 5 секунд (Portable-пакет для администратора)
+Чтобы не настраивать каждый компьютер вручную:
+1. Возьмите готовый шаблон [`examples/portable_setup/config.json`](examples/portable_setup/config.json).
+2. Заполните в нем IP-адреса, учетные записи и пути вашей организации.
+3. Положите файл `config.json` в одну папку рядом с `DropFile.exe` (в сетевой папке инсталлятора или на флешке).
+4. Пользователю достаточно запустить `DropFile.exe` — программа автоматически подхватит все настройки в portable-режиме без лишних вопросов!
+
+Также доступен вариант: настроить один ПК, нажать **«Экспорт настроек»** во вкладке «Настройки», и на других ПК нажать **«Импорт настроек»**.
 
 ---
 

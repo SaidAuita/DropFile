@@ -4,6 +4,11 @@
     "password": "your_password",
     "remote_path": "/DropFile",
     "local_path": "",
+    "exchange_path": "Z:\\",
+    "output_path": "",
+    "output_remote_path": "/Output",
+    "auto_copy_share_link": true,
+    "speed_monitor_mode": "server",
     "poll_interval": 30,
     "start_with_windows": false,
     "notify_on_sync": true,
@@ -19,7 +24,11 @@
         "desktop.ini",
         "Thumbs.db",
         ".dropfile*",
+        "*dropfile_control*",
+        "*dropfile_leader*",
         ".DS_Store",
-        "*.swp"
+        "*.swp",
+        "speed_server*",
+        "Exchange*"
     ]
 }
