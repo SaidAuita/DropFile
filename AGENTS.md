@@ -6,15 +6,18 @@
 ---
 
 ## 1. Строгое правило версионирования (VERSION BUMP POLICY)
-- **ОБЯЗАТЕЛЬНОЕ поднятие версии**: При любых изменениях в кодовой базе (клиент DropFile, GUI, модули dropsync_server, скрипты сборки) **СТРОГО ОБЯЗАТЕЛЬНО** поднимать номер версии:
-  - `version.py`: `__version__` (SemVer: `major.minor.patch`) и `__build__` (номер инкремента).
-- **Git релизы и теги**:
-  - После завершения задачи обязательно создавать аннотированный тег: `git tag -a v<VERSION> -m "Release v<VERSION>: <описание>"`
-  - Отправлять ветку и тег в GitHub: `git push origin main && git push origin v<VERSION>`.
-  - Тег автоматически запускает сборку GitHub Actions для Windows (`DropFile.exe`) и macOS (`DropFile-macOS.zip`).
+- **ОБЯЗАТЕЛЬНОЕ поднятие версии при ЛЮБЫХ изменениях**:
+  - При любых изменениях и публикации правок в кодовой базе (клиент DropFile, GUI, модули dropsync_server, скрипты сборки, исправления багов) **СТРОГО ОБЯЗАТЕЛЬНО** поднимать номер версии перед коммитом и пушем:
+    - `version.py`: `__version__` (SemVer: `major.minor.patch`, например `1.29.7`) и `__build__` (номер инкремента, например `"104"`).
+- **Git релизы и теги (Никаких коммитов без релиза)**:
+  - Любая публикация в `main` должна завершаться созданием аннотированного тега:
+    `git tag -a v<VERSION> -m "Release v<VERSION>: <описание>"`
+  - Отправлять ветку и тег в GitHub обязательно:
+    `git push origin main && git push origin v<VERSION>`
+  - Тег `v*` автоматически запускает GitHub Actions CI/CD, собирающий `DropFile.exe` для Windows и `DropFile-macOS.zip` для macOS, и публикует официальный GitHub Release с прикрепленными бинарниками.
 - **Локальная компиляция**:
   - При каждом релизе запускать `python build_exe.py`.
-  - Скомпилированный бинарник копировать в `D:\DropFile_exe\DropFile.exe`.
+  - Скомпилированный бинарник автоматически копируется в `dist/DropFile.exe` и `D:\DropFile_exe\DropFile.exe`.
 
 ## 2. Архитектура папок: Exchange vs Output
 - **Exchange**:
