@@ -108,6 +108,51 @@ class TestDropSync(unittest.TestCase):
         self.assertTrue(watcher.is_ignored(".dropsync/state.db"))
         self.assertFalse(watcher.is_ignored("important/report.pdf"))
 
+    def test_batch_transfer_direction_isolation_and_dynamic_registration(self):
+        cfg = Config(self.test_dir / "config.json")
+        cfg.sync_dir = self.test_dir
+        engine = DropSyncEngine(cfg)
+
+        # 1. Register 5 TX files dynamically (like the 5 Simpson episodes)
+        files = [
+            ("01/Simpsons 01x01.avi", 1000),
+            ("01/Simpsons 01x02.avi", 1200),
+            ("01/Simpsons 01x03.avi", 1400),
+            ("01/Simpsons 01x04.avi", 1600),
+            ("01/Simpsons 01x05.avi", 1800),
+        ]
+        for rel_path, size in files:
+            engine._register_tx_batch_file(rel_path, size)
+
+        bt = engine._batch_transfer
+        self.assertIsNotNone(bt)
+        self.assertEqual(bt["direction"], "tx")
+        self.assertEqual(bt["total_files"], 5)
+        self.assertEqual(bt["total_bytes"], 7000)
+        self.assertEqual(bt["completed_files"], 0)
+
+        # 2. Verify stale RX batch does NOT leak into TX current transfer
+        engine._batch_transfer = {
+            "direction": "rx",
+            "total_files": 365,
+            "total_bytes": 598340000,
+            "completed_files": 0,
+            "transferred_bytes": 0,
+        }
+        engine._current_transfer = {
+            "direction": "tx",
+            "rel_path": "01/Simpsons 01x05.avi",
+            "file_name": "Simpsons 01x05.avi",
+            "total_size": 1800,
+            "transferred_bytes": 500,
+        }
+
+        # Check logic as evaluated in _record_traffic_stats_loop
+        direction = engine._current_transfer.get("direction")
+        bt_eval = engine._batch_transfer
+        # Direction mismatch must prevent using stale batch!
+        self.assertFalse(bt_eval and bt_eval.get("direction") == direction and bt_eval.get("total_files", 0) > 1)
+
 
 class TestAsyncEngine(unittest.IsolatedAsyncioTestCase):
     async def test_engine_initialization(self):

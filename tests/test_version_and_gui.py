@@ -160,6 +160,18 @@ class TestSpeedMonitorTransferUI(unittest.TestCase):
         self.assertEqual(card.lbl_batch_pct.cget("text"), "31 %")
         self.assertEqual(card.batch_container.winfo_manager(), "pack")
 
+    def test_speed_monitor_header_subrow_layout(self):
+        from gui_speed_chart import SpeedMonitorCard
+        card = SpeedMonitorCard(self.root, auto_start=False)
+        # Verify status pill and disk pill exist and share the same subrow right-aligned parent frame
+        self.assertEqual(card.lbl_status_pill.master, card.lbl_disk_pill.master)
+        self.assertNotEqual(card.lbl_status_pill.master, card.lbl_iface.master)
+        # Simulate disk telemetry update
+        card.lbl_disk_pill.pack(side="left", padx=(6, 0))
+        # Verify both are packed
+        self.assertEqual(card.lbl_status_pill.winfo_manager(), "pack")
+        self.assertEqual(card.lbl_disk_pill.winfo_manager(), "pack")
+
 
 class TestServerExchangeDetection(unittest.TestCase):
     def test_find_server_exchange_path_mocked(self):

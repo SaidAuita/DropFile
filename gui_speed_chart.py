@@ -374,9 +374,9 @@ class SpeedMonitorCard(tk.Frame):
 
         self.monitor = get_traffic_monitor()
 
-        # --- Top Header Row: Interface badge, Mode Toggle, Disk Space & Live status ---
+        # --- Top Header Row 1: Interface badge on left, Mode Toggle on right ---
         top_row = tk.Frame(self, bg="#FFFFFF")
-        top_row.pack(fill="x", padx=12, pady=(8, 4))
+        top_row.pack(fill="x", padx=12, pady=(8, 2))
 
         self.lbl_iface = tk.Label(
             top_row,
@@ -387,12 +387,9 @@ class SpeedMonitorCard(tk.Frame):
         )
         self.lbl_iface.pack(side="left")
 
-        # Right box containing toggle, disk space pill and status pill
-        right_box = tk.Frame(top_row, bg="#FFFFFF")
-        right_box.pack(side="right")
-
-        toggle_frame = tk.Frame(right_box, bg="#F1F5F9", padx=2, pady=2)
-        toggle_frame.pack(side="left", padx=(0, 8))
+        # Mode Toggle Frame (Сервер / Клиент)
+        toggle_frame = tk.Frame(top_row, bg="#F1F5F9", padx=2, pady=2)
+        toggle_frame.pack(side="right")
 
         self.btn_mode_server = tk.Button(
             toggle_frame,
@@ -420,19 +417,15 @@ class SpeedMonitorCard(tk.Frame):
         )
         self.btn_mode_client.pack(side="left")
 
-        self.lbl_disk_pill = tk.Label(
-            right_box,
-            text="",
-            bg="#F1F5F9",
-            fg="#475569",
-            padx=8,
-            pady=2,
-            font=("Segoe UI", 8, "bold"),
-        )
-        # Packed dynamically when disk telemetry is present
+        # --- Sub Header Row 2: Status pill (server name/status) first, then Disk Space pill ---
+        info_row = tk.Frame(self, bg="#FFFFFF")
+        info_row.pack(fill="x", padx=12, pady=(0, 4))
+
+        info_right = tk.Frame(info_row, bg="#FFFFFF")
+        info_right.pack(side="right")
 
         self.lbl_status_pill = tk.Label(
-            right_box,
+            info_right,
             text="",
             bg="#DCFCE7",
             fg="#15803D",
@@ -440,7 +433,18 @@ class SpeedMonitorCard(tk.Frame):
             pady=2,
             font=("Segoe UI", 8, "bold"),
         )
-        self.lbl_status_pill.pack(side="left", padx=(6, 0))
+        self.lbl_status_pill.pack(side="left")
+
+        self.lbl_disk_pill = tk.Label(
+            info_right,
+            text="",
+            bg="#F1F5F9",
+            fg="#475569",
+            padx=8,
+            pady=2,
+            font=("Segoe UI", 8, "bold"),
+        )
+        # Packed dynamically next to lbl_status_pill (side="left", padx=(6, 0))
 
         self._update_toggle_styles()
 
@@ -727,7 +731,7 @@ class SpeedMonitorCard(tk.Frame):
             self.lbl_disk_pill.config(text=disk_txt)
             try:
                 if not self.lbl_disk_pill.winfo_ismapped():
-                    self.lbl_disk_pill.pack(side="left", padx=(0, 6), before=self.lbl_status_pill)
+                    self.lbl_disk_pill.pack(side="left", padx=(6, 0))
             except Exception:
                 pass
         else:

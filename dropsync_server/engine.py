@@ -55,6 +55,7 @@ class DropSyncEngine:
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
         self._current_transfer: Optional[Dict[str, Any]] = None
         self._batch_transfer: Optional[Dict[str, Any]] = None
+        self._batch_last_activity: float = 0.0
         self._stream_semaphore = asyncio.Semaphore(2)
         self._active_stream_tasks: Set[asyncio.Task] = set()
 
@@ -110,8 +111,14 @@ class DropSyncEngine:
                 tot_rx, tot_tx = tm.get_totals()
                 history = tm.get_history(seconds=60)
 
+                now = time.time()
+                bt = self._batch_transfer
+                # Clear stale batch if no active transfer and idle for > 15s
+                if bt and not ct and (now - getattr(self, "_batch_last_activity", 0) > 15.0):
+                    self._batch_transfer = None
+                    bt = None
+
                 transfer_info = None
-                ct = self._current_transfer
                 if ct and ct.get("total_size", 0) > 0:
                     direction = ct.get("direction", "tx")
                     file_name = ct.get("file_name", "")
@@ -120,8 +127,12 @@ class DropSyncEngine:
                     file_transferred = min(ct.get("transferred_bytes", 0), file_bytes)
                     file_pct = round((file_transferred / file_bytes) * 100.0, 1) if file_bytes > 0 else 0.0
 
-                    bt = self._batch_transfer
-                    if bt and bt.get("total_files", 0) > 1:
+                    if (
+                        bt
+                        and bt.get("direction") == direction
+                        and bt.get("total_files", 0) > 1
+                        and (now - getattr(self, "_batch_last_activity", 0) < 30.0)
+                    ):
                         batch_total = bt.get("total_files", 1)
                         batch_current = min(bt.get("completed_files", 0) + 1, batch_total)
                         batch_bytes_total = bt.get("total_bytes", file_bytes)
@@ -327,6 +338,8 @@ class DropSyncEngine:
             if local and local["hash"] == remote_hash and local_full.is_file():
                 return
 
+            self._register_rx_batch_file(rel_path, remote_size)
+
             # Request file from peer starting at offset 0
             await peer.send_text(
                 pack_json_message(
@@ -357,7 +370,59 @@ class DropSyncEngine:
             await self._apply_remote_delete(rel_path)
             return
 
+    def _register_tx_batch_file(self, rel_path: str, size: int) -> None:
+        now = time.time()
+        if (
+            not self._batch_transfer
+            or self._batch_transfer.get("direction") != "tx"
+            or (now - getattr(self, "_batch_last_activity", 0) > 15.0)
+        ):
+            self._batch_transfer = {
+                "direction": "tx",
+                "total_files": 1,
+                "completed_files": 0,
+                "total_bytes": size,
+                "transferred_bytes": 0,
+                "registered_files": {rel_path},
+            }
+        else:
+            reg = self._batch_transfer.setdefault("registered_files", set())
+            if rel_path not in reg:
+                reg.add(rel_path)
+                self._batch_transfer["total_files"] = len(reg)
+                self._batch_transfer["total_bytes"] = self._batch_transfer.get("total_bytes", 0) + size
+        self._batch_last_activity = now
+
+    def _register_rx_batch_file(self, rel_path: str, size: int) -> None:
+        now = time.time()
+        if (
+            not self._batch_transfer
+            or self._batch_transfer.get("direction") != "rx"
+            or (now - getattr(self, "_batch_last_activity", 0) > 15.0)
+        ):
+            self._batch_transfer = {
+                "direction": "rx",
+                "total_files": 1,
+                "completed_files": 0,
+                "total_bytes": size,
+                "transferred_bytes": 0,
+                "registered_files": {rel_path},
+            }
+        else:
+            reg = self._batch_transfer.setdefault("registered_files", set())
+            if rel_path not in reg:
+                reg.add(rel_path)
+                self._batch_transfer["total_files"] = len(reg)
+                self._batch_transfer["total_bytes"] = self._batch_transfer.get("total_bytes", 0) + size
+        self._batch_last_activity = now
+
     async def _safe_stream_file(self, peer: PeerConnection, rel_path: str, offset: int = 0) -> None:
+        full_path = self.config.sync_dir / rel_path
+        if full_path.is_file():
+            try:
+                self._register_tx_batch_file(rel_path, full_path.stat().st_size)
+            except Exception:
+                pass
         async with self._stream_semaphore:
             await self._stream_file_to_peer(peer, rel_path, offset)
 
@@ -388,7 +453,9 @@ class DropSyncEngine:
                 "completed_files": 0,
                 "total_bytes": total_req_bytes,
                 "transferred_bytes": 0,
+                "registered_files": {p for p, _ in to_request},
             }
+            self._batch_last_activity = time.time()
             for rel_path, _ in to_request:
                 try:
                     await peer.send_text(
@@ -418,7 +485,9 @@ class DropSyncEngine:
                 "completed_files": 0,
                 "total_bytes": total_offer_bytes,
                 "transferred_bytes": 0,
+                "registered_files": {p for p, _ in to_offer},
             }
+            self._batch_last_activity = time.time()
 
         for rel_path, loc_info in to_offer:
             try:
@@ -489,6 +558,7 @@ class DropSyncEngine:
                     frame = pack_binary_chunk(header, chunk)
                     await peer.send_binary(frame)
                     curr_offset += len(chunk)
+                    self._batch_last_activity = time.time()
 
                     if self._current_transfer and self._current_transfer.get("rel_path") == rel_path:
                         self._current_transfer["transferred_bytes"] = curr_offset
@@ -504,6 +574,7 @@ class DropSyncEngine:
         except Exception as e:
             print(f"[Engine] Error streaming {rel_path}: {e}")
         finally:
+            self._batch_last_activity = time.time()
             if self._batch_transfer and self._batch_transfer.get("direction") == "tx":
                 self._batch_transfer["completed_files"] = self._batch_transfer.get("completed_files", 0) + 1
                 if self._batch_transfer["completed_files"] >= self._batch_transfer.get("total_files", 1):
@@ -536,6 +607,7 @@ class DropSyncEngine:
             ),
         }
 
+        self._batch_last_activity = time.time()
         if self._batch_transfer and self._batch_transfer.get("direction") == "rx":
             self._batch_transfer["transferred_bytes"] = self._batch_transfer.get("transferred_bytes", 0) + chunk_len
 
