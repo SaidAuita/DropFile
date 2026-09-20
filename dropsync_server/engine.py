@@ -56,7 +56,8 @@ class DropSyncEngine:
         self._current_transfer: Optional[Dict[str, Any]] = None
         self._batch_transfer: Optional[Dict[str, Any]] = None
         self._batch_last_activity: float = 0.0
-        self._stream_semaphore = asyncio.Semaphore(2)
+        self._latest_stats: Optional[Dict[str, Any]] = None
+        self._stream_semaphore = asyncio.Semaphore(1)
         self._active_stream_tasks: Set[asyncio.Task] = set()
 
     async def start(self) -> None:
@@ -112,6 +113,7 @@ class DropSyncEngine:
                 history = tm.get_history(seconds=60)
 
                 now = time.time()
+                ct = self._current_transfer
                 bt = self._batch_transfer
                 # Clear stale batch if no active transfer and idle for > 15s
                 if bt and not ct and (now - getattr(self, "_batch_last_activity", 0) > 15.0):
@@ -192,14 +194,33 @@ class DropSyncEngine:
                     "disk_free": disk_free,
                     "disk_total": disk_total,
                 }
+                self._latest_stats = stats
                 tmp_f = stats_file.with_suffix(".tmp")
                 tmp_f.write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")
                 tmp_f.replace(stats_file)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                pass
+                print(f"[Engine] Error in traffic stats loop: {e}")
             await asyncio.sleep(1.0)
+
+    def get_latest_traffic_stats(self) -> Dict[str, Any]:
+        """Returns in-memory cached stats instantly without disk I/O."""
+        if self._latest_stats is not None:
+            return self._latest_stats
+        return {
+            "timestamp": time.time(),
+            "node_name": self.config.node_name,
+            "role": self.config.role,
+            "connected": self.transport.is_connected,
+            "peer_count": len(self.transport.active_peers),
+            "rx_bps": 0.0,
+            "tx_bps": 0.0,
+            "total_rx": 0,
+            "total_tx": 0,
+            "history": [],
+            "current_transfer": None,
+        }
 
     # --- Local Scanning & Indexing ---
 

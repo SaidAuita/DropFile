@@ -153,6 +153,15 @@ class TestDropSync(unittest.TestCase):
         # Direction mismatch must prevent using stale batch!
         self.assertFalse(bt_eval and bt_eval.get("direction") == direction and bt_eval.get("total_files", 0) > 1)
 
+    def test_get_latest_traffic_stats(self):
+        cfg = Config(self.test_dir / "config.json")
+        cfg.sync_dir = self.test_dir
+        engine = DropSyncEngine(cfg)
+        stats = engine.get_latest_traffic_stats()
+        self.assertIn("node_name", stats)
+        self.assertIn("timestamp", stats)
+        self.assertEqual(stats["node_name"], cfg.node_name)
+
 
 class TestAsyncEngine(unittest.IsolatedAsyncioTestCase):
     async def test_engine_initialization(self):

@@ -44,11 +44,9 @@ async def _start_http_status_server(engine: DropSyncEngine, port: int = 19877):
                 if not h or h in (b"\r\n", b"\n"):
                     break
 
-            stats_file = engine.config.sync_dir / ".dropsync" / "traffic_stats.json"
-            if stats_file.exists():
-                body = stats_file.read_bytes()
-            else:
-                body = b"{}"
+            stats = engine.get_latest_traffic_stats()
+            import json
+            body = json.dumps(stats, ensure_ascii=False).encode("utf-8")
 
             resp = (
                 b"HTTP/1.1 200 OK\r\n"
