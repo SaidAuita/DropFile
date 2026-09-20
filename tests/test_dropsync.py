@@ -263,6 +263,55 @@ class TestAsyncEngine(unittest.IsolatedAsyncioTestCase):
             except Exception:
                 pass
 
+    def test_empty_deleted_directory_cleanup_and_new_folder_protection(self):
+        test_dir = Path(tempfile.mkdtemp(prefix="dropsync_test_dir_"))
+        try:
+            cfg = Config(test_dir / "config.json")
+            cfg.sync_dir = test_dir
+            engine = DropSyncEngine(cfg)
+
+            # 1. Simulate directory 'ARW' whose tracked files were deleted
+            arw_dir = test_dir / "ARW"
+            arw_dir.mkdir(parents=True, exist_ok=True)
+            photo_file = arw_dir / "photo.arw"
+            photo_file.write_text("photo-data", encoding="utf-8")
+            h = StateDatabase.calculate_file_hash(photo_file)
+            engine.state_db.upsert_file("ARW/photo.arw", photo_file.stat().st_size, photo_file.stat().st_mtime, h, deleted=0)
+
+            # Now simulate local deletion of the file
+            photo_file.unlink()
+            engine.state_db.mark_deleted("ARW/photo.arw")
+
+            # 2. Simulate user creating a brand NEW empty directory that has 0 records in DB
+            new_dir = test_dir / "NewUserFolder"
+            new_dir.mkdir(parents=True, exist_ok=True)
+
+            # 3. Run safe directory cleanup
+            engine._cleanup_empty_deleted_dirs()
+
+            # ARW should be removed because all its tracked files were deleted
+            self.assertFalse(arw_dir.exists())
+            # NewUserFolder MUST be preserved because user just created it!
+            self.assertTrue(new_dir.exists())
+
+            # 4. Test remote directory deletion handling
+            del_dir = test_dir / "ToDelete"
+            del_dir.mkdir(parents=True, exist_ok=True)
+            f = del_dir / "file.txt"
+            f.write_text("data", encoding="utf-8")
+            h2 = StateDatabase.calculate_file_hash(f)
+            engine.state_db.upsert_file("ToDelete/file.txt", f.stat().st_size, f.stat().st_mtime, h2, deleted=0)
+
+            asyncio.run(engine._apply_remote_dir_delete("ToDelete"))
+            self.assertFalse(del_dir.exists())
+            self.assertFalse(engine.state_db.has_active_files_in_dir("ToDelete"))
+            self.assertTrue(engine.state_db.has_deleted_files_in_dir("ToDelete"))
+        finally:
+            try:
+                shutil.rmtree(test_dir)
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     unittest.main()

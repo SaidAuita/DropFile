@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Set
 
 from .config import Config
 from .protocol import (
+    MSG_DIR_DELETE,
     MSG_FILE_ACK,
     MSG_FILE_CHUNK,
     MSG_FILE_DELETE,
@@ -40,6 +41,7 @@ class DropSyncEngine:
             debounce_delay=self.config.debounce_delay,
             on_change_callback=self._handle_local_change,
             on_delete_callback=self._handle_local_delete,
+            on_dir_delete_callback=self._handle_local_dir_delete,
         )
         self.transport = DropSyncTransport(
             config=self.config,
@@ -255,6 +257,7 @@ class DropSyncEngine:
                     print(f"[Engine] Error indexing {f}: {e}")
 
         print(f"[Engine] Indexing complete. Checked/updated {count} file(s).")
+        self._cleanup_empty_deleted_dirs()
 
     # --- Local Watcher Callbacks (Run on watcher thread -> scheduled on asyncio event loop) ---
 
@@ -265,6 +268,25 @@ class DropSyncEngine:
     def _handle_local_delete(self, rel_path: str) -> None:
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self._process_local_delete_async(rel_path), self._loop)
+
+    def _handle_local_dir_delete(self, rel_dir: str) -> None:
+        if self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._process_local_dir_delete_async(rel_dir), self._loop)
+
+    async def _process_local_dir_delete_async(self, rel_dir: str) -> None:
+        affected = self.state_db.mark_dir_deleted(rel_dir)
+        print(f"[Engine] Local directory deleted: {rel_dir} ({len(affected)} file(s) marked deleted)")
+        for p in affected:
+            self.state_db.log_sync("LOCAL_DELETE", p, "SUCCESS", details=f"Directory {rel_dir} deleted")
+
+        msg = pack_json_message(
+            MSG_DIR_DELETE,
+            {
+                "rel_dir": rel_dir,
+                "timestamp": time.time(),
+            },
+        )
+        await self.transport.broadcast_text(msg)
 
     async def _process_local_change_async(self, rel_path: str) -> None:
         full_path = self.config.sync_dir / rel_path
@@ -389,6 +411,11 @@ class DropSyncEngine:
         if msg_type == MSG_FILE_DELETE:
             rel_path = msg.get("rel_path", "")
             await self._apply_remote_delete(rel_path)
+            return
+
+        if msg_type == MSG_DIR_DELETE:
+            rel_dir = msg.get("rel_dir", "")
+            await self._apply_remote_dir_delete(rel_dir)
             return
 
     def _register_tx_batch_file(self, rel_path: str, size: int) -> None:
@@ -525,6 +552,9 @@ class DropSyncEngine:
                 )
             except Exception as e:
                 print(f"[Engine] Error offering {rel_path} to {peer.peer_id}: {e}")
+
+        # Clean up any empty directories whose files were all deleted
+        self._cleanup_empty_deleted_dirs()
 
     async def _stream_file_to_peer(self, peer: PeerConnection, rel_path: str, offset: int = 0) -> None:
         """Streams file chunks in binary frames over the WebSocket."""
@@ -712,3 +742,90 @@ class DropSyncEngine:
 
         self.state_db.mark_deleted(rel_path)
         self.state_db.log_sync("REMOTE_DELETE", rel_path, "SUCCESS")
+
+        # Clean up empty parent directories if all tracked files inside were deleted
+        parent = full_path.parent
+        sync_dir = self.config.sync_dir
+        while parent != sync_dir and parent.is_relative_to(sync_dir):
+            try:
+                rel_p = str(parent.relative_to(sync_dir)).replace("\\", "/")
+                # Crucial check: only delete if ALL tracked files inside this directory are deleted!
+                if not self.state_db.has_active_files_in_dir(rel_p) and self.state_db.has_deleted_files_in_dir(rel_p):
+                    remaining = [x for x in parent.iterdir() if not x.name.startswith(".dropsync")]
+                    if not remaining:
+                        parent.rmdir()
+                        print(f"[Engine] Removed empty directory after file deletion: {rel_p}")
+                    else:
+                        break
+                else:
+                    break
+            except Exception:
+                break
+            parent = parent.parent
+
+    async def _apply_remote_dir_delete(self, rel_dir: str) -> None:
+        """Handles remote directory deletion: removes or trashes files inside, then removes directory."""
+        norm_dir = rel_dir.replace("\\", "/").strip("/")
+        full_dir = self.config.sync_dir / norm_dir
+        self.watcher.suppress_path(norm_dir, duration=4.0)
+
+        affected = self.state_db.mark_dir_deleted(norm_dir)
+        print(f"[Engine] Remote directory deletion received: {norm_dir} ({len(affected)} file(s) marked deleted)")
+        for p in affected:
+            self.state_db.log_sync("REMOTE_DELETE", p, "SUCCESS", details=f"Directory {norm_dir} deleted")
+
+        if full_dir.is_dir():
+            try:
+                for root, dirs, files in os.walk(str(full_dir), topdown=False):
+                    for f in files:
+                        p = Path(root) / f
+                        if self.config.trash_enabled:
+                            trash_dir = self.config.trash_dir
+                            trash_dir.mkdir(parents=True, exist_ok=True)
+                            trash_dest = trash_dir / f"{int(time.time())}_{f}"
+                            shutil.move(str(p), str(trash_dest))
+                        else:
+                            p.unlink()
+
+                    d_path = Path(root)
+                    try:
+                        remaining = [x for x in d_path.iterdir() if not x.name.startswith(".dropsync")]
+                        if not remaining:
+                            d_path.rmdir()
+                    except Exception:
+                        pass
+
+                if full_dir.exists():
+                    remaining = [x for x in full_dir.iterdir() if not x.name.startswith(".dropsync")]
+                    if not remaining:
+                        full_dir.rmdir()
+                        print(f"[Engine] Removed deleted directory: {norm_dir}")
+            except Exception as e:
+                print(f"[Engine] Error cleaning deleted directory {norm_dir}: {e}")
+
+    def _cleanup_empty_deleted_dirs(self) -> None:
+        """
+        Safely removes empty directories that previously contained files that were deleted.
+        CRITICAL: Never deletes newly created empty user folders (folders with 0 records in DB).
+        """
+        sync_dir = self.config.sync_dir
+        for root, dirs, files in os.walk(str(sync_dir), topdown=False):
+            dirs[:] = [d for d in dirs if not d.startswith(".dropsync") and d != ".git"]
+            for d in list(dirs):
+                d_full = Path(root) / d
+                try:
+                    rel_dir = str(d_full.relative_to(sync_dir)).replace("\\", "/")
+                    if self.watcher.is_ignored(rel_dir):
+                        continue
+
+                    # Safe condition:
+                    # 1. No active files in DB under this dir
+                    # 2. MUST have at least one deleted tombstone in DB under this dir (proves it was tracked and deleted!)
+                    # 3. Physically empty on disk (no untracked files)
+                    if not self.state_db.has_active_files_in_dir(rel_dir) and self.state_db.has_deleted_files_in_dir(rel_dir):
+                        remaining = [x for x in d_full.iterdir() if not x.name.startswith(".dropsync")]
+                        if not remaining:
+                            d_full.rmdir()
+                            print(f"[Engine] Cleaned up empty deleted directory: {rel_dir}")
+                except Exception:
+                    pass

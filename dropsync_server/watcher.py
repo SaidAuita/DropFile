@@ -23,12 +23,14 @@ class FileSystemWatcher:
         debounce_delay: float = 1.0,
         on_change_callback: Optional[Callable[[str], None]] = None,
         on_delete_callback: Optional[Callable[[str], None]] = None,
+        on_dir_delete_callback: Optional[Callable[[str], None]] = None,
     ):
         self.root_dir = root_dir.resolve()
         self.ignore_patterns = ignore_patterns or []
         self.debounce_delay = debounce_delay
         self.on_change = on_change_callback
         self.on_delete = on_delete_callback
+        self.on_dir_delete = on_dir_delete_callback
 
         # Set of paths currently being modified locally by DropSync sync engine
         # to prevent recursive echo feedback loops.
@@ -101,6 +103,26 @@ class FileSystemWatcher:
             except Exception as e:
                 print(f"[Watcher] Error in on_delete callback for {norm_path}: {e}")
 
+    def _notify_dir_delete(self, rel_path: str) -> None:
+        norm_path = rel_path.replace("\\", "/").strip("/")
+        with self._suppress_lock:
+            if norm_path in self._suppressed_paths:
+                return
+
+        if self.is_ignored(norm_path):
+            return
+
+        with self._debounce_lock:
+            for k in list(self._pending_changes.keys()):
+                if k == norm_path or k.startswith(norm_path + "/"):
+                    self._pending_changes.pop(k, None)
+
+        if self.on_dir_delete:
+            try:
+                self.on_dir_delete(norm_path)
+            except Exception as e:
+                print(f"[Watcher] Error in on_dir_delete callback for {norm_path}: {e}")
+
     def _debounce_worker(self) -> None:
         """Background thread checking debounced writes."""
         while self._running:
@@ -158,12 +180,14 @@ class FileSystemWatcher:
                             pass
 
                 def on_deleted(self, event):
-                    if not event.is_directory:
-                        try:
-                            rel = Path(event.src_path).resolve().relative_to(watcher_self.root_dir)
+                    try:
+                        rel = Path(event.src_path).resolve().relative_to(watcher_self.root_dir)
+                        if event.is_directory:
+                            watcher_self._notify_dir_delete(str(rel))
+                        else:
                             watcher_self._notify_delete(str(rel))
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
 
                 def on_moved(self, event):
                     if not event.is_directory:
