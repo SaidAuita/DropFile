@@ -55,6 +55,8 @@ class DropSyncEngine:
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
         self._current_transfer: Optional[Dict[str, Any]] = None
         self._batch_transfer: Optional[Dict[str, Any]] = None
+        self._stream_semaphore = asyncio.Semaphore(2)
+        self._active_stream_tasks: Set[asyncio.Task] = set()
 
     async def start(self) -> None:
         """Starts the sync engine, state reconciliation, watcher and transport."""
@@ -79,6 +81,8 @@ class DropSyncEngine:
         self._running = False
         if self._traffic_task and not self._traffic_task.done():
             self._traffic_task.cancel()
+        for task in list(self._active_stream_tasks):
+            task.cancel()
         self.watcher.stop()
         await self.transport.stop()
         print("[Engine] DropSync Engine stopped.")
@@ -212,7 +216,7 @@ class DropSyncEngine:
                     if existing and existing["mtime"] == stat.st_mtime and existing["size"] == stat.st_size:
                         continue
 
-                    file_hash = StateDatabase.calculate_file_hash(full_path)
+                    file_hash = await asyncio.to_thread(StateDatabase.calculate_file_hash, full_path)
                     self.state_db.upsert_file(rel, stat.st_size, stat.st_mtime, file_hash, deleted=0)
                     count += 1
                 except Exception as e:
@@ -237,8 +241,13 @@ class DropSyncEngine:
 
         try:
             stat = full_path.stat()
-            file_hash = StateDatabase.calculate_file_hash(full_path)
             existing = self.state_db.get_file(rel_path)
+
+            # Optimization: if mtime and size match existing non-deleted record, skip re-hashing
+            if existing and existing["mtime"] == stat.st_mtime and existing["size"] == stat.st_size and not existing["deleted"]:
+                file_hash = existing["hash"]
+            else:
+                file_hash = await asyncio.to_thread(StateDatabase.calculate_file_hash, full_path)
 
             if existing and existing["hash"] == file_hash and not existing["deleted"]:
                 return  # No actual content change
@@ -257,9 +266,7 @@ class DropSyncEngine:
                     "hash": file_hash,
                 },
             )
-            for peer in self.transport.active_peers.values():
-                if peer.authenticated:
-                    await peer.send_text(msg)
+            await self.transport.broadcast_text(msg)
 
         except Exception as e:
             print(f"[Engine] Error processing local change {rel_path}: {e}")
@@ -276,9 +283,7 @@ class DropSyncEngine:
                 "timestamp": time.time(),
             },
         )
-        for peer in self.transport.active_peers.values():
-            if peer.authenticated:
-                await peer.send_text(msg)
+        await self.transport.broadcast_text(msg)
 
     # --- Transport & Peer Handshake Callbacks ---
 
@@ -337,7 +342,9 @@ class DropSyncEngine:
         if msg_type == MSG_FILE_REQUEST:
             rel_path = msg.get("rel_path", "")
             offset = msg.get("offset", 0)
-            await self._stream_file_to_peer(peer, rel_path, offset)
+            task = asyncio.create_task(self._safe_stream_file(peer, rel_path, offset))
+            self._active_stream_tasks.add(task)
+            task.add_done_callback(self._active_stream_tasks.discard)
             return
 
         if msg_type == MSG_FILE_ACK:
@@ -349,6 +356,10 @@ class DropSyncEngine:
             rel_path = msg.get("rel_path", "")
             await self._apply_remote_delete(rel_path)
             return
+
+    async def _safe_stream_file(self, peer: PeerConnection, rel_path: str, offset: int = 0) -> None:
+        async with self._stream_semaphore:
+            await self._stream_file_to_peer(peer, rel_path, offset)
 
     async def _compare_manifests(self, peer: PeerConnection, remote_manifest: Dict[str, Any]) -> None:
         """Compares remote manifest with local manifest to synchronize both ways."""
@@ -379,12 +390,15 @@ class DropSyncEngine:
                 "transferred_bytes": 0,
             }
             for rel_path, _ in to_request:
-                await peer.send_text(
-                    pack_json_message(
-                        MSG_FILE_REQUEST,
-                        {"rel_path": rel_path, "offset": 0},
+                try:
+                    await peer.send_text(
+                        pack_json_message(
+                            MSG_FILE_REQUEST,
+                            {"rel_path": rel_path, "offset": 0},
+                        )
                     )
-                )
+                except Exception as e:
+                    print(f"[Engine] Error requesting {rel_path} from {peer.peer_id}: {e}")
 
         # 2. Offer local files that remote is missing or has older
         to_offer = []
@@ -407,17 +421,20 @@ class DropSyncEngine:
             }
 
         for rel_path, loc_info in to_offer:
-            await peer.send_text(
-                pack_json_message(
-                    MSG_FILE_OFFER,
-                    {
-                        "rel_path": rel_path,
-                        "size": loc_info["size"],
-                        "mtime": loc_info["mtime"],
-                        "hash": loc_info["hash"],
-                    },
+            try:
+                await peer.send_text(
+                    pack_json_message(
+                        MSG_FILE_OFFER,
+                        {
+                            "rel_path": rel_path,
+                            "size": loc_info["size"],
+                            "mtime": loc_info["mtime"],
+                            "hash": loc_info["hash"],
+                        },
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"[Engine] Error offering {rel_path} to {peer.peer_id}: {e}")
 
     async def _stream_file_to_peer(self, peer: PeerConnection, rel_path: str, offset: int = 0) -> None:
         """Streams file chunks in binary frames over the WebSocket."""
@@ -429,7 +446,11 @@ class DropSyncEngine:
         try:
             stat = full_path.stat()
             total_size = stat.st_size
-            file_hash = StateDatabase.calculate_file_hash(full_path)
+            existing = self.state_db.get_file(rel_path)
+            if existing and existing["mtime"] == stat.st_mtime and existing["size"] == total_size and not existing["deleted"]:
+                file_hash = existing["hash"]
+            else:
+                file_hash = await asyncio.to_thread(StateDatabase.calculate_file_hash, full_path)
             chunk_size = self.config.chunk_size
             file_name = Path(rel_path).name
 
@@ -537,7 +558,7 @@ class DropSyncEngine:
 
             if is_last:
                 # Verify complete file hash
-                received_hash = StateDatabase.calculate_file_hash(temp_file)
+                received_hash = await asyncio.to_thread(StateDatabase.calculate_file_hash, temp_file)
                 if received_hash == file_hash:
                     # Move temp file atomically into place
                     temp_file.replace(target_path)

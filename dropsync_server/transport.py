@@ -34,6 +34,13 @@ class PeerConnection:
         self.authenticated = False
         self.remote_node_name = "unknown"
 
+    @property
+    def is_open(self) -> bool:
+        try:
+            return not self.ws.closed
+        except Exception:
+            return False
+
     async def send_text(self, text: str) -> None:
         await self.ws.send(text)
 
@@ -105,8 +112,8 @@ class DropSyncTransport:
                 port=self.config.listen_port,
                 ssl=ssl_ctx,
                 max_size=self.config.chunk_size + 65536,  # Allow chunk + header
-                ping_interval=20,
-                ping_timeout=20,
+                ping_interval=30,
+                ping_timeout=60,
             )
             print(f"[Transport] Server listening on {proto}://{self.config.listen_host}:{self.config.listen_port}")
 
@@ -129,6 +136,21 @@ class DropSyncTransport:
             except Exception:
                 pass
         self.active_peers.clear()
+
+    async def broadcast_text(self, text: str) -> None:
+        """Safely sends text message to all authenticated peers, cleaning up any failed connections."""
+        for peer_id, peer in list(self.active_peers.items()):
+            if peer.authenticated:
+                try:
+                    await peer.send_text(text)
+                except Exception as e:
+                    print(f"[Transport] Failed to send text to {peer_id}: {e}")
+                    self.active_peers.pop(peer_id, None)
+                    if peer.authenticated:
+                        try:
+                            self.on_peer_disconnected(peer)
+                        except Exception:
+                            pass
 
     async def _handle_inbound_connection(self, ws: Any) -> None:
         """Handles incoming connection on the Server listener."""
@@ -170,6 +192,17 @@ class DropSyncTransport:
         while self._running:
             url = self.config.remote_url
             ssl_ctx = self._build_client_ssl_context()
+
+            # Clean up any remaining stale outbound peers before reconnecting
+            for pid, p in list(self.active_peers.items()):
+                if not p.is_inbound:
+                    self.active_peers.pop(pid, None)
+                    if p.authenticated:
+                        try:
+                            self.on_peer_disconnected(p)
+                        except Exception:
+                            pass
+
             print(f"[Transport] Connecting to remote peer at {url}...")
 
             try:
@@ -177,8 +210,8 @@ class DropSyncTransport:
                     url,
                     ssl=ssl_ctx,
                     max_size=self.config.chunk_size + 65536,
-                    ping_interval=20,
-                    ping_timeout=20,
+                    ping_interval=30,
+                    ping_timeout=60,
                 ) as ws:
                     peer_id = f"outbound-{id(ws)}"
                     peer = PeerConnection(ws, peer_id, is_inbound=False)
@@ -186,28 +219,37 @@ class DropSyncTransport:
                     retry_delay = 2  # Reset backoff on successful connect
                     print(f"[Transport] Connected to remote peer at {url}")
 
-                    # Send HELLO and AUTH
-                    await peer.send_text(
-                        pack_json_message(
-                            MSG_HELLO,
-                            {
-                                "node_name": self.config.node_name,
-                                "version": PROTOCOL_VERSION,
-                            },
+                    try:
+                        # Send HELLO and AUTH
+                        await peer.send_text(
+                            pack_json_message(
+                                MSG_HELLO,
+                                {
+                                    "node_name": self.config.node_name,
+                                    "version": PROTOCOL_VERSION,
+                                },
+                            )
                         )
-                    )
-                    await peer.send_text(
-                        pack_json_message(
-                            MSG_AUTH,
-                            {
-                                "auth_token": self.config.auth_token,
-                                "node_name": self.config.node_name,
-                            },
+                        await peer.send_text(
+                            pack_json_message(
+                                MSG_AUTH,
+                                {
+                                    "auth_token": self.config.auth_token,
+                                    "node_name": self.config.node_name,
+                                },
+                            )
                         )
-                    )
 
-                    async for raw_msg in ws:
-                        await self._process_incoming_message(peer, raw_msg)
+                        async for raw_msg in ws:
+                            await self._process_incoming_message(peer, raw_msg)
+                    finally:
+                        self.active_peers.pop(peer_id, None)
+                        if peer.authenticated:
+                            try:
+                                self.on_peer_disconnected(peer)
+                            except Exception as e:
+                                print(f"[Transport] Error in on_peer_disconnected: {e}")
+                        print(f"[Transport] Outbound connection closed: {peer_id}")
 
             except asyncio.CancelledError:
                 break
