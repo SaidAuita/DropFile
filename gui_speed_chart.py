@@ -579,37 +579,33 @@ class SpeedMonitorCard(tk.Frame):
         # Separator line before stats
         tk.Frame(self, height=1, bg="#F1F5F9").pack(fill="x", padx=12, pady=(0, 6))
 
-        # --- Stats Grid (Keenetic 4-block stats) ---
-        stats_grid = tk.Frame(self, bg="#FFFFFF")
-        stats_grid.pack(fill="x", padx=12, pady=(0, 8))
+        # --- Bottom Stats: Session totals (Принято & Отправлено in 1 line) ---
+        stats_row = tk.Frame(self, bg="#FFFFFF")
+        stats_row.pack(fill="x", padx=12, pady=(0, 8))
 
-        # Col 1: Прием & Передача
-        col1 = tk.Frame(stats_grid, bg="#FFFFFF")
-        col1.pack(side="left", fill="x", expand=True)
+        # Backward compatibility attributes
+        self.lbl_cur_rx_title = None
+        self.lbl_cur_rx_val = None
+        self.lbl_cur_tx_title = None
+        self.lbl_cur_tx_val = None
 
-        self.lbl_cur_rx_title = tk.Label(col1, text=self._t("speed_rx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
-        self.lbl_cur_rx_title.pack(anchor="w")
-        self.lbl_cur_rx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
-        self.lbl_cur_rx_val.pack(anchor="w", pady=(0, 4))
+        # Принято (Rx)
+        box_rx = tk.Frame(stats_row, bg="#FFFFFF")
+        box_rx.pack(side="left", padx=(0, 28))
 
-        self.lbl_cur_tx_title = tk.Label(col1, text=self._t("speed_tx_label"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
-        self.lbl_cur_tx_title.pack(anchor="w")
-        self.lbl_cur_tx_val = tk.Label(col1, text=zero_speed, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
-        self.lbl_cur_tx_val.pack(anchor="w")
+        self.lbl_tot_rx_title = tk.Label(box_rx, text=self._t("speed_total_rx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_tot_rx_title.pack(side="left", padx=(0, 5))
+        self.lbl_tot_rx_val = tk.Label(box_rx, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_tot_rx_val.pack(side="left")
 
-        # Col 2: Принято & Отправлено
-        col2 = tk.Frame(stats_grid, bg="#FFFFFF")
-        col2.pack(side="right", fill="x", expand=True)
+        # Отправлено (Tx)
+        box_tx = tk.Frame(stats_row, bg="#FFFFFF")
+        box_tx.pack(side="left")
 
-        self.lbl_tot_rx_title = tk.Label(col2, text=self._t("speed_total_rx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
-        self.lbl_tot_rx_title.pack(anchor="w")
-        self.lbl_tot_rx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
-        self.lbl_tot_rx_val.pack(anchor="w", pady=(0, 4))
-
-        self.lbl_tot_tx_title = tk.Label(col2, text=self._t("speed_total_tx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
-        self.lbl_tot_tx_title.pack(anchor="w")
-        self.lbl_tot_tx_val = tk.Label(col2, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
-        self.lbl_tot_tx_val.pack(anchor="w")
+        self.lbl_tot_tx_title = tk.Label(box_tx, text=self._t("speed_total_tx"), bg="#FFFFFF", fg="#64748B", font=("Segoe UI", 8))
+        self.lbl_tot_tx_title.pack(side="left", padx=(0, 5))
+        self.lbl_tot_tx_val = tk.Label(box_tx, text=zero_bytes, bg="#FFFFFF", fg="#0F172A", font=("Segoe UI", 9, "bold"))
+        self.lbl_tot_tx_val.pack(side="left")
 
         if auto_start:
             self._schedule_tick()
@@ -625,10 +621,14 @@ class SpeedMonitorCard(tk.Frame):
         self._update_toggle_styles()
         self.btn_mode_server.config(text=self._t("speed_mode_server"))
         self.btn_mode_client.config(text=self._t("speed_mode_client"))
-        self.lbl_cur_rx_title.config(text=self._t("speed_rx_label"))
-        self.lbl_cur_tx_title.config(text=self._t("speed_tx_label"))
-        self.lbl_tot_rx_title.config(text=self._t("speed_total_rx"))
-        self.lbl_tot_tx_title.config(text=self._t("speed_total_tx"))
+        if self.lbl_cur_rx_title:
+            self.lbl_cur_rx_title.config(text=self._t("speed_rx_label"))
+        if self.lbl_cur_tx_title:
+            self.lbl_cur_tx_title.config(text=self._t("speed_tx_label"))
+        if self.lbl_tot_rx_title:
+            self.lbl_tot_rx_title.config(text=self._t("speed_total_rx"))
+        if self.lbl_tot_tx_title:
+            self.lbl_tot_tx_title.config(text=self._t("speed_total_tx"))
         self.update_view()
 
     def set_mode(self, mode: str) -> None:
@@ -749,13 +749,17 @@ class SpeedMonitorCard(tk.Frame):
         self.lbl_rx_badge.config(text=rx_text)
         self.lbl_tx_badge.config(text=tx_text)
 
-        # Update current rates
-        self.lbl_cur_rx_val.config(text=rx_str)
-        self.lbl_cur_tx_val.config(text=tx_str)
+        # Update current rates (if widgets present)
+        if self.lbl_cur_rx_val:
+            self.lbl_cur_rx_val.config(text=rx_str)
+        if self.lbl_cur_tx_val:
+            self.lbl_cur_tx_val.config(text=tx_str)
 
         # Update session totals
-        self.lbl_tot_rx_val.config(text=format_bytes(tot_rx, lang=self.lang))
-        self.lbl_tot_tx_val.config(text=format_bytes(tot_tx, lang=self.lang))
+        if self.lbl_tot_rx_val:
+            self.lbl_tot_rx_val.config(text=format_bytes(tot_rx, lang=self.lang))
+        if self.lbl_tot_tx_val:
+            self.lbl_tot_tx_val.config(text=format_bytes(tot_tx, lang=self.lang))
 
         # Update active file transfer progress bar
         self._update_transfer_ui(transfer_info)

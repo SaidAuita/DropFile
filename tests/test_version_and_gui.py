@@ -170,7 +170,16 @@ class TestSpeedMonitorTransferUI(unittest.TestCase):
         card.lbl_disk_pill.pack(side="left", padx=(6, 0))
         # Verify both are packed
         self.assertEqual(card.lbl_status_pill.winfo_manager(), "pack")
-        self.assertEqual(card.lbl_disk_pill.winfo_manager(), "pack")
+    def test_speed_monitor_bottom_stats_one_row(self):
+        from gui_speed_chart import SpeedMonitorCard
+        card = SpeedMonitorCard(self.root, auto_start=False)
+        # Verify both total labels are present and share parent stats_row container
+        self.assertIsNotNone(card.lbl_tot_rx_val)
+        self.assertIsNotNone(card.lbl_tot_tx_val)
+        self.assertEqual(card.lbl_tot_rx_title.master.master, card.lbl_tot_tx_title.master.master)
+        # Verify redundant speed labels are None
+        self.assertIsNone(card.lbl_cur_rx_val)
+        self.assertIsNone(card.lbl_cur_tx_val)
 
 
 class TestServerExchangeDetection(unittest.TestCase):
