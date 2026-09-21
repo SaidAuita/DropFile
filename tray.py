@@ -24,6 +24,7 @@ from icons import create_tray_icon
 from platform_utils import (
     copy_to_clipboard,
     open_folder_in_file_manager as open_folder_in_explorer,
+    spawn_build_sync_process,
     spawn_settings_process,
 )
 from sync_engine import SyncEngine
@@ -356,21 +357,13 @@ class DropFileTray:
 
     def open_settings_dialog(self, initial_tab: Optional[str] = None) -> None:
         try:
-            if sys.platform != "win32":
-                if getattr(self, "_settings_proc", None) is not None:
-                    if self._settings_proc.poll() is None:
-                        return
-                    self._settings_proc = None
-                self._settings_proc = spawn_settings_process(tab=initial_tab)
-            else:
-                if self.settings_dialog is not None:
-                    threading.Thread(target=lambda: self.settings_dialog.show(initial_tab=initial_tab), daemon=True).start()
-                else:
-                    if getattr(self, "_settings_proc", None) is not None:
-                        if self._settings_proc.poll() is None:
-                            return
-                        self._settings_proc = None
-                    self._settings_proc = spawn_settings_process(tab=initial_tab)
+            if getattr(self, "_settings_proc", None) is not None:
+                if self._settings_proc.poll() is None:
+                    return
+                self._settings_proc = None
+            self._settings_proc = spawn_settings_process(tab=initial_tab)
+            if self._settings_proc is None and self.settings_dialog is not None:
+                threading.Thread(target=lambda: self.settings_dialog.show(initial_tab=initial_tab), daemon=True).start()
         except Exception as e:
             print(f"[Tray] Error opening settings: {e}")
 
@@ -390,15 +383,29 @@ class DropFileTray:
         self.send_notification(t("tray_build_sync"), f"{t('tray_build_sync')}: {status_str}")
 
     def _open_build_sync_dialog(self, icon=None, item=None) -> None:
-        def worker():
-            try:
-                from gui_build_sync import BuildSyncDialog
-                def on_saved():
-                    self.refresh_menu()
-                BuildSyncDialog(parent=None, config=self.config, on_save_callback=on_saved, build_engine=self.build_engine)
-            except Exception as e:
-                print(f"[Tray] Error opening build sync dialog: {e}")
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            if getattr(self, "_build_sync_proc", None) is not None:
+                if self._build_sync_proc.poll() is None:
+                    return
+                self._build_sync_proc = None
+            self._build_sync_proc = spawn_build_sync_process()
+            if self._build_sync_proc is None:
+                def worker():
+                    try:
+                        from gui_build_sync import BuildSyncDialog
+                        def on_saved():
+                            self.refresh_menu()
+                        BuildSyncDialog.show_or_focus(
+                            parent=None,
+                            config=self.config,
+                            on_save_callback=on_saved,
+                            build_engine=self.build_engine,
+                        )
+                    except Exception as e:
+                        print(f"[Tray] Error opening build sync dialog: {e}")
+                threading.Thread(target=worker, daemon=True).start()
+        except Exception as e:
+            print(f"[Tray] Error opening build sync dialog: {e}")
 
     def _open_speed_monitor(self, icon=None, item=None) -> None:
         """Opens standalone Keenetic-style Speed Monitor window."""

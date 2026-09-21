@@ -39,6 +39,7 @@ from platform_utils import (
     install_systemd_user_service,
     release_single_instance_lock,
     restart_dropfile,
+    spawn_build_sync_process,
     spawn_settings_process,
     uninstall_systemd_user_service,
 )
@@ -47,8 +48,8 @@ from platform_utils import (
 ensure_macos_tk_compatibility()
 
 # Configure macOS Cocoa activation policy: hide Dock icon for background tray agent.
-# In --settings mode, do NOT touch NSApplication here so Tkinter can initialize TKApplication naturally.
-if sys.platform == "darwin" and "--settings" not in sys.argv:
+# In --settings / --build-sync mode, do NOT touch NSApplication here so Tkinter can initialize TKApplication naturally.
+if sys.platform == "darwin" and "--settings" not in sys.argv and "--build-sync" not in sys.argv:
     try:
         from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
         ns_app = NSApplication.sharedApplication()
@@ -121,29 +122,37 @@ def release_instance_socket() -> None:
 
 _SHOW_SETTINGS_FN: Optional[Callable[[], None]] = None
 _ACTIVE_SETTINGS_PROC: Optional[Any] = None
+_ACTIVE_BUILD_SYNC_PROC: Optional[Any] = None
 _TRAY_REF: Optional[Any] = None
 _IS_HEADLESS: bool = False
-
 
 
 def trigger_show_settings(tab: Optional[str] = None) -> None:
     """Safely opens settings dialog or brings existing one to front without spawning duplicate processes."""
     global _ACTIVE_SETTINGS_PROC, _SHOW_SETTINGS_FN
-    if sys.platform != "win32":
-        if _ACTIVE_SETTINGS_PROC is not None:
-            if _ACTIVE_SETTINGS_PROC.poll() is None:
-                return
-            _ACTIVE_SETTINGS_PROC = None
-        _ACTIVE_SETTINGS_PROC = spawn_settings_process(tab=tab)
-    else:
-        if _SHOW_SETTINGS_FN is not None:
-            threading.Thread(target=lambda: _SHOW_SETTINGS_FN(initial_tab=tab), daemon=True).start()
-        else:
-            if _ACTIVE_SETTINGS_PROC is not None:
-                if _ACTIVE_SETTINGS_PROC.poll() is None:
-                    return
-                _ACTIVE_SETTINGS_PROC = None
-            _ACTIVE_SETTINGS_PROC = spawn_settings_process(tab=tab)
+    if _ACTIVE_SETTINGS_PROC is not None:
+        if _ACTIVE_SETTINGS_PROC.poll() is None:
+            return
+        _ACTIVE_SETTINGS_PROC = None
+    _ACTIVE_SETTINGS_PROC = spawn_settings_process(tab=tab)
+    if _ACTIVE_SETTINGS_PROC is None and _SHOW_SETTINGS_FN is not None:
+        threading.Thread(target=lambda: _SHOW_SETTINGS_FN(initial_tab=tab), daemon=True).start()
+
+
+def trigger_show_build_sync() -> None:
+    """Safely opens build sync dialog or brings existing one to front."""
+    global _ACTIVE_BUILD_SYNC_PROC, _TRAY_REF
+    if _TRAY_REF:
+        try:
+            _TRAY_REF._open_build_sync_dialog()
+            return
+        except Exception:
+            pass
+    if _ACTIVE_BUILD_SYNC_PROC is not None:
+        if _ACTIVE_BUILD_SYNC_PROC.poll() is None:
+            return
+        _ACTIVE_BUILD_SYNC_PROC = None
+    _ACTIVE_BUILD_SYNC_PROC = spawn_build_sync_process()
 
 
 def send_ipc_query(cmd: str, timeout: float = 2.0) -> Optional[str]:
@@ -184,6 +193,8 @@ def _handle_duplicate_instance() -> None:
                     pass
             payload = f"SHOW_SETTINGS:{tab}\n" if tab else "SHOW_SETTINGS\n"
             notify_s.sendall(payload.encode("utf-8"))
+        elif "--build-sync" in sys.argv:
+            notify_s.sendall(b"SHOW_BUILD_SYNC\n")
         elif "--folder" in sys.argv or "--open" in sys.argv:
             notify_s.sendall(b"OPEN_FOLDER\n")
         else:
@@ -215,7 +226,7 @@ def _handle_duplicate_instance() -> None:
 
 
 def _start_instance_command_listener(sock: socket.socket) -> None:
-    """Background listener for IPC commands (SHOW_SETTINGS, STATUS, SYNC_NOW, PAUSE, RESUME, QUIT, RESTART)."""
+    """Background listener for IPC commands (SHOW_SETTINGS, SHOW_BUILD_SYNC, STATUS, SYNC_NOW, PAUSE, RESUME, QUIT, RESTART)."""
     def listener():
         global _CLEANUP_CALLBACK, _ENGINE_REF, _CURRENT_STATUS
         while sock and sock == INSTANCE_SOCKET:
@@ -239,6 +250,12 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                     trigger_show_settings(tab=target_tab)
                     try:
                         conn.sendall(b"OK: Settings triggered\n")
+                    except Exception:
+                        pass
+                elif cmd.startswith("SHOW_BUILD_SYNC"):
+                    trigger_show_build_sync()
+                    try:
+                        conn.sendall(b"OK: Build sync triggered\n")
                     except Exception:
                         pass
                 elif cmd == "LAUNCH_ACTION":
@@ -588,6 +605,25 @@ def main():
         )
     )
     _IS_HEADLESS = is_headless
+
+    # If invoked with --build-sync, open Build Sync UI directly on the main thread
+    if "--build-sync" in sys.argv:
+        config = Config()
+        db_path = config.config_dir / "state.db"
+        state_db = StateDatabase(db_path)
+        build_engine = BuildSyncEngine(config=config, state_db=state_db)
+
+        def on_build_sync_save():
+            send_ipc_query("RELOAD_CONFIG", timeout=1.5)
+
+        from gui_build_sync import BuildSyncDialog
+        BuildSyncDialog.show_or_focus(
+            parent=None,
+            config=config,
+            on_save_callback=on_build_sync_save,
+            build_engine=build_engine,
+        )
+        sys.exit(0)
 
     # If invoked with --settings, open Settings UI directly on the main thread
     if "--settings" in sys.argv:

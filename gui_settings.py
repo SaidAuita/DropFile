@@ -2022,7 +2022,7 @@ class SettingsDialog:
     def _open_build_sync_dialog(self) -> None:
         try:
             from gui_build_sync import BuildSyncDialog
-            BuildSyncDialog(
+            BuildSyncDialog.show_or_focus(
                 parent=self.window if self._is_window_alive() else None,
                 config=self.config,
                 on_save_callback=self._on_build_sync_dialog_save,

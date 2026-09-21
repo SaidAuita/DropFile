@@ -214,54 +214,182 @@ class BuildTaskEditDialog(tk.Toplevel):
         self.destroy()
 
 
-class BuildSyncDialog(tk.Toplevel):
+class BuildSyncDialog:
     """Management window for Build Drops Synchronization tasks."""
+    _INSTANCE: Optional["BuildSyncDialog"] = None
+
+    @classmethod
+    def show_or_focus(
+        cls,
+        parent: Optional[tk.Misc] = None,
+        config: Optional[Config] = None,
+        on_save_callback: Optional[Callable[[], None]] = None,
+        build_engine: Optional[Any] = None,
+    ) -> "BuildSyncDialog":
+        if cls._INSTANCE is not None:
+            try:
+                if cls._INSTANCE.window is None or not cls._INSTANCE.window.winfo_exists():
+                    cls._INSTANCE = None
+                else:
+                    cls._INSTANCE.window.deiconify()
+                    cls._INSTANCE.window.lift()
+                    cls._INSTANCE.window.focus_force()
+                    return cls._INSTANCE
+            except Exception:
+                cls._INSTANCE = None
+
+        if config is None:
+            config = Config()
+
+        inst = cls(
+            parent=parent,
+            config=config,
+            on_save_callback=on_save_callback,
+            build_engine=build_engine,
+        )
+        cls._INSTANCE = inst
+        if getattr(inst, "_owns_root", False):
+            try:
+                inst.window.mainloop()
+            except Exception:
+                pass
+            finally:
+                cls._INSTANCE = None
+        return inst
 
     def __init__(
         self,
-        parent: Optional[tk.Misc],
-        config: Config,
+        parent: Optional[tk.Misc] = None,
+        config: Optional[Config] = None,
         on_save_callback: Optional[Callable[[], None]] = None,
         build_engine: Optional[Any] = None,
     ):
-        super().__init__(parent)
-        self.config = config
+        self.config = config or Config()
         self.on_save_callback = on_save_callback
         self.build_engine = build_engine
+        self._owns_root = False
+        self.window: Optional[tk.Misc] = None
 
-        self.title(f"{t('app_name')} — {t('build_sync_title')}")
-        if parent:
-            self.transient(parent)
-        self.resizable(True, True)
+        if parent is not None:
+            try:
+                if parent.winfo_exists():
+                    self.window = tk.Toplevel(parent)
+                else:
+                    self.window = tk.Tk()
+                    self._owns_root = True
+            except Exception:
+                self.window = tk.Tk()
+                self._owns_root = True
+        else:
+            try:
+                if tk._default_root is not None and tk._default_root.winfo_exists():
+                    self.window = tk.Toplevel(tk._default_root)
+                else:
+                    self.window = tk.Tk()
+                    self._owns_root = True
+            except Exception:
+                self.window = tk.Tk()
+                self._owns_root = True
+
+        self.__class__._INSTANCE = self
+
+        self.window.title(f"{t('app_name')} — {t('build_sync_title')}")
+        if parent and hasattr(self.window, "transient"):
+            try:
+                self.window.transient(parent)
+            except Exception:
+                pass
+        self.window.resizable(True, True)
+        self.window.protocol("WM_DELETE_WINDOW", self._on_close)
 
         font_family = "Segoe UI" if sys.platform.startswith("win") else "Helvetica"
         self.font_family = font_family
 
-        self.configure(bg="#F3F3F3")
+        self.window.configure(bg="#F3F3F3")
         self._tasks: List[Dict[str, Any]] = [dict(t) for t in self.config.build_sync_tasks]
+
+        # Set window icon
+        ico_path = Path(__file__).resolve().parent / "icon.ico"
+        if getattr(sys, "frozen", False):
+            candidate = Path(sys.executable).parent / "icon.ico"
+            if candidate.exists():
+                ico_path = candidate
+            elif hasattr(sys, "_MEIPASS"):
+                candidate = Path(sys._MEIPASS) / "icon.ico"
+                if candidate.exists():
+                    ico_path = candidate
+        if ico_path.exists():
+            if sys.platform.startswith("win"):
+                try:
+                    self.window.iconbitmap(str(ico_path))
+                except Exception:
+                    pass
 
         self._build_ui()
         self._refresh_tree()
 
-        self.geometry("720x500")
-        self.minsize(580, 400)
-        self.update_idletasks()
+        self.window.geometry("720x500")
+        self.window.minsize(580, 400)
+        self.window.update_idletasks()
         if parent:
             try:
                 pw = parent.winfo_width()
                 ph = parent.winfo_height()
                 px = parent.winfo_rootx()
                 py = parent.winfo_rooty()
-                w = self.winfo_width()
-                h = self.winfo_height()
+                w = self.window.winfo_width()
+                h = self.window.winfo_height()
                 x = max(0, px + (pw - w) // 2)
                 y = max(0, py + (ph - h) // 2)
-                self.geometry(f"{w}x{h}+{x}+{y}")
+                self.window.geometry(f"{w}x{h}+{x}+{y}")
+            except Exception:
+                pass
+        else:
+            try:
+                sw = self.window.winfo_screenwidth()
+                sh = self.window.winfo_screenheight()
+                w = 720
+                h = 500
+                x = max(0, (sw - w) // 2)
+                y = max(0, (sh - h) // 2)
+                self.window.geometry(f"{w}x{h}+{x}+{y}")
             except Exception:
                 pass
 
-        self.lift()
-        self.focus_force()
+        try:
+            self.window.lift()
+            self.window.focus_force()
+        except Exception:
+            pass
+
+    def winfo_exists(self) -> bool:
+        return bool(self.window and self.window.winfo_exists())
+
+    def lift(self) -> None:
+        if self.window:
+            try:
+                self.window.lift()
+            except Exception:
+                pass
+
+    def focus_force(self) -> None:
+        if self.window:
+            try:
+                self.window.focus_force()
+            except Exception:
+                pass
+
+    def destroy(self) -> None:
+        self._on_close()
+
+    def _on_close(self) -> None:
+        self.__class__._INSTANCE = None
+        if self.window is not None:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+            self.window = None
 
     def _get_default_target_base(self) -> str:
         """Determines default base destination path (e.g. \\\\host\\Exchange\\Build)."""
@@ -275,7 +403,7 @@ class BuildSyncDialog(tk.Toplevel):
 
     def _build_ui(self) -> None:
         # Top Header
-        header = tk.Frame(self, bg="#FFFFFF", padx=16, pady=12)
+        header = tk.Frame(self.window, bg="#FFFFFF", padx=16, pady=12)
         header.pack(fill="x", side="top")
 
         lbl_title = tk.Label(
@@ -300,10 +428,10 @@ class BuildSyncDialog(tk.Toplevel):
         )
         lbl_sub.pack(fill="x", pady=(2, 0))
 
-        tk.Frame(self, height=1, bg="#E5E5E5").pack(fill="x", side="top")
+        tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="top")
 
         # Global Enable Bar
-        bar_enable = tk.Frame(self, bg="#F3F3F3", padx=16, pady=8)
+        bar_enable = tk.Frame(self.window, bg="#F3F3F3", padx=16, pady=8)
         bar_enable.pack(fill="x", side="top")
 
         self.var_global_enable = tk.BooleanVar(value=bool(self.config.build_sync_enabled))
@@ -316,7 +444,7 @@ class BuildSyncDialog(tk.Toplevel):
         chk_global.pack(side="left")
 
         # Center Card: Treeview & Buttons
-        content_card = tk.Frame(self, bg="#FFFFFF", padx=12, pady=10)
+        content_card = tk.Frame(self.window, bg="#FFFFFF", padx=12, pady=10)
         content_card.pack(fill="both", expand=True, padx=14, pady=8)
 
         # Action Buttons Row above Tree
@@ -365,8 +493,8 @@ class BuildSyncDialog(tk.Toplevel):
         self.tree.bind("<Double-1>", lambda e: self._edit_selected_task())
 
         # Bottom Bar
-        tk.Frame(self, height=1, bg="#E5E5E5").pack(fill="x", side="bottom")
-        bottom_bar = tk.Frame(self, bg="#F3F3F3", padx=16, pady=10)
+        tk.Frame(self.window, height=1, bg="#E5E5E5").pack(fill="x", side="bottom")
+        bottom_bar = tk.Frame(self.window, bg="#F3F3F3", padx=16, pady=10)
         bottom_bar.pack(fill="x", side="bottom")
 
         btn_save = ttk.Button(bottom_bar, text=t("btn_save_apply"), style="Accent.TButton", command=self._save_and_close)
@@ -409,7 +537,7 @@ class BuildSyncDialog(tk.Toplevel):
             self._refresh_tree()
             self._persist_changes()
 
-        BuildTaskEditDialog(self, default_target_base=base_target, on_save_callback=on_saved)
+        BuildTaskEditDialog(self.window, default_target_base=base_target, on_save_callback=on_saved)
 
     def _edit_selected_task(self) -> None:
         selected = self.tree.selection()
@@ -428,7 +556,7 @@ class BuildSyncDialog(tk.Toplevel):
             self._refresh_tree()
             self._persist_changes()
 
-        BuildTaskEditDialog(self, task_data=task_match, default_target_base=self._get_default_target_base(), on_save_callback=on_saved)
+        BuildTaskEditDialog(self.window, task_data=task_match, default_target_base=self._get_default_target_base(), on_save_callback=on_saved)
 
     def _delete_selected_task(self) -> None:
         selected = self.tree.selection()
@@ -439,7 +567,7 @@ class BuildSyncDialog(tk.Toplevel):
         if not task_match:
             return
 
-        if messagebox.askyesno(t("delete_confirm_title"), f"Удалить проект «{task_match.get('name')}» из синхронизации?", parent=self):
+        if messagebox.askyesno(t("delete_confirm_title"), f"Удалить проект «{task_match.get('name')}» из синхронизации?", parent=self.window):
             self._tasks = [t for t in self._tasks if t["id"] != task_id]
             self._refresh_tree()
             self._persist_changes()
@@ -448,7 +576,7 @@ class BuildSyncDialog(tk.Toplevel):
         self._persist_changes()
         if self.build_engine:
             self.build_engine.trigger_sync_now()
-        messagebox.showinfo(t("build_sync_title"), "Синхронизация сборок запущена в фоновом режиме.", parent=self)
+        messagebox.showinfo(t("build_sync_title"), "Синхронизация сборок запущена в фоновом режиме.", parent=self.window)
 
     def _persist_changes(self) -> None:
         self.config.build_sync_enabled = self.var_global_enable.get()
@@ -465,3 +593,4 @@ class BuildSyncDialog(tk.Toplevel):
     def _save_and_close(self) -> None:
         self._persist_changes()
         self.destroy()
+

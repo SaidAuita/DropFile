@@ -513,6 +513,7 @@ def copy_to_clipboard(text: str) -> bool:
 def spawn_settings_process(
     script_path: Optional[Path | str] = None,
     tab: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
 ) -> Optional[subprocess.Popen]:
     """Spawns the Settings dialog in an independent process running on the main thread."""
     try:
@@ -537,11 +538,44 @@ def spawn_settings_process(
 
         if tab:
             cmd.extend(["--tab", str(tab)])
+        if extra_args:
+            cmd.extend(extra_args)
 
         return subprocess.Popen(cmd, **kwargs)
     except Exception as e:
         print(f"[platform_utils] Error spawning settings process: {e}")
         return None
+
+
+def spawn_build_sync_process(
+    script_path: Optional[Path | str] = None,
+) -> Optional[subprocess.Popen]:
+    """Spawns the Build Sync dialog in an independent process running on the main thread."""
+    try:
+        kwargs = {}
+        if sys.platform.startswith("win"):
+            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+
+        if getattr(sys, "frozen", False):
+            current_exe = Path(sys.executable).resolve()
+            cmd = [str(current_exe), "--build-sync"]
+        else:
+            if script_path is None:
+                script_path = Path(__file__).resolve().parent / "DropFile.pyw"
+            target = Path(script_path).resolve()
+            if sys.platform.startswith("linux"):
+                venv_py = target.parent / ".venv" / "bin" / "python3"
+                py_runner = str(venv_py) if venv_py.exists() else sys.executable
+            else:
+                py_runner = sys.executable
+            cmd = [py_runner, str(target), "--build-sync"]
+            kwargs["cwd"] = str(target.parent)
+
+        return subprocess.Popen(cmd, **kwargs)
+    except Exception as e:
+        print(f"[platform_utils] Error spawning build sync process: {e}")
+        return None
+
 
 
 def send_instance_command(cmd: bytes, port: int = 49195, timeout: float = 1.5) -> bool:
