@@ -37,7 +37,7 @@ class BuildTaskEditDialog(tk.Toplevel):
 
         self.transient(parent)
         self.grab_set()
-        self.resizable(True, False)
+        self.resizable(True, True)
 
         font_family = "Segoe UI" if sys.platform.startswith("win") else "Helvetica"
         self.font_family = font_family
@@ -45,9 +45,13 @@ class BuildTaskEditDialog(tk.Toplevel):
         self.configure(bg="#F3F3F3")
         self._build_ui()
 
+        # Keyboard shortcuts
+        self.bind("<Return>", lambda e: self._on_save())
+        self.bind("<Escape>", lambda e: self.destroy())
+
         # Geometry & centering
-        self.geometry("560x420")
-        self.minsize(480, 380)
+        self.geometry("600x500")
+        self.minsize(520, 440)
         self.update_idletasks()
         try:
             pw = parent.winfo_width()
@@ -65,6 +69,19 @@ class BuildTaskEditDialog(tk.Toplevel):
         self.focus_force()
 
     def _build_ui(self) -> None:
+        # Bottom Buttons (packed first with side="bottom" so they are ALWAYS fixed and visible at the bottom)
+        row_bottom = tk.Frame(self, bg="#F3F3F3", padx=16, pady=12)
+        row_bottom.pack(fill="x", side="bottom")
+
+        btn_save = ttk.Button(row_bottom, text=f"✔ {t('btn_save_apply')}", style="Accent.TButton", command=self._on_save)
+        btn_save.pack(side="right", padx=(8, 0))
+
+        btn_cancel = ttk.Button(row_bottom, text=t("btn_close"), command=self.destroy)
+        btn_cancel.pack(side="right")
+
+        tk.Frame(self, height=1, bg="#E5E5E5").pack(fill="x", side="bottom")
+
+        # Main Card (fills available space above the bottom bar)
         card = tk.Frame(self, bg="#FFFFFF", padx=16, pady=16)
         card.pack(fill="both", expand=True, padx=12, pady=12)
 
@@ -131,16 +148,6 @@ class BuildTaskEditDialog(tk.Toplevel):
         self.var_enabled = tk.BooleanVar(value=bool(self.task_data.get("enabled", True)))
         chk_enabled = ttk.Checkbutton(row_opt, text=t("build_sync_chk_task_enable"), variable=self.var_enabled)
         chk_enabled.pack(side="left")
-
-        # Bottom Buttons
-        row_bottom = tk.Frame(self, bg="#F3F3F3", padx=12, pady=10)
-        row_bottom.pack(fill="x", side="bottom")
-
-        btn_save = ttk.Button(row_bottom, text=t("btn_save_apply"), style="Accent.TButton", command=self._on_save)
-        btn_save.pack(side="right", padx=(8, 0))
-
-        btn_cancel = ttk.Button(row_bottom, text=t("btn_close"), command=self.destroy)
-        btn_cancel.pack(side="right")
 
     def _on_name_change(self, event=None) -> None:
         """If target is empty and default target base exists, suggest path."""
