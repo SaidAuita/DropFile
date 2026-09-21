@@ -68,6 +68,8 @@ DEFAULT_CONFIG = {
     ],
     "speed_window_geometry": "660x580",
     "speed_monitor_mode": "server",
+    "build_sync_enabled": False,
+    "build_sync_tasks": [],
 }
 
 
@@ -740,5 +742,37 @@ class Config:
     @speed_monitor_mode.setter
     def speed_monitor_mode(self, value: str) -> None:
         self._data["speed_monitor_mode"] = "client" if str(value).lower() == "client" else "server"
+
+    @property
+    def build_sync_enabled(self) -> bool:
+        return bool(self._data.get("build_sync_enabled", False))
+
+    @build_sync_enabled.setter
+    def build_sync_enabled(self, value: bool) -> None:
+        self._data["build_sync_enabled"] = bool(value)
+
+    @property
+    def build_sync_tasks(self) -> list:
+        tasks = self._data.get("build_sync_tasks")
+        if isinstance(tasks, list):
+            return tasks
+        return []
+
+    @build_sync_tasks.setter
+    def build_sync_tasks(self, value: list) -> None:
+        clean = []
+        if isinstance(value, list):
+            for it in value:
+                if isinstance(it, dict):
+                    clean.append({
+                        "id": str(it.get("id", "")).strip(),
+                        "name": str(it.get("name", "")).strip(),
+                        "source_dir": str(it.get("source_dir", "")).strip(),
+                        "pattern": str(it.get("pattern", "*.zip")).strip() or "*.zip",
+                        "target_dir": str(it.get("target_dir", "")).strip(),
+                        "keep_versions": max(1, int(it.get("keep_versions", 5))),
+                        "enabled": bool(it.get("enabled", True)),
+                    })
+        self._data["build_sync_tasks"] = clean
 
 

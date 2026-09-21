@@ -50,6 +50,8 @@ def build():
         "--collect-all=dropsync_server",
         "--hidden-import=traffic_monitor",
         "--hidden-import=gui_speed_chart",
+        "--hidden-import=build_sync",
+        "--hidden-import=gui_build_sync",
     ]
 
     # Explicitly bundle sqlite3.dll if found in Python DLLs directory

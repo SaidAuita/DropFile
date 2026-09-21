@@ -168,6 +168,7 @@ class SettingsDialog:
         on_restart_callback: Optional[Callable[[], None]] = None,
         on_cleanup_callback: Optional[Callable[[], None]] = None,
         engine: Optional[Any] = None,
+        build_engine: Optional[Any] = None,
     ):
         self.config = config
         self.state_db = state_db
@@ -176,6 +177,7 @@ class SettingsDialog:
         self.on_restart_callback = on_restart_callback
         self.on_cleanup_callback = on_cleanup_callback
         self.engine = engine
+        self.build_engine = build_engine
         self.window: Optional[tk.Tk] = None
         self._show_lock = threading.Lock()
         self._ui_thread: Optional[threading.Thread] = None
@@ -636,6 +638,10 @@ class SettingsDialog:
             self.btn_ex_lan_shortcut.config(text=t("lan_btn_shortcut"))
         if hasattr(self, "btn_ex_lan_copy"):
             self.btn_ex_lan_copy.config(text=t("lan_btn_copy"))
+        if hasattr(self, "chk_build_sync"):
+            self.chk_build_sync.config(text=t("folders_build_sync_chk"))
+        if hasattr(self, "btn_build_sync_config"):
+            self.btn_build_sync_config.config(text=t("folders_build_sync_btn"))
 
         # Card 2: Output
         if hasattr(self, "card_output"):
@@ -1594,6 +1600,28 @@ class SettingsDialog:
         self.lbl_lan_status.pack(fill="x", pady=(4, 0))
         self.tab_folders.register_autowrap(self.lbl_lan_status)
 
+        # Build Drops Synchronization subsection
+        ttk.Separator(self.card_exchange, orient="horizontal").pack(fill="x", pady=(10, 8))
+
+        row_build_sync = tk.Frame(self.card_exchange, bg="#FFFFFF")
+        row_build_sync.pack(fill="x", pady=(0, 2))
+
+        self.var_build_sync = tk.BooleanVar(value=bool(getattr(self.config, "build_sync_enabled", False)))
+        self.chk_build_sync = ttk.Checkbutton(
+            row_build_sync,
+            text=t("folders_build_sync_chk"),
+            variable=self.var_build_sync,
+            command=self._on_build_sync_chk_toggle,
+        )
+        self.chk_build_sync.pack(side="left", fill="x", expand=True)
+
+        self.btn_build_sync_config = ttk.Button(
+            row_build_sync,
+            text=t("folders_build_sync_btn"),
+            command=self._open_build_sync_dialog,
+        )
+        self.btn_build_sync_config.pack(side="right", padx=(8, 0))
+
         # -------------------------------------------------------------
         # CARD 2: Output Folder (Public Sharing via File Browser)
         # -------------------------------------------------------------
@@ -1984,6 +2012,28 @@ class SettingsDialog:
                 t("folders_autodetect_not_found"),
                 parent=self.window,
             )
+
+    def _on_build_sync_chk_toggle(self) -> None:
+        self.config.build_sync_enabled = self.var_build_sync.get()
+        self.config.save()
+        if hasattr(self, "build_engine") and self.build_engine:
+            self.build_engine.reload_tasks()
+
+    def _open_build_sync_dialog(self) -> None:
+        try:
+            from gui_build_sync import BuildSyncDialog
+            BuildSyncDialog(
+                parent=self.window if self._is_window_alive() else None,
+                config=self.config,
+                on_save_callback=self._on_build_sync_dialog_save,
+                build_engine=getattr(self, "build_engine", None),
+            )
+        except Exception as e:
+            messagebox.showerror(t("error_title"), f"Error opening build sync dialog: {e}", parent=self.window)
+
+    def _on_build_sync_dialog_save(self) -> None:
+        if hasattr(self, "var_build_sync"):
+            self.var_build_sync.set(bool(self.config.build_sync_enabled))
 
     def _browse_output_folder(self) -> None:
         init_dir = self.entry_output.get() if hasattr(self, "entry_output") else ""
@@ -3978,6 +4028,8 @@ class SettingsDialog:
             self.config.exchange_path = self.entry_exchange.get().strip()
         if hasattr(self, "entry_lan_server"):
             self.config.lan_server_host = self.entry_lan_server.get().strip()
+        if hasattr(self, "var_build_sync"):
+            self.config.build_sync_enabled = self.var_build_sync.get()
         if hasattr(self, "entry_output"):
             self.config.output_path = self.entry_output.get().strip()
             self.config.local_path = self.entry_output.get().strip()

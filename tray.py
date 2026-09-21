@@ -37,11 +37,13 @@ class DropFileTray:
         engine: SyncEngine,
         settings_dialog: Optional[Any] = None,
         on_cleanup_callback: Optional[Callable[[], None]] = None,
+        build_engine: Optional[Any] = None,
     ):
         self.config = config
         self.engine = engine
         self.settings_dialog = settings_dialog
         self.on_cleanup_callback = on_cleanup_callback
+        self.build_engine = build_engine
         if self.settings_dialog is not None and not getattr(self.settings_dialog, "engine", None):
             self.settings_dialog.engine = engine
 
@@ -378,6 +380,26 @@ class DropFileTray:
     def _open_dropsync(self, icon=None, item=None) -> None:
         self.open_settings_dialog(initial_tab="dropsync")
 
+    def _toggle_build_sync(self, icon=None, item=None) -> None:
+        self.config.build_sync_enabled = not self.config.build_sync_enabled
+        self.config.save()
+        if self.build_engine:
+            self.build_engine.reload_tasks()
+        self.refresh_menu()
+        status_str = "Включена" if self.config.build_sync_enabled else "Отключена"
+        self.send_notification(t("tray_build_sync"), f"{t('tray_build_sync')}: {status_str}")
+
+    def _open_build_sync_dialog(self, icon=None, item=None) -> None:
+        def worker():
+            try:
+                from gui_build_sync import BuildSyncDialog
+                def on_saved():
+                    self.refresh_menu()
+                BuildSyncDialog(parent=None, config=self.config, on_save_callback=on_saved, build_engine=self.build_engine)
+            except Exception as e:
+                print(f"[Tray] Error opening build sync dialog: {e}")
+        threading.Thread(target=worker, daemon=True).start()
+
     def _open_speed_monitor(self, icon=None, item=None) -> None:
         """Opens standalone Keenetic-style Speed Monitor window."""
         def worker():
@@ -469,6 +491,11 @@ class DropFileTray:
             pystray.Menu.SEPARATOR,
             item(lambda text: f"📈 {t('speed_monitor_btn')}", self._open_speed_monitor),
             item(lambda text: f"⚡ {t('tab_dropsync').strip()}", self._open_dropsync),
+            item(
+                lambda text: f"📦 {t('tray_build_sync')}: {'✔ ' + t('status_ready') if self.config.build_sync_enabled else '○ ' + t('build_sync_status_disabled')}",
+                self._toggle_build_sync,
+            ),
+            item(lambda text: t("tray_build_sync_settings"), self._open_build_sync_dialog),
             item(lambda text: t("tray_remote_menu"), self._open_remote_control),
             item(lambda text: t("tray_open_web"), self._open_web),
             item(lambda text: t("tray_settings"), self._open_settings),

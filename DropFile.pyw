@@ -92,6 +92,7 @@ except Exception:
 
 from state_db import StateDatabase
 from sync_engine import SyncEngine
+from build_sync import BuildSyncEngine
 try:
     from tray import DropFileTray
 except Exception:
@@ -102,6 +103,7 @@ SINGLE_INSTANCE_PORT = 49195
 INSTANCE_SOCKET: Optional[socket.socket] = None
 _CLEANUP_CALLBACK: Optional[Callable[[], None]] = None
 _ENGINE_REF: Optional[Any] = None
+_BUILD_ENGINE_REF: Optional[Any] = None
 _CURRENT_STATUS: str = "Ready"
 
 
@@ -265,6 +267,8 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                         try:
                             _ENGINE_REF.config.load()
                             _ENGINE_REF.apply_server_connection(_ENGINE_REF.active_server_index)
+                            if _BUILD_ENGINE_REF:
+                                _BUILD_ENGINE_REF.reload_tasks()
                             print("[DropFile] Config reloaded via IPC.")
                             conn.sendall(b"OK: Config reloaded\n")
                         except Exception as e:
@@ -631,11 +635,13 @@ def main():
             restart_dropfile(kill_existing=True)
             os._exit(0)
 
+        build_engine = BuildSyncEngine(config=config, state_db=state_db)
         settings_dialog = SettingsDialog(
             config=config,
             state_db=state_db,
             client=client,
             engine=engine,
+            build_engine=build_engine,
             on_save_callback=on_settings_process_save,
             on_restart_callback=on_settings_process_restart,
             on_cleanup_callback=None,
@@ -685,8 +691,23 @@ def main():
         state_db=state_db,
         client=client,
     )
-    global _ENGINE_REF, _CLEANUP_CALLBACK, _TRAY_REF
+    global _ENGINE_REF, _BUILD_ENGINE_REF, _CLEANUP_CALLBACK, _TRAY_REF
     _ENGINE_REF = engine
+
+    def on_build_notify(title: str, msg: str):
+        if _TRAY_REF:
+            try:
+                _TRAY_REF.send_notification(title, msg)
+            except Exception:
+                pass
+
+    build_engine = BuildSyncEngine(
+        config=config,
+        state_db=state_db,
+        on_notify=on_build_notify,
+    )
+    _BUILD_ENGINE_REF = build_engine
+    build_engine.start()
 
     def on_status_change(text: str, state: str):
         global _CURRENT_STATUS
@@ -706,6 +727,8 @@ def main():
             except Exception as e:
                 print(f"[DropFile] Re-authentication failed: {e}")
         threading.Thread(target=_bg_auth_and_sync, daemon=True).start()
+        if build_engine:
+            build_engine.reload_tasks()
         try:
             if _TRAY_REF:
                 _TRAY_REF.refresh_menu()
@@ -716,6 +739,10 @@ def main():
     def on_cleanup():
         print("[DropFile] Stopping engine and releasing instance socket...")
         release_instance_socket()
+        try:
+            build_engine.stop()
+        except Exception:
+            pass
         try:
             engine.stop()
         except Exception:
@@ -751,6 +778,7 @@ def main():
             on_restart_callback=on_restart,
             on_cleanup_callback=on_cleanup,
             engine=engine,
+            build_engine=build_engine,
         )
     else:
         settings_dialog = None
@@ -777,6 +805,7 @@ def main():
         engine=engine,
         settings_dialog=settings_dialog,
         on_cleanup_callback=on_cleanup,
+        build_engine=build_engine,
     )
     _TRAY_REF = tray
 
