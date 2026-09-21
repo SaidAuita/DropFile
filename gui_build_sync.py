@@ -9,6 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Dict, List, Optional
+import threading
 import uuid
 
 from config import Config
@@ -541,6 +542,9 @@ class BuildSyncDialog:
 
         def on_saved(new_task: Dict[str, Any]):
             self._tasks.append(new_task)
+            # Auto-enable global toggle if currently disabled
+            if not self.var_global_enable.get():
+                self.var_global_enable.set(True)
             self._refresh_tree()
             self._persist_changes()
 
@@ -581,8 +585,31 @@ class BuildSyncDialog:
 
     def _trigger_sync_now(self) -> None:
         self._persist_changes()
-        if self.build_engine:
-            self.build_engine.trigger_sync_now()
+        ipc_handled = False
+        try:
+            from DropFile import send_ipc_query
+            res = send_ipc_query("BUILD_SYNC_NOW", timeout=1.5)
+            if res and res.startswith("OK"):
+                ipc_handled = True
+        except Exception:
+            pass
+
+        # If background daemon handled it via IPC, good.
+        # Otherwise, if we have a local engine instance, trigger its thread or run immediate sync pass!
+        if not ipc_handled and self.build_engine:
+            if hasattr(self.build_engine, "_thread") and self.build_engine._thread and self.build_engine._thread.is_alive():
+                self.build_engine.trigger_sync_now()
+            else:
+                def run_manual():
+                    try:
+                        total = 0
+                        for task in self.config.build_sync_tasks:
+                            total += self.build_engine.process_task(task)
+                        print(f"[BuildSync] Manual sync completed: {total} files copied.")
+                    except Exception as e:
+                        print(f"[BuildSync] Error during manual sync: {e}")
+                threading.Thread(target=run_manual, daemon=True).start()
+
         messagebox.showinfo(t("build_sync_title"), "Синхронизация сборок запущена в фоновом режиме.", parent=self.window)
 
     def _persist_changes(self) -> None:
@@ -591,6 +618,14 @@ class BuildSyncDialog:
         self.config.save()
         if self.build_engine:
             self.build_engine.reload_tasks()
+        # Broadcast IPC reload and build sync to running DropFile background instance
+        try:
+            from DropFile import send_ipc_query
+            send_ipc_query("RELOAD_CONFIG", timeout=1.0)
+            if self.config.build_sync_enabled:
+                send_ipc_query("BUILD_SYNC_NOW", timeout=1.0)
+        except Exception:
+            pass
         if self.on_save_callback:
             try:
                 self.on_save_callback()

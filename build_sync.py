@@ -78,6 +78,10 @@ class BuildSyncEngine:
 
     def reload_tasks(self) -> None:
         """Signals tasks have changed in configuration."""
+        try:
+            self.config.load()
+        except Exception:
+            pass
         with self._lock:
             active_task_ids = {t.get("id") for t in self.config.build_sync_tasks if t.get("id")}
             for tid in list(self._tracked_files.keys()):
@@ -110,8 +114,21 @@ class BuildSyncEngine:
             return False, {"size": 0, "mtime": cur_mtime, "last_changed": now, "synced": False}
 
         if prev_info is None:
-            # First time seeing this file: start debounce timer
-            return False, {"size": cur_size, "mtime": cur_mtime, "last_changed": now, "synced": False}
+            # First time seeing this file:
+            # If the file was modified in the past (more than debounce_seconds ago),
+            # it is an already existing stable build.
+            if (now - cur_mtime) >= self.debounce_seconds:
+                try:
+                    with open(filepath, "rb") as f:
+                        f.read(1)
+                    # File is already complete and unlocked!
+                    return True, {"size": cur_size, "mtime": cur_mtime, "last_changed": cur_mtime, "synced": False}
+                except (PermissionError, OSError):
+                    # Locked by another process
+                    return False, {"size": cur_size, "mtime": cur_mtime, "last_changed": now, "synced": False}
+            else:
+                # Recently created file: start debounce timer
+                return False, {"size": cur_size, "mtime": cur_mtime, "last_changed": now, "synced": False}
 
         # Check if size or mtime changed since last check
         if cur_size != prev_info.get("size") or cur_mtime != prev_info.get("mtime"):
@@ -241,41 +258,52 @@ class BuildSyncEngine:
         copied_count = 0
 
         try:
-            entries = list(source_dir.iterdir())
+            entries = [
+                p for p in source_dir.iterdir()
+                if p.is_file()
+                and not p.name.startswith((".", "~$"))
+                and fnmatch.fnmatch(p.name.lower(), pattern.lower())
+            ]
         except Exception as e:
             print(f"[BuildSync] Error listing source dir {source_dir}: {e}")
             return 0
 
-        current_file_keys = set()
-        for item in entries:
-            if not item.is_file():
-                continue
-            if item.name.startswith((".", "~$")):
-                continue
-            if not fnmatch.fnmatch(item.name.lower(), pattern.lower()):
-                continue
+        # Sort matching files by mtime ascending (oldest to newest)
+        def get_mtime(p: Path) -> float:
+            try:
+                return p.stat().st_mtime
+            except Exception:
+                return 0.0
 
+        entries.sort(key=get_mtime)
+
+        # Track all matching source files for cache cleanup
+        current_file_keys = {str(item.resolve()) for item in entries}
+
+        # Keep only the newest `keep_versions` builds for synchronization
+        relevant_entries = entries[-keep_versions:] if len(entries) > keep_versions else entries
+
+        for item in relevant_entries:
             file_key = str(item.resolve())
-            current_file_keys.add(file_key)
-
             prev_info = task_cache.get(file_key)
             is_ready, cur_info = self._is_file_ready(item, prev_info, now)
             task_cache[file_key] = cur_info
 
             # If already marked as synced and file hasn't changed, skip
-            if prev_info and prev_info.get("synced") and cur_info.get("size") == prev_info.get("size") and cur_info.get("mtime") == prev_info.get("mtime"):
+            if prev_info and prev_info.get("synced") and cur_info.get("size") == prev_info.get("size") and abs(cur_info.get("mtime", 0) - prev_info.get("mtime", 0)) < 1.0:
                 continue
 
             if not is_ready:
                 continue
 
-            # Check if target already has this exact file with same size and mtime
+            # Check if target already has this exact file with same size
             target_dest = target_dir / item.name
             if target_dest.exists():
                 try:
                     t_st = target_dest.stat()
                     s_st = item.stat()
-                    if t_st.st_size == s_st.st_size and abs(t_st.st_mtime - s_st.st_mtime) < 1.0:
+                    # If size matches and mtime is within 2s
+                    if t_st.st_size == s_st.st_size and abs(t_st.st_mtime - s_st.st_mtime) <= 2.0:
                         # Already synced
                         cur_info["synced"] = True
                         continue

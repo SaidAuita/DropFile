@@ -292,6 +292,17 @@ def _start_instance_command_listener(sock: socket.socket) -> None:
                             conn.sendall(f"ERR: {e}\n".encode("utf-8"))
                     else:
                         conn.sendall(b"ERR: Engine not active\n")
+                elif cmd in ("BUILD_SYNC_NOW", "TRIGGER_BUILD_SYNC"):
+                    if _BUILD_ENGINE_REF:
+                        try:
+                            _BUILD_ENGINE_REF.reload_tasks()
+                            _BUILD_ENGINE_REF.trigger_sync_now()
+                            print("[DropFile] Build sync triggered via IPC.")
+                            conn.sendall(b"OK: Build sync triggered\n")
+                        except Exception as e:
+                            conn.sendall(f"ERR: {e}\n".encode("utf-8"))
+                    else:
+                        conn.sendall(b"ERR: Build engine not active\n")
                 elif cmd in ("QUIT", "TERMINATE", "STOP"):
                     print("[DropFile] IPC QUIT received. Shutting down...")
                     try:

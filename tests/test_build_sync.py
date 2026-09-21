@@ -87,30 +87,23 @@ class TestBuildSync(unittest.TestCase):
             "enabled": True,
         }
 
-        # 1. Create first build
+        # 1. Create first build (pre-existing, mtime in past)
         build1 = self.source_dir / "ID_Code_Pro_v3.02.20.zip"
         build1.write_bytes(b"PK\x03\x04build1_contents")
-        # Ensure mtime in past
-        os.utime(build1, (time.time() - 2, time.time() - 2))
+        os.utime(build1, (time.time() - 10, time.time() - 10))
 
-        # First check starts tracking
+        # First check copies pre-existing build immediately!
         copied = self.engine.process_task(task)
-        time.sleep(0.15)  # Wait past debounce
-        copied += self.engine.process_task(task)
-
         self.assertEqual(copied, 1)
         self.assertTrue((self.target_dir / "ID_Code_Pro_v3.02.20.zip").exists())
         self.assertEqual(len(self.notifications), 1)
 
-        # 2. Create second build
+        # 2. Create second build (pre-existing)
         build2 = self.source_dir / "ID_Code_Pro_v3.02.21.zip"
         build2.write_bytes(b"PK\x03\x04build2_contents")
-        os.utime(build2, (time.time() - 1, time.time() - 1))
+        os.utime(build2, (time.time() - 5, time.time() - 5))
 
-        self.engine.process_task(task)
-        time.sleep(0.15)
         copied = self.engine.process_task(task)
-
         self.assertEqual(copied, 1)
         self.assertTrue((self.target_dir / "ID_Code_Pro_v3.02.21.zip").exists())
 
@@ -121,12 +114,9 @@ class TestBuildSync(unittest.TestCase):
         # 3. Create third build (should trigger rotation, deleting oldest build1)
         build3 = self.source_dir / "ID_Code_Pro_v3.02.22.zip"
         build3.write_bytes(b"PK\x03\x04build3_contents")
-        os.utime(build3, (time.time(), time.time()))
+        os.utime(build3, (time.time() - 1, time.time() - 1))
 
-        self.engine.process_task(task)
-        time.sleep(0.15)
         copied = self.engine.process_task(task)
-
         self.assertEqual(copied, 1)
         self.assertTrue((self.target_dir / "ID_Code_Pro_v3.02.22.zip").exists())
 
@@ -145,6 +135,77 @@ class TestBuildSync(unittest.TestCase):
         self.assertEqual(len(sync_logs), 3)
         self.assertEqual(len(rotate_logs), 1)
         self.assertIn("ID_Code_Pro_v3.02.20.zip", rotate_logs[0]["rel_path"])
+
+    def test_pre_existing_files_sync_immediately(self):
+        task = {
+            "id": "task_pre_exist",
+            "name": "Pre-existing Project",
+            "source_dir": str(self.source_dir),
+            "pattern": "*.zip",
+            "target_dir": str(self.target_dir),
+            "keep_versions": 5,
+            "enabled": True,
+        }
+        # Create 3 archives created earlier (in the past)
+        for i in range(1, 4):
+            b = self.source_dir / f"App_v1.0.{i}.zip"
+            b.write_bytes(f"PK_content_{i}".encode("utf-8"))
+            os.utime(b, (time.time() - (100 - i * 10), time.time() - (100 - i * 10)))
+
+        # Single first pass must copy all 3 files immediately without waiting
+        copied = self.engine.process_task(task)
+        self.assertEqual(copied, 3)
+        for i in range(1, 4):
+            self.assertTrue((self.target_dir / f"App_v1.0.{i}.zip").exists())
+
+    def test_pre_existing_files_exceeding_keep_versions(self):
+        task = {
+            "id": "task_keep_latest",
+            "name": "Keep Latest",
+            "source_dir": str(self.source_dir),
+            "pattern": "*.zip",
+            "target_dir": str(self.target_dir),
+            "keep_versions": 2,
+            "enabled": True,
+        }
+        # Create 4 older archives
+        for i in range(1, 5):
+            b = self.source_dir / f"Build_v{i}.zip"
+            b.write_bytes(f"content_{i}".encode("utf-8"))
+            os.utime(b, (time.time() - (50 - i * 10), time.time() - (50 - i * 10)))
+
+        # Process task: only latest 2 builds (v3, v4) should be copied to target
+        copied = self.engine.process_task(task)
+        self.assertEqual(copied, 2)
+        target_files = sorted([f.name for f in self.target_dir.glob("*.zip")])
+        self.assertEqual(target_files, ["Build_v3.zip", "Build_v4.zip"])
+
+    def test_new_file_still_debounced(self):
+        task = {
+            "id": "task_debounce",
+            "name": "Debounce Test",
+            "source_dir": str(self.source_dir),
+            "pattern": "*.zip",
+            "target_dir": str(self.target_dir),
+            "keep_versions": 5,
+            "enabled": True,
+        }
+        # Brand new file created right now (mtime = current time)
+        b = self.source_dir / "BrandNew_v1.zip"
+        b.write_bytes(b"PK_brand_new")
+        now = time.time()
+        os.utime(b, (now, now))
+
+        # First check starts debounce: should not copy yet
+        copied1 = self.engine.process_task(task)
+        self.assertEqual(copied1, 0)
+        self.assertFalse((self.target_dir / "BrandNew_v1.zip").exists())
+
+        # Wait past debounce (engine debounce_seconds = 0.1)
+        time.sleep(0.15)
+        copied2 = self.engine.process_task(task)
+        self.assertEqual(copied2, 1)
+        self.assertTrue((self.target_dir / "BrandNew_v1.zip").exists())
 
     def test_disabled_task_skipped(self):
         task = {
