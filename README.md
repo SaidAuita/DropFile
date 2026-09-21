@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
-[![Release](https://img.shields.io/badge/Release-v1.29.3-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
+[![Release](https://img.shields.io/badge/Release-v1.29.15-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -52,6 +52,13 @@
 - 🗂️ **Total Commander Style Dual-Level Progress Bars for Batches & Folders**:
   - **Single file transfer**: Sleek progress bar with filename, transfer percentage, transferred volume, and live ETA.
   - **Folder / Batch transfer**: Dual progress bars (Top: current file progress `0 %`, Bottom: overall batch progress `31 %`), batch file counter (`110 / 366`), total batch volume (`183,3 МБ / 598,3 МБ`), and total remaining time ETA (`⏱ Remaining: ~1 min`).
+- 📦 **Automated Project Build Drops Synchronization & Version Rotation**:
+  - Automatically monitors multiple local project build directories (e.g. `Build_DEV/`, `bin/`, `out/`, `publish/`) for newly compiled archives (`*.zip`, `*.7z`, etc.).
+  - Safely copies finished builds to dedicated project folders on your server or network share (e.g. `\\192.168.1.4\Exchange\Build\ProjectName\`).
+  - **Version Retention ($N$ builds)**: Keeps only the last $N$ builds (default 5, configurable per project), automatically pruning older builds from the server share.
+  - **Pre-Existing Build Auto-Sync**: Existing archives are detected and synchronized immediately upon startup/configuration in chronological order.
+  - **Debounce & Exclusive Lock Verification**: Verifies size stability and exclusive write locks to ensure compiler has finished before initiating file transfer.
+  - **Atomic Safe Transfer**: Uses temporary file write (`.tmp_*`) and atomic rename to guarantee file integrity across network shares.
 - 🔄 **Bidirectional Automatic Synchronization**:
   - Real-time local filesystem monitoring via `watchdog` (drop files into the folder and they are instantly uploaded).
   - Background periodic remote polling detects new or modified files on the server and downloads them seamlessly.
@@ -349,6 +356,42 @@ python3 build_linux.py
 
 ---
 
+## 📦 Project Build Drops Synchronization
+
+**DropFile** includes a specialized background engine designed for developers and automated build pipelines that frequently create application builds, installers, or test archives (e.g. `*.zip`, `*.7z`, `*.exe`, `*.tar.gz`) across multiple software repositories.
+
+```
+Local PC:                                  Network Share / Exchange Server:
+[Project 1 / Build_DEV] --(auto-sync)-->  \\192.168.1.4\Exchange\Build\Project_1\ (keeps last 5)
+[Project 2 / Build_DEV] --(auto-sync)-->  \\192.168.1.4\Exchange\Build\Project_2\ (keeps last 5)
+```
+
+### Key Capabilities:
+1. **Multi-Project Directory Monitoring**:
+   - Add any number of independent build source directories to monitor (e.g. `C:\_CODE\AI Code Pro\Build_DEV`, `C:\_CODE\ID Code Pro\Build_DEV`).
+   - Configure custom file patterns per task (e.g. `*.zip`, `*.7z`, `*.exe`, `App_*.zip`).
+2. **Dedicated Project Target Directories**:
+   - Each project automatically syncs to its own dedicated subfolder on your network share or exchange server (e.g. `\\192.168.1.4\Exchange\Build\AI_Code_Pro\`).
+   - Keeps builds neatly separated and ready for remote testers or secondary machines.
+3. **Automated Version Rotation & Pruning**:
+   - Specify `keep_versions` per project (default: 5).
+   - Only the newest $N$ builds are kept on the server. Older builds are automatically rotated and deleted to prevent server disk clutter, while ensuring that the latest versions remain accessible.
+4. **Instant Synchronization of Pre-Existing Archives**:
+   - Build files created before setting up DropFile or before app launch are immediately recognized and copied on the very first pass.
+   - When more than $N$ pre-existing builds exist locally, DropFile intelligently sorts them chronologically and copies only the newest $N$ versions to save network bandwidth.
+5. **Debounce & Exclusive Lock Verification**:
+   - Guarantees that files are not transferred while an archiver or compiler is still writing.
+   - Requires size stability and verifies exclusive read access before initiating file transfer.
+6. **Atomic Safe Transfer**:
+   - Copies files using temporary `.tmp_*` filenames and performs an atomic rename upon completion, ensuring no partially-copied files appear on the network share.
+7. **Interactive GUI & Background Control**:
+   - Access the dedicated **«Build Drops Synchronization»** window from the System Tray or Settings dialog.
+   - Add, edit, or delete tasks with instant path auto-suggestion.
+   - Click **«Sync Now»** for instant on-demand synchronization across all tasks.
+   - Global toggle to enable/disable all build synchronization without deleting configured tasks.
+
+---
+
 ### 🔄 Updates
 
 #### 1. In-App Auto-Update (One-Click)
@@ -492,6 +535,13 @@ python -m unittest discover tests
 - 🗂️ **Двухуровневый индикатор передачи папок в стиле Total Commander**:
   - **Одиночный файл**: компактный прогресс-бар с именем файла, процентами, объемом и временем ETA.
   - **Передача папки / пакета файлов**: два независимых прогресс-бара (верхний — текущий файл `0 %`, нижний — весь пакет `31 %`), счетчик обработанных файлов (`110 / 366`), суммарный объем данных (`183,3 МБ / 598,3 МБ`) и общее расчетное время до завершения (`⏱ Осталось: ~1 мин`).
+- 📦 **Автоматическая синхронизация сборок проектов и ротация версий**:
+  - Автоматический мониторинг локальных папок сборок нескольких проектов (например, `Build_DEV/`, `bin/`, `publish/`) для готовых архивов (`*.zip`, `*.7z` и др.).
+  - Безопасное копирование готовых релизов в персональные папки на сервере обмена (например, `\\192.168.1.4\Exchange\Build\ProjectName\`).
+  - **Ротация версий ($N$ сборок)**: Хранение только последних $N$ версий билдов (по умолчанию 5, настраивается отдельно для каждого проекта) с автоматическим удалением устаревших версий с сервера.
+  - **Мгновенный подхват существующих архивов**: Файлы, уже созданные до старта или настройки задачи, автоматически синхронизируются на сервер в хронологическом порядке.
+  - **Защита от недописанных файлов (Debounce и Lock)**: Проверка стабильности размера и блокировок перед передачей гарантирует, что файл скопируется только после полного завершения записи архиватором.
+  - **Атомарное копирование**: Передача через временный файл (`.tmp_*`) с последующим переименованием исключает появление поврежденных архивов на сервере.
 - 🔄 **Двусторонняя автоматическая синхронизация**: локальный мониторинг через `watchdog` и фоновый периодический опрос сервера.
 - 🌐 **Синхронизация и зеркалирование двух серверов (Сервер 1 ⇄ 2)**:
   - Поддержка основного и резервного сервера FileBrowser с автоматическим переключением (failover) и возвратом (failback).
@@ -769,6 +819,42 @@ pip install pyinstaller
 python3 build_linux.py
 ```
 > 📖 **Полная документация по Linux**: см. подробное руководство в [`README_LINUX.md`](README_LINUX.md).
+
+---
+
+## 📦 Синхронизация сборок проектов и ротация версий
+
+В **DropFile** встроен специализированный фоновый модуль для разработчиков и систем автоматической сборки проектов, у которых периодически формируются исполняемые файлы, дистрибутивы и архивы сборок (например, `*.zip`, `*.7z`, `*.exe`, `*.tar.gz`) в нескольких рабочих каталогах.
+
+```
+Локальный ПК:                              Сетевой диск / Сервер обмена:
+[Проект 1 / Build_DEV] --(авто-синхр.)--> \\192.168.1.4\Exchange\Build\Project_1\ (хранит последние 5)
+[Проект 2 / Build_DEV] --(авто-синхр.)--> \\192.168.1.4\Exchange\Build\Project_2\ (хранит последние 5)
+```
+
+### Ключевые возможности:
+1. **Мониторинг нескольких каталогов сборок**:
+   - Добавляйте произвольное количество заданий для разных проектов (например, `C:\_CODE\AI Code Pro\Build_DEV`, `C:\_CODE\ID Code Pro\Build_DEV`).
+   - Для каждого задания настраивается индивидуальная маска файлов (по умолчанию `*.zip`, либо `*.7z`, `App_*.zip` и т.д.).
+2. **Персональные папки на сервере обмена**:
+   - Каждый проект отправляется в свой отдельный каталог на сервере или сетевой папке SMB (например, `\\192.168.1.4\Exchange\Build\AI_Code_Pro\`).
+   - Билды разных проектов не перемешиваются и готовы для загрузки тестировщиками или удаленными машинами.
+3. **Автоматическая ротация версий ($N$ сборок)**:
+   - Для каждого проекта задается параметр `keep_versions` (по умолчанию 5).
+   - На сервере сохраняются только $N$ самых свежих сборок. Старые версии автоматически удаляются при появлении новых, предотвращая переполнение дискового пространства.
+4. **Мгновенный подхват ранее созданных архивов**:
+   - Файлы сборок, созданные до настройки DropFile или до запуска программы, автоматически определяются и передаются на сервер на первом же проходе.
+   - Если в локальной папке уже накопилось больше $N$ версий, программа автоматически сортирует их по времени изменения и копирует только последние $N$ версий, не тратя трафик на устаревшие файлы.
+5. **Защита от записи (Debounce и Exclusive Lock)**:
+   - Исключена передача поврежденных файлов, пока компилятор или архиватор продолжает формировать билд.
+   - Движок контролирует стабилизацию размера файла и проверяет эксклюзивный доступ перед началом копирования.
+6. **Атомарное безопасное копирование**:
+   - Файлы копируются под временными именами `.tmp_*` и атомарно переименовываются по завершении, гарантируя целостность архивов на сервере.
+7. **Интерфейс управления и фоновый контроль**:
+   - Отдельное окно **«Синхронизация сборок»**, доступное из системного трея или окна настроек.
+   - Удобное добавление/редактирование заданий с автоподстановкой путей.
+   - Кнопка **«Синхронизировать сейчас»** для мгновенного запуска проверки по всем проектам.
+   - Глобальный тумблер включения/выключения синхронизации сборок.
 
 ---
 
