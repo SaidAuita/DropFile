@@ -2,15 +2,13 @@
 
 # 📂 DropFile
 
-**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows, macOS & Linux.**
+**Lightweight Dropbox-style background file synchronization client for [FileBrowser](https://github.com/filebrowser/filebrowser) on Windows, macOS, Linux & Android.**
 
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Android](https://img.shields.io/badge/Android-7.0%2B-green.svg)](#)
 [![Backend](https://img.shields.io/badge/Backend-FileBrowser-2F80ED.svg)](https://github.com/filebrowser/filebrowser)
 [![Release](https://img.shields.io/badge/Release-v1.30.2-orange.svg)](https://github.com/SaidAuita/DropFile/releases)
-
-
-
 [![Languages](https://img.shields.io/badge/Languages-10%20Locales-blueviolet.svg)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -22,7 +20,32 @@
 
 ---
 
-<a name="english"></a>
+<a id="english"></a>
+
+## 🧭 Table of Contents
+
+- [📖 Overview](#overview)
+- [📱 DropFile Mobile for Android](#mobile-app)
+- [✨ Features](#features)
+- [👥 Team Collaboration & Multi-User Setup](#team-collaboration)
+- [🛠️ Network Client Setup & Deployment Guide](#network-setup)
+- [⚡ Remote Control & Emergency Management](#remote-control)
+- [🚀 Installation & Quick Start](#installation)
+  - [🪟 Windows Setup](#windows-setup)
+  - [🍏 macOS Setup](#macos-setup)
+  - [🐧 Linux Setup](#linux-setup)
+  - [📱 Android Mobile Setup](#android-setup)
+- [📦 Project Build Drops Synchronization](#build-sync)
+- [🔄 In-App Updates](#updates)
+- [🐳 FileBrowser Server Setup (Docker)](#docker-setup)
+- [📁 Project Structure](#project-structure)
+- [🧪 Testing](#testing)
+- [🛠️ Other Projects](#other-projects)
+- [🇷🇺 Описание на русском](#russian)
+
+---
+
+<a id="overview"></a>
 ## 📖 Overview
 
 [FileBrowser](https://github.com/filebrowser/filebrowser) is an immensely popular, powerful self-hosted web file manager for personal servers, NAS devices, home mini-PCs, and Docker containers. However, FileBrowser lacks an official desktop client that automatically synchronizes a local folder on your PC like Dropbox, OneDrive, or Google Drive.
@@ -36,6 +59,7 @@
 
 ---
 
+<a id="features"></a>
 ## ✨ Features
 
 - 🚀 **Two-Folder Architecture: `Exchange` vs `Output`**:
@@ -98,18 +122,19 @@
   - One-click Desktop shortcut creation.
   - Configurable poll intervals and customizable ignore patterns (`~$*`, `*.tmp`, etc.).
   - Detailed synchronization activity log with filterable actions.
-- 💻 **Complete Cross-Platform Support (Windows, macOS & Linux)**:
+- 💻 **Complete Cross-Platform Support (Windows, macOS, Linux & Android)**:
   - **Windows 10/11**: Standalone single-file `.exe` binary, Windows System Tray integration, and Registry autostart.
   - **macOS (10.15 ... 15+)**: Native `/Applications/DropFile.app` status bar application (`LSUIElement=1`, zero Dock clutter), LaunchAgent autostart.
   - **Linux**: Desktop AppIndicator tray, Headless Server Daemon with `systemd` user service, XDG Autostart, full CLI management (`--status`, `--sync-now`, `--pause`, `--stop`), and standalone PyInstaller binary.
+  - **Android (Mobile Companion)**: Native Kotlin app for 1-tap sharing from Gallery, remote FileBrowser explorer, direct downloads, and public share links.
 - 📱 **DropFile Mobile (Android Companion App)**:
   - Native companion app for Android ([Complete Guide & Setup](android/README.md)) for 1-tap photo, video, and file sending into `/Exchange/Mobile`.
+  - Built-in **Remote File Explorer** to browse folders, traverse up (`..`) to root, download files, and generate public links.
   - Seamless Android Share sheet integration (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`) from Gallery, Camera, Files, and messaging apps.
+  - **Zero server overhead**: lightweight JSON navigation without thumbnail processing — ideal for routers and low-power NAS.
   - **No White IP required**: works over Keenetic KeenDNS Cloud proxy, Cloudflare Tunnel, Tailscale, or direct public IP.
   - 1-click configuration import (`dropfile_mobile_config.json`) and built-in diagnostic log viewer.
-  - Direct APK download without Google Play: [DropFile-Mobile.apk](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk).
-
-
+  - 👉 *[Jump to DropFile Mobile Section](#mobile-app)* &bull; *[Direct APK Download](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)*
 - 🔄 **In-App Auto-Update & Update Checker**:
   - Check for updates anytime with one click in Settings (`[🔍 Check for Updates]`) or via the System Tray / Menu Bar context menu.
   - Automated binary hot-swap and seamless background restart for `.exe` builds, or `git pull` for source installs.
@@ -129,6 +154,94 @@
 
 ---
 
+<a id="mobile-app"></a>
+## 📱 DropFile Mobile for Android
+
+<div align="center">
+
+[![Android](https://img.shields.io/badge/Platform-Android%207.0%2B%20(API%2024%2B)-green.svg)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.23-purple.svg)](https://kotlinlang.org/)
+[![Download APK](https://img.shields.io/badge/Download%20APK-v1.1.0%20(v1.30.2)-blue.svg)](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)
+[![Android Guide](https://img.shields.io/badge/Full%20Android%20Guide-android%2FREADME.md-orange.svg)](android/README.md)
+
+</div>
+
+**DropFile Mobile** is the official companion Android application designed for rapid file dispatch from your smartphone, remote server file browsing, and public share link creation connected directly to your personal FileBrowser storage.
+
+👉 **[📥 Download DropFile-Mobile.apk (v1.1.0)](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)** &bull; **[📖 Complete Android Documentation & Setup Guide](android/README.md)**
+
+```
+┌─────────────────────────┐
+│     Android Phone       │
+│ (Gallery / Camera / UI) │
+└────────────┬────────────┘
+             │
+             │ 1-Tap Share / Browse / Download / Share Links
+             ▼
+┌─────────────────────────────────────────────────────────┐
+│              Connection Options (No White IP Needed!)   │
+│  • Keenetic KeenDNS Cloud:  https://my-nas.keenetic.link│
+│  • Cloudflare Tunnel:       https://files.yourdomain.com│
+│  • Direct White Public IP:  http://123.45.67.89:8080    │
+│  • Tailscale Mesh VPN:      http://100.x.y.z:8080       │
+└────────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+              ┌──────────────────────────────┐
+              │      FileBrowser Server      │
+              │  Target: /Exchange/Mobile    │
+              └──────────────┬───────────────┘
+                             │
+                             │ Background Real-Time Sync
+                             ▼
+              ┌──────────────────────────────┐
+              │     Desktop PC (DropFile)    │
+              │ Downloaded to Desktop folder │
+              └──────────────────────────────┘
+```
+
+### 🌟 Key Capabilities & Features
+
+1. **⚡ 1-Tap Instant Share from Any App (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`)**:
+   - Select photos, videos, or documents in Samsung Gallery, Google Photos, Files, Telegram, WhatsApp, etc.
+   - Tap **"Share" &rarr; "DropFile"**.
+   - A sleek floating card shows live progress (`Uploading (1/3): IMG_2026.jpg [====> ] 45%`) and automatically closes upon completion.
+   - Files instantly arrive in your PC's desktop sync folder without needing to email or message yourself!
+
+2. **📁 Remote File Explorer (Browse Server from Phone)**:
+   - Full directory navigation directly from your phone.
+   - Ascend directories up to the server root (`/`) with the **«Up»** (`⬆️`) button or the Android system Back button.
+   - Instant return to the mobile target directory (`/Exchange/Mobile`) with the **«Home»** (`📍`) button.
+   - **Pull-to-refresh** gesture to reload listings.
+   - Visual file-type indicators: Folders (`📁`), Images (`🖼️`), Videos (`🎥`), Audio (`🎵`), Archives (`📦`), Documents (`📄`).
+   - **Zero Server Overhead**: Intentionally requests pure JSON directory metadata without generating image thumbnails. Your server (even a low-power Keenetic router or Raspberry Pi) runs with zero CPU spikes and minimal RAM usage.
+
+3. **🔗 Public Share Links in 1 Tap**:
+   - Tap any file or folder (or the `⋮` action menu) to open the Bottom Sheet.
+   - **Copy Link**: Creates a persistent public download link (`https://<server>/share/{hash}`) via FileBrowser REST API and copies it to your clipboard.
+   - **Share Link**: Directly launches the Android system sharing sheet to send the link via Telegram, WhatsApp, Viber, or SMS.
+
+4. **⬇️ Direct Download to Phone**:
+   - Tap **"Download"** on any remote file to stream it straight into your Android **`Downloads`** (`/storage/emulated/0/Download`) folder.
+   - Automatic conflict handling (`file_1.ext`, `file_2.ext`) prevents overwriting existing local files.
+
+5. **🗑️ Remote File & Folder Deletion**:
+   - Delete unnecessary files or directories directly from the server with an explicit confirmation dialog.
+
+6. **🌐 No White / Public IP Required**:
+   - Full out-of-the-box support for **Keenetic KeenDNS Cloud proxy** (`*.keenetic.link` — works behind ISP CGNAT/4G without port forwarding and includes free automatic Let's Encrypt HTTPS).
+   - Compatible with **Cloudflare Tunnel**, **Tailscale**, or traditional **Port Forwarding / White IP**.
+
+7. **📥 1-Click Configuration Import**:
+   - No tedious mobile keyboard typing of long URLs, tokens, or passwords.
+   - Run `python export_mobile_config.py` on your PC to export `dropfile_mobile_config.json`, send it to your phone, and tap **«📥 Import configuration»** in the app.
+
+8. **📋 Built-in Diagnostic Logger**:
+   - Tap the clipboard icon `📋` in the top toolbar to inspect real-time HTTP requests, response codes, and network logs with 1-tap clipboard copying for fast support.
+
+---
+
+<a id="team-collaboration"></a>
 ## 👥 Team Collaboration & Multi-User Setup
 
 DropFile easily scales from a single user to an entire department or company. Depending on your organization's workflow, choose between two deployment strategies:
@@ -165,6 +278,7 @@ DropFile easily scales from a single user to an entire department or company. De
 
 ---
 
+<a id="network-setup"></a>
 ## 🛠️ Network Client Setup & Deployment Guide
 
 How do you set up DropFile on an employee or team member's computer in your network?
@@ -205,6 +319,7 @@ Alternatively, configure one PC, click **"Export Settings"** in the Settings tab
 
 ---
 
+<a id="remote-control"></a>
 ## ⚡ Remote Control & Emergency Management
 
 DropFile includes a secure out-of-band remote management system that operates over the standard FileBrowser REST API. It requires no open inbound firewall ports, no VPNs, and no dynamic DNS — commands are delivered via encrypted, HMAC-SHA256 signed control packets (`.dropfile_control/`) with a strict 3-minute freshness window.
@@ -248,10 +363,12 @@ grep -E '^Exec=' /usr/share/applications/*calendar*.desktop
 
 ---
 
+<a id="installation"></a>
 ## 🚀 Installation & Quick Start
 
-DropFile is available for **Windows**, **macOS**, and **Linux**. Choose your platform:
+DropFile is available for **Windows**, **macOS**, **Linux**, and **Android**. Choose your platform:
 
+<a id="windows-setup"></a>
 ### 🪟 1. Windows Setup (10 & 11)
 
 #### Method A: Standalone Executable (Recommended for Clients & End-Users)
@@ -282,6 +399,7 @@ The compiled binary will be placed at `dist\DropFile.exe`.
 
 ---
 
+<a id="macos-setup"></a>
 ### 🍏 2. macOS Setup (Catalina 10.15 ... Sequoia / Tahoe)
 
 *Automated 1-click installer for macOS:*
@@ -302,6 +420,7 @@ The compiled binary will be placed at `dist\DropFile.exe`.
 
 ---
 
+<a id="linux-setup"></a>
 ### 🐧 3. Linux Setup (Ubuntu, Debian, Mint, Fedora, Arch)
 
 DropFile supports Linux both on **Desktop workstations** (with system tray & GUI) and **Headless Servers / NAS / mini-PCs** (running as a background systemd daemon).
@@ -367,6 +486,17 @@ python3 build_linux.py
 
 ---
 
+<a id="android-setup"></a>
+### 📱 4. Android Mobile Setup (DropFile Mobile)
+
+1. Download **`DropFile-Mobile.apk`** from [GitHub Releases](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk).
+2. Install the APK on your Android smartphone (Android 7.0+).
+3. Export your server connection file `dropfile_mobile_config.json` via `python export_mobile_config.py` on your PC, send it to your phone, and tap **«📥 Import configuration»** in app settings.
+4. 👉 Full details, connection modes without white IP (KeenDNS, Cloudflare, Tailscale), and screenshots: see [📱 DropFile Mobile for Android](#mobile-app) and [android/README.md](android/README.md).
+
+---
+
+<a id="build-sync"></a>
 ## 📦 Project Build Drops Synchronization
 
 **DropFile** includes a specialized background engine designed for developers and automated build pipelines that frequently create application builds, installers, or test archives (e.g. `*.zip`, `*.7z`, `*.exe`, `*.tar.gz`) across multiple software repositories.
@@ -403,6 +533,7 @@ Local PC:                                  Network Share / Exchange Server:
 
 ---
 
+<a id="updates"></a>
 ### 🔄 Updates
 
 #### 1. In-App Auto-Update (One-Click)
@@ -427,6 +558,7 @@ git pull origin main
 
 ---
 
+<a id="docker-setup"></a>
 ## 🐳 FileBrowser Server Setup (Docker)
 
 If you do not have FileBrowser running yet, deploy it in seconds with Docker:
@@ -446,6 +578,7 @@ docker run -d \
 
 ---
 
+<a id="project-structure"></a>
 ## 📁 Project Structure
 
 ```text
@@ -453,6 +586,7 @@ DropFile/
 ├── DropFile.pyw         # Main entry point (silent background launcher, CLI & headless daemon)
 ├── config.py            # Configuration manager (portable config.json, %APPDATA%, macOS & Linux)
 ├── config.example.json  # Configuration template
+├── export_mobile_config.py # Export mobile configuration helper (.json)
 ├── fb_client.py         # FileBrowser REST API client (JWT auth, listings, upload/download)
 ├── sync_engine.py       # Bidirectional sync engine, inotify/watchdog, debounce & echo suppression
 ├── updater.py           # Auto-updater (GitHub Releases API, semver, hot-swap & restart)
@@ -463,6 +597,12 @@ DropFile/
 ├── platform_utils.py    # Cross-platform utilities (autostart, single instance lock, shortcuts)
 ├── icons.py             # Dynamic tray status icon & multi-res .ico generator
 ├── version.py           # Application version definition
+│
+├── # 📱 Android Companion App:
+├── android/             # Native Android client (Kotlin, Jetpack, Material 3)
+│   ├── app/             # Application source (ExplorerActivity, SendActivity, FileBrowserApi)
+│   ├── build.gradle.kts # Gradle build configuration (Android SDK 34)
+│   └── README.md        # Comprehensive Android setup & connection guide
 │
 ├── # 🪟 Windows Build & Launch:
 ├── build_exe.py         # PyInstaller standalone .exe builder
@@ -497,6 +637,7 @@ DropFile/
 
 ---
 
+<a id="testing"></a>
 ## 🧪 Testing
 
 Run all unit tests:
@@ -506,6 +647,7 @@ python -m unittest discover tests
 
 ---
 
+<a id="other-projects"></a>
 ## 🛠️ Other Projects
 
 * **[RyzenQuiet PRO](https://github.com/SaidAuita/RyzenQuietPro)** — Sleek, lightweight hardware HUD & power-plan optimizer for Windows with AMD Ryzen CPB toggle and real-time GPU power telemetry.
@@ -514,9 +656,31 @@ python -m unittest discover tests
 
 ---
 
+<a id="russian"></a>
 <a name="russian"></a>
 ## 🇷🇺 Описание на русском
 
+### 🧭 Оглавление и быстрая навигация
+
+- [💡 О проекте](#about-ru)
+- [📱 Мобильное приложение DropFile Mobile для Android](#mobile-app-ru)
+- [🌟 Основные возможности](#features-ru)
+- [👥 Настройка для командной работы и масштабирование](#team-collaboration-ru)
+- [🛠️ Руководство по настройке клиента у пользователя сети](#network-setup-ru)
+- [⚡ Удаленное управление и аварийные действия](#remote-control-ru)
+- [🚀 Установка и быстрый старт](#installation-ru)
+  - [🪟 Windows (10 и 11)](#windows-setup-ru)
+  - [🍏 macOS](#macos-setup-ru)
+  - [🐧 Linux](#linux-setup-ru)
+  - [📱 Android (Смартфоны)](#android-setup-ru)
+- [📦 Синхронизация сборок проектов и ротация версий](#build-sync-ru)
+- [🔄 Обновление](#updates-ru)
+- [🛠️ Другие проекты](#other-projects-ru)
+- [📄 License / Лицензия](#license)
+
+---
+
+<a id="about-ru"></a>
 ### 💡 О проекте
 
 [FileBrowser](https://github.com/filebrowser/filebrowser) — популярный веб-менеджер файлов для личных серверов, NAS, домашних мини-ПК и Docker. Однако у FileBrowser нет официального десктопного клиента, который автоматически синхронизировал бы локальную папку на компьютере по принципу Dropbox или OneDrive.
@@ -528,6 +692,7 @@ python -m unittest discover tests
 - Не требует WebDAV, SMB или сторонних облачных сервисов: обмен идет через стандартный **HTTPS / HTTP REST API** самого FileBrowser.
 - Успешно работает через любые корпоративные фаерволы (порт 443), прокси (Nginx, Caddy, Traefik), туннели (Cloudflare Tunnel, Keenetic Cloud, Tailscale) или прямое подключение по белому/локальному IP.
 
+<a id="features-ru"></a>
 ### 🌟 Основные возможности
 - 🚀 **Разделение концепции: папка `Exchange` и папка `Output`**:
   - **`Exchange` (Высокоскоростная синхронизация Сервер ⇄ Сервер через DropSync)**:
@@ -571,13 +736,22 @@ python -m unittest discover tests
 - 🛡️ **Защита от зацикливания и конфликтов**: дебаунсинг записи, подавление эхо и создание копий `(Conflict PC YYYY-MM-DD)`.
 - 🕒 **Информативный трей**: цветовая индикация (зеленый / синий / красный / желтый) и контекстное меню.
 - ⚙️ **Графический интерфейс настроек**: проверка соединения в один клик, выбор папок, создание ярлыка, настройка исключений и журнал событий.
-- 💻 **Полная кроссплатформенность (Windows, macOS и Linux)**:
+- 💻 **Полная кроссплатформенность (Windows, macOS, Linux и Android)**:
   - **Windows 10/11**: Автономный `.exe` без необходимости ставить Python, интеграция с системным треем и автозагрузка через реестр.
   - **macOS (10.15 ... 15+)**: Нативное приложение `/Applications/DropFile.app` для строки меню (`LSUIElement=1`, без иконки в Dock), автозагрузка через LaunchAgent.
   - **Linux**: Трей AppIndicator для десктопов, серверный headless-демон со службой `systemd`, XDG Autostart, консольное управление (CLI: `--status`, `--sync-now`, `--pause`, `--stop`) и автономный бинарник PyInstaller.
+  - **Android (Мобильный клиент)**: Нативное приложение на Kotlin для быстрой отправки фото из галереи, удаленного проводника по серверу, скачивания и создания ссылок.
 - 📦 **Автономная сборка Windows (`DropFile.exe`)**:
   - Единый исполняемый `.exe` файл без необходимости ставить Python или Git на рабочих местах пользователей.
   - Встроенная мультииконка высокого разрешения и работа в фоне без консольных окон.
+- 📱 **DropFile Mobile (Мобильное приложение для Android)**:
+  - Нативное мобильное приложение-компаньон для Android ([Полное руководство и настройка](android/README.md)) для быстрой отправки фото, видео и файлов в папку `/Exchange/Mobile`.
+  - Встроенный **удалённый проводник** по серверу (навигация по папкам, переход вверх `..` до корня, скачивание и генерация ссылок).
+  - Интеграция в системное меню «Поделиться» (Share Sheet) любого приложения (Галерея, Проводник, Telegram, WhatsApp).
+  - **Нулевая нагрузка на сервер**: легкий JSON-обход каталогов без генерации миниатюр (thumbnails) — идеально для роутеров и слабых NAS.
+  - **Белый IP НЕ требуется**: работает через облако Keenetic KeenDNS (`*.keenetic.link`), Cloudflare Tunnel, Tailscale или прямой IP.
+  - Импорт файла настроек `dropfile_mobile_config.json` в 1 клик и встроенный просмотрщик логов для диагностики.
+  - 👉 *[Подробнее в разделе о мобильном приложении](#mobile-app-ru)* &bull; *[Прямая ссылка на скачивание APK](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)*
 - 🔄 **Встроенное автообновление и проверка новых версий**:
   - Кнопка **«🔍 Проверить обновления»** в шапке окна настроек и пункт в контекстном меню системного трея.
   - Автоматическая загрузка нового релиза с GitHub, безопасная горячая замена бинарника и бесшовный перезапуск в фоне.
@@ -591,18 +765,98 @@ python -m unittest discover tests
   - Удаленный запуск доверенных приложений без риска выполнения произвольных shell-команд.
   - Быстрый сценарий «Снять процесс -> Перезапустить» прямо из окна процессов с автообновлением.
   - Удаленная перезагрузка компьютера с авторизацией по PIN-коду и HMAC-SHA256 подписью.
-- 📱 **DropFile Mobile (Мобильное приложение для Android)**:
-  - Нативное мобильное приложение-компаньон для Android ([Полное руководство и настройка](android/README.md)) для быстрой отправки фото, видео и файлов в папку `/Exchange/Mobile`.
-  - Интеграция в системное меню «Поделиться» (Share Sheet) любого приложения (Галерея, Проводник, Telegram, WhatsApp).
-  - **Белый IP НЕ требуется**: работает через облако Keenetic KeenDNS (`*.keenetic.link`), Cloudflare Tunnel, Tailscale или прямой IP.
-  - Импорт файла настроек `dropfile_mobile_config.json` в 1 клик и встроенный просмотрщик логов для диагностики.
-  - Прямая ссылка на установку APK без Google Play: [DropFile-Mobile.apk](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk).
-
 - 🚀 **Бесшумный автозапуск**: скрытый запуск без мигающих черных окон и автозагрузка вместе с Windows.
-
 
 ---
 
+<a id="mobile-app-ru"></a>
+### 📱 Мобильное приложение DropFile Mobile для Android
+
+<div align="center">
+
+[![Android](https://img.shields.io/badge/Платформа-Android%207.0%2B-green.svg)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.23-purple.svg)](https://kotlinlang.org/)
+[![Скачать APK](https://img.shields.io/badge/Скачать%20APK-v1.1.0%20(v1.30.2)-blue.svg)](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)
+[![Руководство](https://img.shields.io/badge/Подробный%20гайд-android%2FREADME.md-orange.svg)](android/README.md)
+
+</div>
+
+**DropFile Mobile** — официальное нативное приложение для Android для быстрой отправки файлов и фото со смартфона на сервер, удаленного просмотра файлов в хранилище и мгновенного создания публичных ссылок для скачивания.
+
+👉 **[📥 Скачать актуальный DropFile-Mobile.apk (v1.1.0)](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk)** &bull; **[📖 Подробное пошаговое руководство по Android](android/README.md)**
+
+```
+┌─────────────────────────┐
+│     Android-смартфон    │
+│ (Галерея / Камера / UI) │
+└────────────┬────────────┘
+             │
+             │ Отправка в 1 клик / Проводник / Ссылки / Скачивание
+             ▼
+┌─────────────────────────────────────────────────────────┐
+│              Варианты подключения (Белый IP НЕ нужен!)  │
+│  • Keenetic KeenDNS Cloud:  https://my-nas.keenetic.link│
+│  • Cloudflare Tunnel:       https://files.vashdomen.ru  │
+│  • Прямой белый IP:         http://123.45.67.89:8080    │
+│  • Tailscale Mesh VPN:      http://100.x.y.z:8080       │
+└────────────────────────────┬────────────────────────────┘
+                             │
+                             ▼
+              ┌──────────────────────────────┐
+              │      Сервер FileBrowser      │
+              │  Папка: /Exchange/Mobile     │
+              └──────────────┬───────────────┘
+                             │
+                             │ Фоновая синхронизация
+                             ▼
+              ┌──────────────────────────────┐
+              │      Компьютер (DropFile)    │
+              │ Файлы уже на Рабочем столе   │
+              └──────────────────────────────┘
+```
+
+#### 🌟 Основной функционал мобильного приложения
+
+1. **⚡ Отправка файлов в 1 клик через меню «Поделиться» (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`)**:
+   - Выберите фото, видео или документы в Галерее (Samsung, Xiaomi, Pixel), Google Фото, Проводнике, Telegram или WhatsApp.
+   - Нажмите **«Поделиться» &rarr; «DropFile»**.
+   - Появится аккуратная карточка с прогресс-баром передачи (`Загрузка (1/3): IMG_2026.jpg [====> ] 45%`), которая автоматически закроется после завершения.
+   - Файлы сразу появляются в папке DropFile на вашем компьютере без необходимости отправлять их самому себе в мессенджерах!
+
+2. **📁 Удалённый проводник по файлам на сервере (Remote Explorer)**:
+   - Полноценный просмотр каталогов на сервере прямо с экрана смартфона.
+   - Навигация по папкам вверх вплоть до самого корня сервера (`/`) кнопкой **«Вверх»** (`⬆️`) и системной кнопкой «Назад».
+   - Мгновенный возврат в целевую мобильную папку (`/Exchange/Mobile`) кнопкой **«Домой»** (`📍`).
+   - Жест **Pull-to-Refresh** для обновления списка файлов.
+   - Наглядные иконки по типам данных (папки `📁`, картинки `🖼️`, видео `🎥`, аудио `🎵`, архивы `📦`, документы `📄`).
+   - **Нулевая нагрузка на сервер (Zero server load)**: миниатюры изображений намеренно не генерируются, отдаётся только лёгкий JSON со списком каталога. Сервер (даже на слабом роутере Keenetic или Raspberry Pi) работает без нагрузки на ОЗУ и CPU.
+
+3. **🔗 Создание публичных ссылок в 1 клик (Public Share Links)**:
+   - Нажмите на любой файл или папку (или меню `⋮`), чтобы открыть панель действий.
+   - **Скопировать ссылку**: генерирует постоянную публичную ссылку вида `https://<сервер>/share/{hash}` через FileBrowser REST API и копирует в буфер обмена телефона.
+   - **Поделиться ссылкой**: открывает системный диалог Android для немедленной отправки ссылки в Telegram, WhatsApp, Viber, SMS или почту.
+
+4. **⬇️ Прямое скачивание на телефон**:
+   - Пункт **«Скачать на телефон»** скачивает выбранный файл напрямую в системную папку `Загрузки` (`Downloads`).
+   - Автоматическая защита от перезаписи файлов с одинаковыми именами (`файл_1.ext`).
+
+5. **🗑️ Удаление файлов и папок с сервера**:
+   - Удаление ненужных файлов или каталогов с сервера с обязательным диалогом подтверждения.
+
+6. **🌐 Работа без белого IP**:
+   - Поддержка облачного прокси **Keenetic KeenDNS** (`*.keenetic.link` — работает через «серый» IP и мобильный интернет 4G, автоматический бесплатный SSL-сертификат HTTPS).
+   - Поддержка **Cloudflare Tunnel**, **Tailscale** или прямого белого IP.
+
+7. **📥 Импорт настроек в 1 клик**:
+   - Не нужно вводить длинные URL, логины и пароли на клавиатуре телефона.
+   - Нажмите на ПК кнопку экспорта настроек (`python export_mobile_config.py`), перешлите файл `dropfile_mobile_config.json` на телефон и нажмите в настройках приложения **«📥 Импортировать конфигурацию»**.
+
+8. **📋 Встроенный журнал диагностики (Logger)**:
+   - Нажмите иконку блокнота `📋` в шапке экрана, чтобы увидеть журнал сетевых запросов и ответов сервера с возможностью скопировать его в буфер обмена в один клик.
+
+---
+
+<a id="team-collaboration-ru"></a>
 ### 👥 Настройка для командной работы и масштабирование
 
 DropFile отлично подходит как для личного использования, так и для работы команды (отдел дизайна, допечатная подготовка, разработка, офис). Доступны два основных сценария развертывания:
@@ -639,6 +893,7 @@ DropFile отлично подходит как для личного испол
 
 ---
 
+<a id="network-setup-ru"></a>
 ### 🛠️ Руководство по настройке клиента у пользователя сети
 
 Как настроить DropFile на компьютере сотрудника в локальной сети и что делать при возникновении вопросов?
@@ -679,6 +934,7 @@ DropFile отлично подходит как для личного испол
 
 ---
 
+<a id="remote-control-ru"></a>
 ### ⚡ Удаленное управление и аварийные действия
 
 В DropFile встроена безопасная система удаленного управления и экстренного администрирования компьютеров, работающая поверх стандартного FileBrowser REST API. Ей не требуются открытые входящие порты, "белые" IP-адреса или VPN — пакеты управления передаются через скрытый каталог `.dropfile_control/`, шифруются и авторизуются HMAC-SHA256 подписью с временным окном жизни 3 минуты.
@@ -722,10 +978,12 @@ grep -E '^Exec=' /usr/share/applications/*calendar*.desktop
 
 ---
 
+<a id="installation-ru"></a>
 ### 🚀 Установка и быстрый старт
 
-DropFile доступен для **Windows**, **macOS** и **Linux**. Выберите вашу систему:
+DropFile доступен для **Windows**, **macOS**, **Linux** и **Android**. Выберите вашу систему:
 
+<a id="windows-setup-ru"></a>
 ### 🪟 1. Установка на Windows (10 и 11)
 
 #### Способ A: Готовый автономный .exe (Рекомендуется для пользователей)
@@ -756,6 +1014,7 @@ python build_exe.py
 
 ---
 
+<a id="macos-setup-ru"></a>
 ### 🍏 2. Установка на macOS (Catalina 10.15 ... Sequoia / Tahoe)
 
 *Быстрая автоматическая установка в 1 клик:*
@@ -776,6 +1035,7 @@ python build_exe.py
 
 ---
 
+<a id="linux-setup-ru"></a>
 ### 🐧 3. Установка на Linux (Ubuntu, Debian, Mint, Fedora, Arch)
 
 DropFile поддерживает Linux как на **рабочих станциях Desktop** (с иконкой в системном трее и графическим интерфейсом), так и на **серверах, NAS и мини-ПК** (в виде фонового headless-демона systemd).
@@ -841,6 +1101,17 @@ python3 build_linux.py
 
 ---
 
+<a id="android-setup-ru"></a>
+### 📱 4. Установка на Android (Смартфоны)
+
+1. Скачайте файл **`DropFile-Mobile.apk`** из [последнего релиза на GitHub](https://github.com/SaidAuita/DropFile/releases/latest/download/DropFile-Mobile.apk).
+2. Запустите APK-файл на телефоне под управлением Android 7.0+ (разрешите установку из неизвестных источников, если потребуется).
+3. Экспортируйте файл настроек с сервера с помощью скрипта `python export_mobile_config.py` на ПК, перешлите его на смартфон и нажмите **«📥 Импортировать конфигурацию»** в настройках приложения.
+4. 👉 Полное описание функций, варианты подключения без белого IP (KeenDNS, Cloudflare, Tailscale) и скриншоты: см. [📱 Мобильное приложение DropFile Mobile для Android](#mobile-app-ru) и [Пошаговый гайд по Android](android/README.md).
+
+---
+
+<a id="build-sync-ru"></a>
 ## 📦 Синхронизация сборок проектов и ротация версий
 
 В **DropFile** встроен специализированный фоновый модуль для разработчиков и систем автоматической сборки проектов, у которых периодически формируются исполняемые файлы, дистрибутивы и архивы сборок (например, `*.zip`, `*.7z`, `*.exe`, `*.tar.gz`) в нескольких рабочих каталогах.
@@ -877,6 +1148,7 @@ python3 build_linux.py
 
 ---
 
+<a id="updates-ru"></a>
 ### 🔄 Обновление
 
 #### Способ 1: Автоматическое обновление из программы (в 1 клик)
@@ -900,6 +1172,7 @@ git pull origin main
 
 ---
 
+<a id="other-projects-ru"></a>
 ## 🛠️ Другие проекты
 
 * **[RyzenQuiet PRO](https://github.com/SaidAuita/RyzenQuietPro)** — Элегантный и легковесный аппаратный HUD и оптимизатор планов электропитания для Windows с переключением AMD Ryzen CPB и телеметрией энергопотребления GPU в реальном времени.
@@ -908,6 +1181,7 @@ git pull origin main
 
 ---
 
+<a id="license"></a>
 ## 📄 License / Лицензия
 
 Distributed under the open-source [MIT License](LICENSE).

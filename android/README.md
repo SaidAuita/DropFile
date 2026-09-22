@@ -6,7 +6,7 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B%20(API%2024%2B)-green.svg)](#)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.23-purple.svg)](https://kotlinlang.org/)
-[![Release](https://img.shields.io/badge/Latest%20APK-v1.30.1-blue.svg)](https://github.com/SaidAuita/DropFile/releases/latest)
+[![Release](https://img.shields.io/badge/Latest%20APK-v1.30.2-blue.svg)](https://github.com/SaidAuita/DropFile/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](../LICENSE)
 
 <br/>
