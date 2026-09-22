@@ -54,22 +54,29 @@ def main():
         "auto_close": True
     }
 
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     out_path = Path(args.output)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(mobile_config, f, indent=4, ensure_ascii=False)
 
     print("=" * 65)
-    print(f"✅ Файл конфигурации для мобильного успешно создан:")
-    print(f"   {out_path.resolve()}")
+    print(f"[OK] File configuration created successfully:")
+    print(f"     {out_path.resolve()}")
     print("=" * 65)
-    print("Содержимое:")
+    print("Content:")
     print(json.dumps(mobile_config, indent=4, ensure_ascii=False))
     print("=" * 65)
-    print("Как импортировать в телефон:")
-    print("1. Передайте этот файл на телефон (через Telegram, USB или загрузите в FileBrowser).")
-    print("2. В приложении DropFile Mobile откройте «Настройки».")
-    print("3. Нажмите «📥 Импортировать файл настроек (.json)» и выберите этот файл.")
+    print("Instructions for Android:")
+    print("1. Transfer dropfile_mobile_config.json to your smartphone.")
+    print("2. In DropFile Mobile app, open Settings.")
+    print("3. Tap 'Import configuration (.json)' and select this file.")
     print("=" * 65)
+
 
 if __name__ == "__main__":
     main()

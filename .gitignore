@@ -34,6 +34,8 @@ state.db*
 # Personal configuration containing credentials
 # Use config.example.json as template
 config.json
+*mobile_config*.json
+
 
 # Local documentation / task notes containing private info
 .doc/
