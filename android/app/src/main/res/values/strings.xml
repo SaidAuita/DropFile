@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DropFile Mobile</string>
+    <string name="send_to_dropfile">Отправить в DropFile</string>
+    <string name="settings">Настройки</string>
+    <string name="connection_status">Статус сервера</string>
+    <string name="server_online">Сервер доступен</string>
+    <string name="server_offline">Нет связи с сервером</string>
+    <string name="server_not_configured">Настройки не заданы</string>
+
+    <string name="server_url">URL сервера FileBrowser</string>
+    <string name="server_url_hint">http://123.45.67.89:8080 или https://...</string>
+    <string name="username">Имя пользователя</string>
+    <string name="password">Пароль</string>
+    <string name="target_folder">Папка назначения на сервере</string>
+    <string name="target_folder_hint">/Exchange/Mobile</string>
+
+    <string name="test_connection">⚡ Проверить подключение</string>
+    <string name="testing_connection">Проверка соединения...</string>
+    <string name="test_success">Соединение успешно установлено!</string>
+    <string name="test_failed">Ошибка подключения</string>
+
+    <string name="import_config">📥 Импортировать файл настроек (.json)</string>
+    <string name="export_config">📤 Экспортировать настройки</string>
+    <string name="config_imported_success">Настройки успешно импортированы!</string>
+    <string name="config_import_failed">Ошибка импорта файла конфигурации</string>
+
+    <string name="auto_close_after_send">Закрывать экран после успешной отправки</string>
+    <string name="save_settings">Сохранить</string>
+    <string name="settings_saved">Настройки сохранены</string>
+
+    <string name="pick_and_send">Выбрать и отправить файлы</string>
+    <string name="upload_history">История отправок</string>
+    <string name="no_uploads_yet">Файлы ещё не отправлялись</string>
+    <string name="clear_history">Очистить историю</string>
+
+    <string name="sending_files">Отправка файлов...</string>
+    <string name="send_success">Успешно отправлено!</string>
+    <string name="send_failed">Ошибка при отправке</string>
+    <string name="cancel">Отмена</string>
+    <string name="close">Закрыть</string>
+    <string name="send">Отправить</string>
+</resources>

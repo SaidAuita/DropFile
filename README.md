@@ -99,6 +99,11 @@
   - **Windows 10/11**: Standalone single-file `.exe` binary, Windows System Tray integration, and Registry autostart.
   - **macOS (10.15 ... 15+)**: Native `/Applications/DropFile.app` status bar application (`LSUIElement=1`, zero Dock clutter), LaunchAgent autostart.
   - **Linux**: Desktop AppIndicator tray, Headless Server Daemon with `systemd` user service, XDG Autostart, full CLI management (`--status`, `--sync-now`, `--pause`, `--stop`), and standalone PyInstaller binary.
+- 📱 **DropFile Mobile (Android)**:
+  - Companion native Android app ([details](android/README.md)) for instant photo, video, and file drops directly from your smartphone into `/Exchange/Mobile`.
+  - Full Android system Share sheet (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`) support from Gallery, Camera, Files, and messenger apps.
+  - 1-click configuration import (`dropfile_mobile_config.json`) and direct APK download via GitHub Releases.
+
 - 🔄 **In-App Auto-Update & Update Checker**:
   - Check for updates anytime with one click in Settings (`[🔍 Check for Updates]`) or via the System Tray / Menu Bar context menu.
   - Automated binary hot-swap and seamless background restart for `.exe` builds, or `git pull` for source installs.
@@ -580,7 +585,12 @@ python -m unittest discover tests
   - Удаленный запуск доверенных приложений без риска выполнения произвольных shell-команд.
   - Быстрый сценарий «Снять процесс -> Перезапустить» прямо из окна процессов с автообновлением.
   - Удаленная перезагрузка компьютера с авторизацией по PIN-коду и HMAC-SHA256 подписью.
+- 📱 **DropFile Mobile (Android)**:
+  - Нативное мобильное приложение-компаньон для Android ([руководство](android/README.md)) для быстрой отправки фото, видео и файлов в папку `/Exchange/Mobile`.
+  - Интеграция в системное меню «Поделиться» (Share Sheet) любого приложения (Галерея, Проводник, Telegram).
+  - Импорт файла настроек `dropfile_mobile_config.json` в 1 клик и прямая установка по ссылке через APK.
 - 🚀 **Бесшумный автозапуск**: скрытый запуск без мигающих черных окон и автозагрузка вместе с Windows.
+
 
 ---
 
