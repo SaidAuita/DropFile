@@ -1,131 +1,184 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout
+<androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="20dp">
+    android:background="@color/bg_light">
 
-    <com.google.android.material.card.MaterialCardView
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/card_bg">
+        android:background="@color/primary">
 
-        <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:navigationIconTint="@color/white"
+            app:title="@string/send_to_dropfile"
+            app:titleTextColor="@color/white">
+
+            <ImageButton
+                android:id="@+id/btnToolbarLogs"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="end"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Логи"
+                android:src="@drawable/ic_file"
+                app:tint="@color/white" />
+
+        </com.google.android.material.appbar.MaterialToolbar>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="24dp">
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp"
+            app:strokeColor="@color/divider"
+            app:strokeWidth="1dp"
+            app:cardBackgroundColor="@color/card_bg">
 
-            <!-- Header with Icon and Title -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="vertical"
+                android:padding="20dp">
 
-                <ImageView
-                    android:id="@+id/ivSendIcon"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:src="@drawable/ic_cloud_upload"
-                    app:tint="@color/primary" />
-
+                <!-- Destination info -->
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                    <TextView
+                    <ImageView
+                        android:id="@+id/ivSendIcon"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/ic_cloud_upload"
+                        app:tint="@color/primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvDestinationFolder"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            tools:text="Папка: /Exchange/Mobile" />
+
+                        <TextView
+                            android:id="@+id/tvDestinationServer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            tools:text="Сервер: https://photo.buka3033..." />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="16dp"
+                    android:background="@color/divider" />
+
+                <!-- File details -->
+                <TextView
+                    android:id="@+id/tvFilesSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    tools:text="3 файла (18.4 МБ)" />
+
+                <TextView
+                    android:id="@+id/tvStatusDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    tools:text="Подготовка файлов к отправке..." />
+
+                <!-- Progress bar -->
+                <com.google.android.material.progressindicator.LinearProgressIndicator
+                    android:id="@+id/progressBar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    app:indicatorColor="@color/primary"
+                    app:trackColor="@color/primary_light"
+                    app:trackCornerRadius="4dp"
+                    app:trackThickness="8dp" />
+
+                <!-- Action buttons -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnViewLogs"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/send_to_dropfile"
-                        android:textColor="@color/text_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold" />
+                        android:text="📋 Логи"
+                        android:textColor="@color/text_secondary" />
 
-                    <TextView
-                        android:id="@+id/tvDestinationFolder"
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <Button
+                        android:id="@+id/btnCancel"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        tools:text="В папку: /Exchange/Mobile" />
+                        android:text="@string/cancel" />
+
+                    <Button
+                        android:id="@+id/btnStartSend"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/send" />
 
                 </LinearLayout>
 
             </LinearLayout>
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="16dp"
-                android:background="@color/divider" />
+        </com.google.android.material.card.MaterialCardView>
 
-            <!-- File Details Summary -->
-            <TextView
-                android:id="@+id/tvFilesSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                tools:text="3 файла (18.4 МБ)" />
+    </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvStatusDetail"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                tools:text="Подготовка файлов к отправке..." />
-
-            <!-- Progress Indicator -->
-            <com.google.android.material.progressindicator.LinearProgressIndicator
-                android:id="@+id/progressBar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                app:indicatorColor="@color/primary"
-                app:trackColor="@color/primary_light"
-                app:trackCornerRadius="4dp"
-                app:trackThickness="8dp" />
-
-            <!-- Action Buttons Row -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:gravity="end"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btnCancel"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/cancel" />
-
-                <Button
-                    android:id="@+id/btnStartSend"
-                    style="@style/Widget.Material3.Button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/send" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-    </com.google.android.material.card.MaterialCardView>
-
-</FrameLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

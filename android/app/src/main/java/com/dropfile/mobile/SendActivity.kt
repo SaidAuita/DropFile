@@ -1,9 +1,9 @@
 package com.dropfile.mobile
 
-import android.app.Activity
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.View
@@ -13,11 +13,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.dropfile.mobile.api.FileBrowserApi
 import com.dropfile.mobile.data.AppConfig
+import com.dropfile.mobile.data.AppLogger
 import com.dropfile.mobile.data.ConfigManager
 import com.dropfile.mobile.data.HistoryManager
 import com.dropfile.mobile.data.UploadItem
 import com.dropfile.mobile.databinding.ActivitySendBinding
 import com.dropfile.mobile.ui.HistoryAdapter
+import com.dropfile.mobile.ui.LogViewerDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,75 +44,136 @@ class SendActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivitySendBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        AppLogger.init(applicationContext)
+        AppLogger.i("SendActivity", "onCreate started: action=${intent?.action}, type=${intent?.type}")
 
-        configManager = ConfigManager(this)
-        historyManager = HistoryManager(this)
+        try {
+            binding = ActivitySendBinding.inflate(layoutInflater)
+            setContentView(binding.root)
 
-        val config = configManager.getConfig()
-        if (!config.isConfigured) {
-            Toast.makeText(this, "Пожалуйста, настройте подключение к серверу", Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, SettingsActivity::class.java))
+            configManager = ConfigManager(this)
+            historyManager = HistoryManager(this)
+
+            binding.toolbar.setNavigationOnClickListener {
+                uploadJob?.cancel()
+                finish()
+            }
+
+            binding.btnToolbarLogs.setOnClickListener {
+                LogViewerDialog.show(this)
+            }
+            binding.btnViewLogs.setOnClickListener {
+                LogViewerDialog.show(this)
+            }
+
+            val config = configManager.getConfig()
+            AppLogger.i("SendActivity", "Config loaded: server=${config.serverUrl}, folder=${config.targetFolder}, configured=${config.isConfigured}")
+
+            if (!config.isConfigured) {
+                AppLogger.w("SendActivity", "DropFile is not configured!")
+                Toast.makeText(this, "Пожалуйста, сначала настройте подключение к серверу", Toast.LENGTH_LONG).show()
+                startActivity(Intent(this, SettingsActivity::class.java))
+                finish()
+                return
+            }
+
+            binding.tvDestinationFolder.text = "Папка: ${config.targetFolder}"
+            binding.tvDestinationServer.text = "Сервер: ${config.serverUrl}"
+
+            binding.btnCancel.setOnClickListener {
+                uploadJob?.cancel()
+                finish()
+            }
+
+            binding.btnStartSend.setOnClickListener {
+                startUpload(config)
+            }
+
+            extractFilesFromIntent(intent)
+        } catch (e: Throwable) {
+            AppLogger.e("SendActivity", "FATAL error in onCreate", e)
+            Toast.makeText(this, "Ошибка запуска: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun extractFilesFromIntent(intent: Intent?) {
+        if (intent == null) {
+            AppLogger.w("SendActivity", "intent is null")
             finish()
             return
         }
 
-        binding.tvDestinationFolder.text = "Папка: ${config.targetFolder}"
-
-        binding.btnCancel.setOnClickListener {
-            uploadJob?.cancel()
-            finish()
-        }
-
-        binding.btnStartSend.setOnClickListener {
-            startUpload(config)
-        }
-
-        extractFilesFromIntent(intent)
-    }
-
-    private fun extractFilesFromIntent(intent: Intent) {
         filesToUpload.clear()
 
-        when (intent.action) {
-            Intent.ACTION_SEND -> {
-                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                    ?: intent.clipData?.getItemAt(0)?.uri
+        // 1. Try clipData first (Standard for Android 10-15)
+        val clip = intent.clipData
+        if (clip != null && clip.itemCount > 0) {
+            AppLogger.i("SendActivity", "Reading clipData, itemCount=${clip.itemCount}")
+            for (i in 0 until clip.itemCount) {
+                val uri = clip.getItemAt(i)?.uri
                 if (uri != null) {
+                    AppLogger.i("SendActivity", "clipData uri [$i]: $uri")
                     resolveFileInfo(uri)?.let { filesToUpload.add(it) }
                 }
             }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                if (uris != null) {
-                    for (u in uris) {
-                        resolveFileInfo(u)?.let { filesToUpload.add(it) }
+        }
+
+        // 2. Fallback to EXTRA_STREAM if clipData was empty
+        if (filesToUpload.isEmpty()) {
+            AppLogger.i("SendActivity", "clipData was empty, checking EXTRA_STREAM")
+            when (intent.action) {
+                Intent.ACTION_SEND -> {
+                    val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
                     }
-                } else if (intent.clipData != null) {
-                    val clip = intent.clipData!!
-                    for (i in 0 until clip.itemCount) {
-                        val u = clip.getItemAt(i).uri
-                        resolveFileInfo(u)?.let { filesToUpload.add(it) }
+                    if (uri != null) {
+                        AppLogger.i("SendActivity", "ACTION_SEND uri: $uri")
+                        resolveFileInfo(uri)?.let { filesToUpload.add(it) }
+                    }
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val uris: ArrayList<Uri>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                    }
+                    if (uris != null) {
+                        AppLogger.i("SendActivity", "ACTION_SEND_MULTIPLE count: ${uris.size}")
+                        for (u in uris) {
+                            resolveFileInfo(u)?.let { filesToUpload.add(it) }
+                        }
                     }
                 }
             }
         }
 
+        // 3. Check for single intent.data if still empty
+        if (filesToUpload.isEmpty() && intent.data != null) {
+            AppLogger.i("SendActivity", "Checking intent.data: ${intent.data}")
+            resolveFileInfo(intent.data!!)?.let { filesToUpload.add(it) }
+        }
+
         if (filesToUpload.isEmpty()) {
-            Toast.makeText(this, "Нет файлов для отправки", Toast.LENGTH_SHORT).show()
+            AppLogger.w("SendActivity", "No files found in intent!")
+            Toast.makeText(this, "Не удалось получить файлы из запроса", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        val totalBytes = filesToUpload.sumOf { it.sizeBytes }
+        val totalBytes = filesToUpload.sumOf { if (it.sizeBytes > 0) it.sizeBytes else 0L }
         val count = filesToUpload.size
         val fileWord = if (count == 1) "файл" else if (count in 2..4) "файла" else "файлов"
         binding.tvFilesSummary.text = "$count $fileWord (${HistoryAdapter.formatFileSize(totalBytes)})"
         binding.tvStatusDetail.text = "Готово к отправке"
         binding.progressBar.progress = 0
 
-        // Auto start upload immediately for fast 1-tap experience
+        AppLogger.i("SendActivity", "Found $count files to upload (total: $totalBytes bytes)")
+
+        // Auto start upload immediately for seamless 1-tap experience
         val config = configManager.getConfig()
         startUpload(config)
     }
@@ -135,8 +198,12 @@ class SendActivity : AppCompatActivity() {
             if (name.isNullOrBlank()) {
                 name = uri.lastPathSegment ?: "file_${System.currentTimeMillis()}"
             }
+            // Clean up path segment if it contains slash
+            if (name!!.contains("/")) {
+                name = name!!.substringAfterLast("/")
+            }
+
             if (size < 0) {
-                // Try estimating from stream
                 try {
                     contentResolver.openAssetFileDescriptor(uri, "r")?.use {
                         size = it.length
@@ -144,8 +211,10 @@ class SendActivity : AppCompatActivity() {
                 } catch (_: Exception) {}
             }
 
+            AppLogger.i("SendActivity", "Resolved file: name='$name', size=$size, uri=$uri")
             FileInfo(uri = uri, filename = name!!, sizeBytes = size)
         } catch (e: Exception) {
+            AppLogger.e("SendActivity", "Failed to resolve file info for uri $uri", e)
             null
         }
     }
@@ -158,6 +227,8 @@ class SendActivity : AppCompatActivity() {
         val totalBatchBytes = filesToUpload.sumOf { if (it.sizeBytes > 0) it.sizeBytes else 0L }
         var uploadedBatchBytes = 0L
 
+        AppLogger.i("SendActivity", "=== Starting batch upload to ${config.serverUrl}${config.targetFolder} ===")
+
         uploadJob = lifecycleScope.launch(Dispatchers.IO) {
             var allSuccess = true
             var failureMessage: String? = null
@@ -167,9 +238,11 @@ class SendActivity : AppCompatActivity() {
                     binding.tvStatusDetail.text = "Отправка (${index + 1}/${filesToUpload.size}): ${file.filename}"
                 }
 
+                AppLogger.i("SendActivity", "Uploading file ${index + 1}/${filesToUpload.size}: ${file.filename} (${file.sizeBytes} bytes)...")
+
                 val uploadResult = runCatching {
                     val inputStream = contentResolver.openInputStream(file.uri)
-                        ?: throw IllegalStateException("Не удалось открыть ${file.filename}")
+                        ?: throw IllegalStateException("Не удалось открыть поток чтения для ${file.filename}")
 
                     api.uploadStream(
                         serverUrl = config.serverUrl,
@@ -191,6 +264,7 @@ class SendActivity : AppCompatActivity() {
                 }
 
                 if (uploadResult.isSuccess) {
+                    AppLogger.i("SendActivity", "✓ Successfully uploaded ${file.filename}")
                     uploadedBatchBytes += if (file.sizeBytes > 0) file.sizeBytes else 0L
                     historyManager.addItem(
                         UploadItem(
@@ -204,6 +278,7 @@ class SendActivity : AppCompatActivity() {
                     allSuccess = false
                     val error = uploadResult.exceptionOrNull()
                     failureMessage = error?.localizedMessage ?: error?.message ?: "Неизвестная ошибка"
+                    AppLogger.e("SendActivity", "✗ Failed to upload ${file.filename}: $failureMessage", error)
                     historyManager.addItem(
                         UploadItem(
                             filename = file.filename,
@@ -238,6 +313,7 @@ class SendActivity : AppCompatActivity() {
                     binding.btnCancel.text = getString(R.string.close)
                     binding.btnStartSend.visibility = View.VISIBLE
                     binding.btnStartSend.text = "Повторить"
+                    binding.btnViewLogs.visibility = View.VISIBLE
                 }
             }
         }

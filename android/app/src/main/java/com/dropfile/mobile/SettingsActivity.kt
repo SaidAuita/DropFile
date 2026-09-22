@@ -11,8 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.dropfile.mobile.api.FileBrowserApi
 import com.dropfile.mobile.data.AppConfig
+import com.dropfile.mobile.data.AppLogger
 import com.dropfile.mobile.data.ConfigManager
 import com.dropfile.mobile.databinding.ActivitySettingsBinding
+import com.dropfile.mobile.ui.LogViewerDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +52,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLogger.init(applicationContext)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -59,7 +62,12 @@ class SettingsActivity : AppCompatActivity() {
             finish()
         }
 
+        binding.btnSettingsLogs.setOnClickListener {
+            LogViewerDialog.show(this)
+        }
+
         loadSettingsToUi()
+
 
         binding.btnSaveSettings.setOnClickListener {
             saveSettingsFromUi()

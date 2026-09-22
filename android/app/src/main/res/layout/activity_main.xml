@@ -20,6 +20,16 @@
             app:titleTextColor="@color/white">
 
             <ImageButton
+                android:id="@+id/btnLogs"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="end"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Логи"
+                android:src="@drawable/ic_file"
+                app:tint="@color/white" />
+
+            <ImageButton
                 android:id="@+id/btnSettings"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
@@ -31,6 +41,7 @@
                 app:tint="@color/white" />
 
         </com.google.android.material.appbar.MaterialToolbar>
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView

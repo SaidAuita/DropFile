@@ -1,5 +1,6 @@
 package com.dropfile.mobile.api
 
+import com.dropfile.mobile.data.AppLogger
 import com.google.gson.JsonObject
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -24,10 +25,13 @@ class FileBrowserApi {
 
     fun testConnection(serverUrl: String, username: String, password: String): Result<String> {
         return try {
+            AppLogger.i("FileBrowserApi", "Testing connection to: $serverUrl, user: $username")
             val token = login(serverUrl, username, password)
             cachedToken = token
+            AppLogger.i("FileBrowserApi", "Test connection successful! Token received.")
             Result.success("Соединение успешно! Авторизация пройдена.")
         } catch (e: Exception) {
+            AppLogger.e("FileBrowserApi", "Test connection failed: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -36,6 +40,7 @@ class FileBrowserApi {
     fun login(serverUrl: String, username: String, password: String): String {
         val cleanUrl = serverUrl.trimEnd('/')
         val url = "$cleanUrl/api/login"
+        AppLogger.i("FileBrowserApi", "Sending POST to: $url (user: $username)")
 
         val json = JsonObject().apply {
             addProperty("username", username)
@@ -49,6 +54,7 @@ class FileBrowserApi {
             .build()
 
         client.newCall(request).execute().use { response ->
+            AppLogger.i("FileBrowserApi", "Login response HTTP code: ${response.code}")
             if (response.isSuccessful) {
                 val token = response.body?.string()?.trim()?.trim('"')
                 if (!token.isNullOrBlank()) {
@@ -89,6 +95,7 @@ class FileBrowserApi {
         }
 
         val uploadUrl = "$cleanUrl/api/resources$encodedPath?override=true"
+        AppLogger.i("FileBrowserApi", "Uploading stream to: $uploadUrl (size: $totalBytes bytes)")
 
         val streamingBody = object : RequestBody() {
             override fun contentType() = "application/octet-stream".toMediaTypeOrNull()
@@ -117,8 +124,9 @@ class FileBrowserApi {
             .build()
 
         client.newCall(request).execute().use { response ->
+            AppLogger.i("FileBrowserApi", "Upload response HTTP code: ${response.code}")
             if (response.code == 401 || response.code == 403) {
-                // Token might have expired, try logging in once and retry
+                AppLogger.w("FileBrowserApi", "Token expired (${response.code}), retrying login...")
                 cachedToken = null
                 val newToken = login(serverUrl, username, password)
                 val retryRequest = Request.Builder()
@@ -127,6 +135,7 @@ class FileBrowserApi {
                     .post(streamingBody)
                     .build()
                 client.newCall(retryRequest).execute().use { retryResponse ->
+                    AppLogger.i("FileBrowserApi", "Retry upload response HTTP code: ${retryResponse.code}")
                     if (!retryResponse.isSuccessful) {
                         throw IllegalStateException("Ошибка загрузки (${retryResponse.code}): ${retryResponse.message}")
                     }

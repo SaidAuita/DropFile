@@ -6,10 +6,4 @@
         <item name="android:statusBarColor">#0F172A</item>
         <item name="android:windowBackground">#0B0F19</item>
     </style>
-
-    <style name="Theme.DropFileMobile.Dialog" parent="Theme.Material3.DayNight.BottomSheetDialog">
-        <item name="android:windowIsFloating">false</item>
-        <item name="android:windowBackground">@color/translucent_black</item>
-        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
-    </style>
 </resources>

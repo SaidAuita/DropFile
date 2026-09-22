@@ -8,11 +8,4 @@
         <item name="android:statusBarColor">@color/primary_dark</item>
         <item name="android:windowBackground">@color/bg_light</item>
     </style>
-
-    <!-- Dialog theme for Share Sheet Activity -->
-    <style name="Theme.DropFileMobile.Dialog" parent="Theme.Material3.DayNight.BottomSheetDialog">
-        <item name="android:windowIsFloating">false</item>
-        <item name="android:windowBackground">@color/translucent_black</item>
-        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
-    </style>
 </resources>

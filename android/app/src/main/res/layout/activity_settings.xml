@@ -19,7 +19,21 @@
             app:navigationIcon="?attr/homeAsUpIndicator"
             app:navigationIconTint="@color/white"
             app:title="@string/settings"
-            app:titleTextColor="@color/white" />
+            app:titleTextColor="@color/white">
+
+            <ImageButton
+                android:id="@+id/btnSettingsLogs"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="end"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Логи"
+                android:src="@drawable/ic_file"
+                app:tint="@color/white" />
+
+        </com.google.android.material.appbar.MaterialToolbar>
+
 
     </com.google.android.material.appbar.AppBarLayout>
 

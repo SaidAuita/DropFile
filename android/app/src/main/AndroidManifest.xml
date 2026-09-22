@@ -31,9 +31,10 @@
         <activity
             android:name=".SendActivity"
             android:exported="true"
-            android:theme="@style/Theme.DropFileMobile.Dialog"
+            android:theme="@style/Theme.DropFileMobile"
             android:label="@string/send_to_dropfile"
             android:excludeFromRecents="true">
+
 
             <!-- Single file share -->
             <intent-filter>

@@ -1,6 +1,7 @@
 package com.dropfile.mobile
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -12,10 +13,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.dropfile.mobile.api.FileBrowserApi
+import com.dropfile.mobile.data.AppLogger
 import com.dropfile.mobile.data.ConfigManager
 import com.dropfile.mobile.data.HistoryManager
 import com.dropfile.mobile.databinding.ActivityMainBinding
 import com.dropfile.mobile.ui.HistoryAdapter
+import com.dropfile.mobile.ui.LogViewerDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,23 +49,40 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (uris.isNotEmpty()) {
+                AppLogger.i("MainActivity", "Files picked: count=${uris.size}, starting SendActivity")
                 val sendIntent = Intent(this, SendActivity::class.java).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     if (uris.size == 1) {
                         action = Intent.ACTION_SEND
                         putExtra(Intent.EXTRA_STREAM, uris[0])
+                        clipData = ClipData.newRawUri("file", uris[0])
                     } else {
                         action = Intent.ACTION_SEND_MULTIPLE
                         putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                        val clip = ClipData.newRawUri("file", uris[0])
+                        for (i in 1 until uris.size) {
+                            clip.addItem(ClipData.Item(uris[i]))
+                        }
+                        clipData = clip
                     }
                     type = "*/*"
                 }
-                startActivity(sendIntent)
+
+                try {
+                    startActivity(sendIntent)
+                } catch (e: Exception) {
+                    AppLogger.e("MainActivity", "Failed to start SendActivity", e)
+                    Toast.makeText(this, "Ошибка запуска: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLogger.init(applicationContext)
+        AppLogger.i("MainActivity", "onCreate started")
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -70,6 +90,10 @@ class MainActivity : AppCompatActivity() {
         historyManager = HistoryManager(this)
 
         setupRecyclerView()
+
+        binding.btnLogs.setOnClickListener {
+            LogViewerDialog.show(this)
+        }
 
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
