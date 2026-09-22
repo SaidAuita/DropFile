@@ -11,6 +11,10 @@
 
 <br/>
 
+<img src="../doc/architecture_all.png" alt="DropFile Mobile & Server Ecosystem" width="840" />
+
+<br/><br/>
+
 *[English](#english) &bull; [Русский](#russian)*
 
 </div>

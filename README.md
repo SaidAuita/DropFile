@@ -14,6 +14,10 @@
 
 <br/>
 
+<img src="doc/architecture_all.png" alt="DropFile — Fast File Exchange: Servers, Desktop, FileBrowser, Mobile" width="920" />
+
+<br/><br/>
+
 *[English](#english) &bull; [Русский](#russian)*
 
 </div>
@@ -691,6 +695,12 @@ python -m unittest discover tests
 - Мгновенно выгружает локальные файлы на сервер FileBrowser и автоматически скачивает удаленные изменения.
 - Не требует WebDAV, SMB или сторонних облачных сервисов: обмен идет через стандартный **HTTPS / HTTP REST API** самого FileBrowser.
 - Успешно работает через любые корпоративные фаерволы (порт 443), прокси (Nginx, Caddy, Traefik), туннели (Cloudflare Tunnel, Keenetic Cloud, Tailscale) или прямое подключение по белому/локальному IP.
+
+<div align="center">
+  <br/>
+  <img src="doc/architecture_all.png" alt="DropFile — Архитектура взаимодействия: Серверы, Десктоп, FileBrowser, Мобильный клиент" width="920" />
+  <br/><br/>
+</div>
 
 <a id="features-ru"></a>
 ### 🌟 Основные возможности
