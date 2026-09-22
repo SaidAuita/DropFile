@@ -58,6 +58,14 @@
             android:label="@string/settings"
             android:parentActivityName=".MainActivity" />
 
+        <!-- Remote File Explorer Activity -->
+        <activity
+            android:name=".ExplorerActivity"
+            android:exported="false"
+            android:label="Файлы на сервере"
+            android:parentActivityName=".MainActivity" />
+
     </application>
+
 
 </manifest>

@@ -56,14 +56,17 @@
 
 ---
 
-### ✨ Features
-
 - ⚡ **Instant Share Sheet Integration**: Select photos/files in Samsung Gallery, Google Photos, Files, Telegram, or WhatsApp &rarr; tap **"Share" &rarr; "DropFile"**. Files upload in background with a clean progress bar.
+- 📁 **Remote File Explorer**: Browse your FileBrowser server folders directly from your phone. Navigate up (`..`) to the root `/` or jump to `/Exchange/Mobile`.
+- 🔗 **Public Share Links in 1 Tap**: Generate short public download links (`/share/{hash}`) for any file or whole folder. Copy to clipboard or share directly into Telegram, WhatsApp, Viber, or SMS.
+- ⬇️ **Direct File Downloads**: Download any remote file directly to your Android Downloads folder.
+- ⚡ **Zero Server Load Architecture**: No thumbnail processing on server side. Pure lightweight JSON metadata browsing ensure instantaneous response even on low-end hardware (routers, Raspberry Pi).
 - 📥 **1-Click Configuration Import**: No manual typing of long URLs, tokens, or passwords on mobile keyboards. Simply import `dropfile_mobile_config.json`.
 - 🌐 **No Static / White IP Required**: Works seamlessly over Keenetic KeenDNS Cloud proxy, Cloudflare Tunnel, Tailscale, or direct IP.
 - 📋 **Built-in Diagnostic Logger**: Real-time log viewer in toolbar with one-click clipboard copying for troubleshooting.
 - 📦 **Direct APK Distribution**: Pre-compiled release `.apk` downloadable directly via browser without Google Play Store dependency.
 - 🕒 **Transfer History**: Keeps track of recent uploads with status (Success/Error), file size, and timestamps.
+
 
 ---
 
@@ -157,11 +160,16 @@ This generates **`dropfile_mobile_config.json`**:
 ### ✨ Главные преимущества
 
 - ⚡ **Мгновенная отправка из системного меню «Поделиться»**: в Галерее Samsung, Google Фото, Проводнике, Telegram или WhatsApp выделите файлы &rarr; нажмите **«Поделиться» &rarr; «DropFile»**. Файлы выгружаются в фоне с наглядным прогресс-баром.
+- 📁 **Удалённый проводник (Explorer)**: просматривайте любые папки на сервере FileBrowser прямо с телефона. Поднимайтесь вверх по каталогам (`..`) вплоть до корня `/` или переходите в `/Exchange/Mobile` в один клик.
+- 🔗 **Публичные ссылки на скачивание в 1 тап**: создавайте короткие публичные ссылки вида `/share/{hash}` на отдельные файлы или целые папки. Копируйте в буфер или отправляйте сразу в Telegram, WhatsApp, Viber или SMS.
+- ⬇️ **Скачивание файлов на телефон**: загружайте любые файлы с сервера напрямую в системную папку «Загрузки».
+- ⚡ **Архитектура нулевой нагрузки на сервер**: сервер не генерирует превью (thumbnails), отдавая только компактный JSON со структурой каталогов. Это гарантирует мгновенную скорость и нулевую нагрузку на процессор слабого роутера или мини-ПК.
 - 📥 **Импорт настроек в 1 клик**: не нужно вручную вводить сложные адреса, пароли и папки на клавиатуре смартфона. Достаточно импортировать файл `dropfile_mobile_config.json`.
 - 🌐 **Белый IP НЕ требуется**: приложение отлично работает через облачный прокси Keenetic KeenDNS, Cloudflare Tunnel, Tailscale или по прямому IP.
 - 📋 **Встроенный журнал логов**: иконка блокнота в шапке открывает подробный журнал работы с кнопкой копирования в буфер обмена.
 - 📦 **Установка напрямую по ссылке (APK)**: без Google Play Store — свежий APK собирается автоматически в GitHub Actions.
 - 🕒 **История отправок**: сохраняет последние 50 переданных файлов со статусами (Успешно / Ошибка), датой и размером.
+
 
 ---
 

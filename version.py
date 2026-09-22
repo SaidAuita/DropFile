@@ -5,8 +5,9 @@ DropFile version definition.
 import subprocess
 from pathlib import Path
 
-__version__ = "1.30.1"
-__build__ = "114"
+__version__ = "1.30.2"
+__build__ = "115"
+
 
 
 

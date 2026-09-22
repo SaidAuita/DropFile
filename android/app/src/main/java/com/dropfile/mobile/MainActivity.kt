@@ -103,6 +103,17 @@ class MainActivity : AppCompatActivity() {
             openFilePicker()
         }
 
+        binding.cardExplorer.setOnClickListener {
+            val config = configManager.getConfig()
+            if (!config.isConfigured) {
+                Toast.makeText(this, "Сначала настройте подключение к серверу", Toast.LENGTH_SHORT).show()
+                startActivity(Intent(this, SettingsActivity::class.java))
+            } else {
+                startActivity(Intent(this, ExplorerActivity::class.java))
+            }
+        }
+
+
         binding.btnQuickTest.setOnClickListener {
             checkConnectionStatus()
         }

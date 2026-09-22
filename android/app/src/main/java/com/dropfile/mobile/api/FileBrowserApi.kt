@@ -1,13 +1,17 @@
 package com.dropfile.mobile.api
 
 import com.dropfile.mobile.data.AppLogger
+import com.dropfile.mobile.data.RemoteItem
+import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okio.BufferedSink
 import java.io.InputStream
+import java.io.OutputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -19,6 +23,8 @@ class FileBrowserApi {
         .readTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
+
+    private val gson = Gson()
 
     @Volatile
     private var cachedToken: String? = null
@@ -72,6 +78,252 @@ class FileBrowserApi {
         }
     }
 
+    private fun encodePath(rawPath: String): String {
+        val clean = "/" + rawPath.trim('/')
+        if (clean == "/") return ""
+        return clean.split("/").joinToString("/") { segment ->
+            if (segment.isEmpty()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+        }
+    }
+
+    /**
+     * Lists files and folders in the remote directory using GET /api/resources/{path}.
+     * Returns a sorted list: directories first, then files.
+     */
+    fun listDirectory(
+        serverUrl: String,
+        username: String,
+        password: String,
+        remotePath: String
+    ): Result<List<RemoteItem>> {
+        return runCatching {
+            val token = cachedToken ?: login(serverUrl, username, password)
+            val cleanUrl = serverUrl.trimEnd('/')
+            val encoded = encodePath(remotePath)
+            val url = "$cleanUrl/api/resources$encoded"
+
+            AppLogger.i("FileBrowserApi", "Listing directory: $url")
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth", token)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) {
+                    cachedToken = null
+                    val newToken = login(serverUrl, username, password)
+                    val retryRequest = Request.Builder()
+                        .url(url)
+                        .addHeader("X-Auth", newToken)
+                        .get()
+                        .build()
+                    return@use client.newCall(retryRequest).execute().use { retryResp ->
+                        parseDirectoryListing(retryResp.body?.string().orEmpty(), remotePath)
+                    }
+                }
+
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("Ошибка получения списка (${response.code}): ${response.message}")
+                }
+
+                val jsonBody = response.body?.string().orEmpty()
+                parseDirectoryListing(jsonBody, remotePath)
+            }
+        }
+    }
+
+    private fun parseDirectoryListing(jsonBody: String, parentPath: String): List<RemoteItem> {
+        val jsonObject = JsonParser.parseString(jsonBody).asJsonObject
+        val itemsArray = jsonObject.getAsJsonArray("items") ?: return emptyList()
+
+        val list = mutableListOf<RemoteItem>()
+        val cleanParent = "/" + parentPath.trim('/')
+
+        for (el in itemsArray) {
+            val itemObj = el.asJsonObject
+            val name = itemObj.get("name")?.asString ?: continue
+            val isDir = itemObj.get("isDir")?.asBoolean ?: false
+            val size = itemObj.get("size")?.asLong ?: 0L
+            val modified = itemObj.get("modified")?.asString
+            val fullItemPath = if (cleanParent == "/") "/$name" else "$cleanParent/$name"
+
+            list.add(
+                RemoteItem(
+                    name = name,
+                    path = fullItemPath,
+                    isDir = isDir,
+                    sizeBytes = size,
+                    modified = modified
+                )
+            )
+        }
+
+        // Sort: directories first, then alphabetical
+        return list.sortedWith(
+            compareByDescending<RemoteItem> { it.isDir }
+                .thenBy { it.name.lowercase() }
+        )
+    }
+
+    /**
+     * Retrieves an existing share link or generates a new one via FileBrowser API.
+     * Returns the full public URL e.g. "https://photo.keenetic.link/share/abcdef"
+     */
+    fun getOrCreateShareLink(
+        serverUrl: String,
+        username: String,
+        password: String,
+        remotePath: String
+    ): Result<String> {
+        return runCatching {
+            val token = cachedToken ?: login(serverUrl, username, password)
+            val cleanUrl = serverUrl.trimEnd('/')
+            val encoded = encodePath(remotePath)
+            val shareUrl = "$cleanUrl/api/share$encoded"
+
+            AppLogger.i("FileBrowserApi", "Checking/creating share link for: $remotePath")
+
+            // 1. Check if public share link already exists
+            val getReq = Request.Builder()
+                .url(shareUrl)
+                .addHeader("X-Auth", token)
+                .get()
+                .build()
+
+            client.newCall(getReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    val elem = JsonParser.parseString(body)
+                    if (elem.isJsonArray) {
+                        val arr = elem.asJsonArray
+                        if (arr.size() > 0) {
+                            val first = arr[0].asJsonObject
+                            if (first.has("hash")) {
+                                val hash = first.get("hash").asString
+                                AppLogger.i("FileBrowserApi", "Found existing share link hash: $hash")
+                                return@runCatching "$cleanUrl/share/$hash"
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Create new public share link (empty JSON object {})
+            val emptyBody = RequestBody.create("application/json; charset=utf-8".toMediaTypeOrNull(), "{}")
+            val postReq = Request.Builder()
+                .url(shareUrl)
+                .addHeader("X-Auth", token)
+                .post(emptyBody)
+                .build()
+
+            client.newCall(postReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string().orEmpty()
+                    val obj = JsonParser.parseString(body).asJsonObject
+                    if (obj.has("hash")) {
+                        val hash = obj.get("hash").asString
+                        AppLogger.i("FileBrowserApi", "Created new share link hash: $hash")
+                        return@runCatching "$cleanUrl/share/$hash"
+                    }
+                }
+                // Fallback to web link inside files
+                AppLogger.w("FileBrowserApi", "Could not create share hash, falling back to files link")
+                "$cleanUrl/files$encoded"
+            }
+        }
+    }
+
+    /**
+     * Deletes a remote file or folder via DELETE /api/resources/{path}.
+     */
+    fun deleteResource(
+        serverUrl: String,
+        username: String,
+        password: String,
+        remotePath: String
+    ): Result<Boolean> {
+        return runCatching {
+            val token = cachedToken ?: login(serverUrl, username, password)
+            val cleanUrl = serverUrl.trimEnd('/')
+            val encoded = encodePath(remotePath)
+            val url = "$cleanUrl/api/resources$encoded"
+
+            AppLogger.i("FileBrowserApi", "Deleting resource: $url")
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth", token)
+                .delete()
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful || resp.code == 404) {
+                    AppLogger.i("FileBrowserApi", "Resource deleted successfully (${resp.code})")
+                    true
+                } else {
+                    throw IllegalStateException("Ошибка удаления (${resp.code}): ${resp.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Downloads a file from the server via GET /api/raw/{path}.
+     */
+    fun downloadFile(
+        serverUrl: String,
+        username: String,
+        password: String,
+        remotePath: String,
+        outputStream: OutputStream,
+        onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
+    ): Result<Long> {
+        return runCatching {
+            val token = cachedToken ?: login(serverUrl, username, password)
+            val cleanUrl = serverUrl.trimEnd('/')
+            val encoded = encodePath(remotePath)
+            val url = "$cleanUrl/api/raw$encoded"
+
+            AppLogger.i("FileBrowserApi", "Downloading file: $url")
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth", token)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw IllegalStateException("Ошибка скачивания (${resp.code}): ${resp.message}")
+                }
+
+                val body = resp.body ?: throw IllegalStateException("Пустой ответ от сервера")
+                val totalLength = body.contentLength()
+                val source = body.byteStream()
+
+                val buffer = ByteArray(64 * 1024)
+                var bytesRead: Int
+                var totalRead = 0L
+
+                outputStream.use { out ->
+                    source.use { input ->
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            out.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            onProgress(totalRead, totalLength)
+                        }
+                    }
+                    out.flush()
+                }
+
+                AppLogger.i("FileBrowserApi", "Downloaded $totalRead bytes successfully")
+                totalRead
+            }
+        }
+    }
+
     @Throws(Exception::class)
     fun uploadStream(
         serverUrl: String,
@@ -88,11 +340,7 @@ class FileBrowserApi {
         val cleanUrl = serverUrl.trimEnd('/')
         val folder = "/" + remoteFolder.trim('/').trim()
         val fullPath = if (folder == "/") "/$filename" else "$folder/$filename"
-
-        // URL encode each segment of the path preserving slashes
-        val encodedPath = fullPath.split("/").joinToString("/") { segment ->
-            if (segment.isEmpty()) "" else URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
-        }
+        val encodedPath = encodePath(fullPath)
 
         val uploadUrl = "$cleanUrl/api/resources$encodedPath?override=true"
         AppLogger.i("FileBrowserApi", "Uploading stream to: $uploadUrl (size: $totalBytes bytes)")
