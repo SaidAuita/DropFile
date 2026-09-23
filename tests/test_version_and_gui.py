@@ -255,6 +255,39 @@ class TestLanServerDetection(unittest.TestCase):
                 res = detect_lan_server_host()
                 self.assertEqual(res, "192.168.0.22")
 
+    def test_normalize_lan_host(self):
+        from platform_utils import normalize_lan_host
+        self.assertEqual(normalize_lan_host("192.168.0.22"), "192.168.0.22")
+        self.assertEqual(normalize_lan_host("192.168.0.22/Exchange"), "192.168.0.22")
+        self.assertEqual(normalize_lan_host("smb://192.168.0.22/Exchange"), "192.168.0.22")
+        self.assertEqual(normalize_lan_host(r"\\192.168.0.22\Exchange"), "192.168.0.22")
+        self.assertEqual(normalize_lan_host(r"\\192.168.0.22/Exchange\Exchange"), "192.168.0.22")
+
+    def test_format_lan_share_path_mac_and_windows(self):
+        from platform_utils import format_lan_share_path
+        # macOS testing
+        with patch("sys.platform", "darwin"):
+            self.assertEqual(format_lan_share_path("192.168.0.22", "Exchange"), "smb://192.168.0.22/Exchange")
+            self.assertEqual(format_lan_share_path("192.168.0.22/Exchange", "Exchange"), "smb://192.168.0.22/Exchange")
+            self.assertEqual(format_lan_share_path(r"\\192.168.0.22\Exchange", "Exchange"), "smb://192.168.0.22/Exchange")
+            self.assertEqual(format_lan_share_path("smb://192.168.0.22/Exchange", "Exchange"), "smb://192.168.0.22/Exchange")
+
+        # Windows testing
+        with patch("sys.platform", "win32"):
+            self.assertEqual(format_lan_share_path("192.168.0.22", "Exchange"), r"\\192.168.0.22\Exchange")
+            self.assertEqual(format_lan_share_path("192.168.0.22/Exchange", "Exchange"), r"\\192.168.0.22\Exchange")
+            self.assertEqual(format_lan_share_path("smb://192.168.0.22/Exchange", "Exchange"), r"\\192.168.0.22\Exchange")
+
+    def test_map_network_drive_macos(self):
+        from platform_utils import map_network_drive
+        with patch("sys.platform", "darwin"):
+            with patch("subprocess.run") as mock_sub:
+                mock_sub.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                with patch("pathlib.Path.is_dir", return_value=False):
+                    ok, msg = map_network_drive("192.168.0.22/Exchange")
+                    self.assertTrue(ok)
+                    self.assertIn("/Volumes/Exchange", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

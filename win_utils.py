@@ -27,6 +27,8 @@ from platform_utils import (
     detect_network_environment,
     get_default_lan_server_host,
     detect_lan_server_host,
+    normalize_lan_host,
+    format_lan_share_path,
 )
 
 

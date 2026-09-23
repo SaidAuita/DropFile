@@ -43,6 +43,8 @@ from win_utils import (
     set_windows_autostart,
     get_default_lan_server_host,
     detect_lan_server_host,
+    normalize_lan_host,
+    format_lan_share_path,
 )
 from gui_speed_chart import SpeedChartWidget, SpeedMonitorCard, SpeedMonitorWindow
 from urllib.parse import urlparse
@@ -629,11 +631,18 @@ class SettingsDialog:
         if hasattr(self, "btn_autodetect_exchange"):
             self.btn_autodetect_exchange.config(text=t("folders_autodetect_exchange_btn"))
         if hasattr(self, "lbl_lan_title"):
-            self.lbl_lan_title.config(text=f"🌐 {t('lan_path_exchange_label')} (SMB / Windows Share)")
+            share_type = "(SMB / Windows Share)" if sys.platform.startswith("win") else "(SMB / Apple Share)" if sys.platform == "darwin" else "(SMB Share)"
+            self.lbl_lan_title.config(text=f"🌐 {t('lan_path_exchange_label')} {share_type}")
         if hasattr(self, "btn_lan_detect"):
             self.btn_lan_detect.config(text=t("lan_detected_btn"))
         if hasattr(self, "btn_ex_lan_open"):
-            self.btn_ex_lan_open.config(text=t("lan_btn_open"))
+            open_btn_text = t("lan_btn_open")
+            if sys.platform == "darwin":
+                for w in ["Explorer", "Проводнике", "Explorateur", "Esplora risorse", "Explorador", "Eksploratorze", "资源管理器", "エクスプローラー"]:
+                    if w in open_btn_text:
+                        open_btn_text = open_btn_text.replace(w, "Finder")
+                        break
+            self.btn_ex_lan_open.config(text=open_btn_text)
         if hasattr(self, "btn_ex_lan_mount"):
             self.btn_ex_lan_mount.config(text=t("lan_btn_mount"))
         if hasattr(self, "btn_ex_lan_shortcut"):
@@ -1522,9 +1531,10 @@ class SettingsDialog:
         # LAN / SMB Access subsection
         ttk.Separator(self.card_exchange, orient="horizontal").pack(fill="x", pady=(6, 8))
 
+        share_type = "(SMB / Windows Share)" if sys.platform.startswith("win") else "(SMB / Apple Share)" if sys.platform == "darwin" else "(SMB Share)"
         self.lbl_lan_title = ttk.Label(
             self.card_exchange,
-            text=f"🌐 {t('lan_path_exchange_label')} (SMB / Windows Share)",
+            text=f"🌐 {t('lan_path_exchange_label')} {share_type}",
             style="Card.TLabel",
             font=(self.font_family, 9, "bold"),
         )
@@ -1551,7 +1561,7 @@ class SettingsDialog:
 
         self.lbl_unc_exchange = tk.Label(
             row_ex_path,
-            text=f"\\\\{initial_lan_host}\\Exchange",
+            text=format_lan_share_path(initial_lan_host, "Exchange"),
             bg="#F1F5F9",
             fg="#0F172A",
             font=("Consolas", 10),
@@ -1562,9 +1572,16 @@ class SettingsDialog:
         row_ex_lan_btns = tk.Frame(self.card_exchange, bg="#FFFFFF")
         row_ex_lan_btns.pack(fill="x", pady=(0, 4))
 
+        open_btn_text = t("lan_btn_open")
+        if sys.platform == "darwin":
+            for w in ["Explorer", "Проводнике", "Explorateur", "Esplora risorse", "Explorador", "Eksploratorze", "资源管理器", "エクスプローラー"]:
+                if w in open_btn_text:
+                    open_btn_text = open_btn_text.replace(w, "Finder")
+                    break
+
         self.btn_ex_lan_open = ttk.Button(
             row_ex_lan_btns,
-            text=t("lan_btn_open"),
+            text=open_btn_text,
             command=lambda: self._open_lan_folder("Exchange"),
         )
         self.btn_ex_lan_open.pack(side="left", padx=(0, 6))
@@ -1748,13 +1765,13 @@ class SettingsDialog:
         return get_default_lan_server_host(saved)
 
     def _update_lan_paths(self) -> None:
-        host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
-        if not host:
-            host = "SERVER"
+        raw_host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
+        formatted_dropsync = format_lan_share_path(raw_host, "DropSync")
+        formatted_exchange = format_lan_share_path(raw_host, "Exchange")
         if hasattr(self, "lbl_unc_dropsync"):
-            self.lbl_unc_dropsync.config(text=f"\\\\{host}\\DropSync")
+            self.lbl_unc_dropsync.config(text=formatted_dropsync)
         if hasattr(self, "lbl_unc_exchange"):
-            self.lbl_unc_exchange.config(text=f"\\\\{host}\\Exchange")
+            self.lbl_unc_exchange.config(text=formatted_exchange)
 
     def _on_lan_detect_click(self) -> None:
         if hasattr(self, "lbl_lan_status"):
@@ -1763,17 +1780,18 @@ class SettingsDialog:
             detected = self._detect_lan_server()
             if self._is_window_alive():
                 def apply_detected():
+                    clean_detected = normalize_lan_host(detected)
                     if hasattr(self, "entry_lan_server"):
                         self.entry_lan_server.delete(0, "end")
-                        self.entry_lan_server.insert(0, detected)
-                    self.config.lan_server_host = detected
+                        self.entry_lan_server.insert(0, clean_detected)
+                    self.config.lan_server_host = clean_detected
                     try:
                         self.config.save()
                     except Exception:
                         pass
                     self._update_lan_paths()
                     if hasattr(self, "lbl_lan_status"):
-                        self.lbl_lan_status.config(text=f"✅ Server found: {detected}", fg="#0F7B0F")
+                        self.lbl_lan_status.config(text=f"✅ Server found: {clean_detected}", fg="#0F7B0F")
                 self.window.after(0, apply_detected)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1791,10 +1809,8 @@ class SettingsDialog:
         return detect_lan_server_host(saved_host=saved, extra_candidates=extra_candidates)
 
     def _get_unc_path(self, share_name: str) -> str:
-        host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
-        if not host:
-            host = self._get_initial_lan_host()
-        return f"\\\\{host}\\{share_name}"
+        raw_host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
+        return format_lan_share_path(raw_host, share_name)
 
     def _open_lan_folder(self, share_name: str) -> None:
         unc = self._get_unc_path(share_name)
@@ -4002,7 +4018,7 @@ class SettingsDialog:
         if hasattr(self, "entry_exchange"):
             self.config.exchange_path = self.entry_exchange.get().strip()
         if hasattr(self, "entry_lan_server"):
-            self.config.lan_server_host = self.entry_lan_server.get().strip()
+            self.config.lan_server_host = normalize_lan_host(self.entry_lan_server.get().strip())
         if hasattr(self, "var_build_sync"):
             self.config.build_sync_enabled = self.var_build_sync.get()
         if hasattr(self, "entry_output"):

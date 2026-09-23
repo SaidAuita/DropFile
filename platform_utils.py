@@ -375,16 +375,26 @@ def open_folder_in_file_manager(folder_path: Path | str) -> None:
 
     if is_network:
         # Network path handling (UNC / SMB)
-        clean = folder_str.replace("\\", "/").lstrip("/")
+        clean = folder_str.replace("\\", "/").strip().lstrip("/")
+        if clean.lower().startswith("smb:/"):
+            clean = clean.split("smb:/")[-1].lstrip("/")
+        parts = [p.strip() for p in clean.split("/") if p.strip()]
+        host = parts[0] if parts else ""
+        share_name = parts[1] if len(parts) > 1 else ""
+
         if sys.platform.startswith("win"):
-            unc = "\\\\" + clean.replace("/", "\\")
+            unc = f"\\\\{host}\\{share_name}" if share_name else f"\\\\{host}"
             try:
                 os.startfile(unc)
             except Exception:
                 subprocess.run(["explorer.exe", unc])
         elif sys.platform == "darwin":
-            smb_url = f"smb://{clean}"
-            subprocess.run(["open", smb_url])
+            vol_path = Path(f"/Volumes/{share_name}") if share_name else None
+            if vol_path and vol_path.is_dir():
+                subprocess.run(["open", str(vol_path)])
+            else:
+                smb_url = f"smb://{host}/{share_name}" if share_name else f"smb://{host}"
+                subprocess.run(["open", smb_url])
         else:
             smb_url = f"smb://{clean}"
             # Clean up accidental literal backslash directories if created earlier
@@ -1246,13 +1256,32 @@ def map_network_drive(unc_path: str, drive_letter: Optional[str] = None) -> Tupl
     Mounts a remote UNC path (e.g. \\\\192.168.1.4\\DropSync) to a Windows drive letter.
     Returns (success, message).
     """
+    clean_path = str(unc_path or "").replace("\\", "/").strip().lstrip("/")
+    if clean_path.startswith("smb:/"):
+        clean_path = clean_path.split("smb:/")[-1].lstrip("/")
+    parts = [p.strip() for p in clean_path.split("/") if p.strip()]
+    host = parts[0] if parts else ""
+    share_name = parts[1] if len(parts) > 1 else "Exchange"
+
+    if sys.platform == "darwin":
+        vol_path = Path(f"/Volumes/{share_name}")
+        if vol_path.is_dir():
+            return True, f"Том /Volumes/{share_name} уже смонтирован."
+        smb_url = f"smb://{host}/{share_name}"
+        try:
+            cmd = ["osascript", "-e", f'tell application "Finder" to mount volume "{smb_url}"']
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if res.returncode == 0 or vol_path.is_dir():
+                return True, f"Диск {share_name} успешно подключен к /Volumes/{share_name}."
+            err = res.stderr.strip() or res.stdout.strip()
+            return False, f"Ошибка монтирования: {err}"
+        except Exception as e:
+            return False, f"Ошибка монтирования: {e}"
+
     if not sys.platform.startswith("win"):
-        return False, "Network drive mapping is only supported on Windows."
+        return False, "Network drive mapping is only supported on Windows and macOS."
 
-    norm_path = unc_path.replace("/", "\\")
-    if not norm_path.startswith("\\\\"):
-        return False, f"Invalid UNC path: {unc_path}"
-
+    norm_path = f"\\\\{host}\\{share_name}"
     available = get_available_drive_letters()
     target_letter = (drive_letter or "").upper().rstrip(":")
     if not target_letter:
@@ -1309,15 +1338,37 @@ def create_network_shortcut(unc_path: str, shortcut_name: str = "DropSync Networ
             print(f"[platform_utils] create_network_shortcut error: {e}")
             return False, f"Failed to create shortcut: {e}"
     elif sys.platform == "darwin":
-        link_path = desktop / f"{shortcut_name}.command"
+        clean_path = str(unc_path or "").replace("\\", "/").strip().lstrip("/")
+        if clean_path.startswith("smb:/"):
+            clean_path = clean_path.split("smb:/")[-1].lstrip("/")
+        parts = [p.strip() for p in clean_path.split("/") if p.strip()]
+        host = parts[0] if parts else ""
+        share_name = parts[1] if len(parts) > 1 else "Exchange"
+        smb_uri = f"smb://{host}/{share_name}"
+
+        # Native Apple Internet Location (.inetloc) - mounts and opens in Finder on double-click
+        inetloc_path = desktop / f"{shortcut_name}.inetloc"
+        plist_content = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            '<plist version="1.0">\n'
+            '<dict>\n'
+            f'    <key>URL</key>\n    <string>{smb_uri}</string>\n'
+            '</dict>\n'
+            '</plist>\n'
+        )
         try:
-            smb_uri = "smb:" + unc_path.replace("\\", "/")
-            with open(link_path, "w", encoding="utf-8") as f:
-                f.write(f"#!/bin/bash\nopen '{smb_uri}'\n")
-            os.chmod(link_path, 0o755)
-            return True, f"Shortcut created at {link_path}"
+            inetloc_path.write_text(plist_content, encoding="utf-8")
+            return True, f"Ярлык '{shortcut_name}' создан на Рабочем столе."
         except Exception as e:
-            return False, str(e)
+            link_path = desktop / f"{shortcut_name}.command"
+            try:
+                with open(link_path, "w", encoding="utf-8") as f:
+                    f.write(f"#!/bin/bash\nopen '{smb_uri}'\n")
+                os.chmod(link_path, 0o755)
+                return True, f"Ярлык создан: {link_path}"
+            except Exception as ex:
+                return False, str(ex)
     else:
         desktop_file = desktop / f"{shortcut_name}.desktop"
         try:
@@ -1394,16 +1445,60 @@ def detect_network_environment() -> Tuple[bool, bool]:
     return is_work, is_home
 
 
+def normalize_lan_host(raw_input: str) -> str:
+    """
+    Cleans raw host input (e.g. '192.168.0.22/Exchange', 'smb://192.168.0.22/Exchange',
+    '\\\\192.168.0.22\\Exchange') into a clean hostname/IP (e.g. '192.168.0.22').
+    """
+    s = str(raw_input or "").strip()
+    if not s:
+        return ""
+    if s.lower().startswith("smb://"):
+        s = s[6:]
+    s = s.replace("\\", "/").strip().lstrip("/")
+    parts = [p.strip() for p in s.split("/") if p.strip()]
+    if not parts:
+        return ""
+    return parts[0]
+
+
+def format_lan_share_path(raw_host: str, share_name: str = "Exchange") -> str:
+    """
+    Formats the network share path for the current OS.
+    - macOS: smb://<host>/<share_name>
+    - Windows: \\\\<host>\\<share_name>
+    - Linux: smb://<host>/<share_name>
+    Guarantees no duplicated share names and proper slash direction.
+    """
+    clean_host = normalize_lan_host(raw_host)
+    if not clean_host:
+        clean_host = get_default_lan_server_host()
+
+    # Determine if share_name is already in raw_host
+    s = str(raw_host or "").replace("\\", "/").strip()
+    parts = [p.strip() for p in s.split("/") if p.strip()]
+    target_share = share_name
+    if len(parts) > 1 and parts[1].lower() == share_name.lower():
+        target_share = parts[1]
+
+    if sys.platform == "darwin":
+        return f"smb://{clean_host}/{target_share}"
+    elif sys.platform.startswith("win"):
+        return f"\\\\{clean_host}\\{target_share}"
+    else:
+        return f"smb://{clean_host}/{target_share}"
+
+
 def get_default_lan_server_host(saved_host: str = "") -> str:
     """
     Returns default local SMB server host for the current network environment.
     If saved_host is provided and is a valid local name/IP (not an external DDNS/Keenetic domain),
-    saved_host is preserved.
+    saved_host is preserved and cleaned.
     """
     is_work, is_home = detect_network_environment()
     default_host = "192.168.0.22" if is_work else "192.168.1.4"
 
-    cleaned = str(saved_host or "").strip()
+    cleaned = normalize_lan_host(saved_host)
     if cleaned:
         # Ignore external keenetic/public DDNS domains for local SMB shares
         cleaned_lower = cleaned.lower()
@@ -1415,7 +1510,7 @@ def get_default_lan_server_host(saved_host: str = "") -> str:
 
 def detect_lan_server_host(saved_host: str = "", extra_candidates: Optional[List[str]] = None) -> str:
     """
-    Auto-detects the local SMB server (\\host\\Exchange, \\host\\DropSync)
+    Auto-detects the local SMB server (\\host\\Exchange, smb://host/Exchange)
     by scanning port 445 / 139 with short timeouts.
     Never probes HTTP port 8081 (FileBrowser) to avoid falsely picking Keenetic/remote routers.
     """
@@ -1433,7 +1528,7 @@ def detect_lan_server_host(saved_host: str = "", extra_candidates: Optional[List
         if h not in candidates:
             candidates.append(h)
 
-    cleaned_saved = str(saved_host or "").strip()
+    cleaned_saved = normalize_lan_host(saved_host)
     if cleaned_saved and cleaned_saved not in candidates:
         cleaned_lower = cleaned_saved.lower()
         if not (".keenetic." in cleaned_lower or cleaned_lower.endswith(".link")):
@@ -1441,7 +1536,7 @@ def detect_lan_server_host(saved_host: str = "", extra_candidates: Optional[List
 
     if extra_candidates:
         for ec in extra_candidates:
-            ec_s = str(ec or "").strip()
+            ec_s = normalize_lan_host(ec)
             if ec_s and ec_s not in candidates and ec_s not in ("localhost", "127.0.0.1"):
                 ec_l = ec_s.lower()
                 if not (".keenetic." in ec_l or ec_l.endswith(".link")):
@@ -1461,4 +1556,5 @@ def detect_lan_server_host(saved_host: str = "", extra_candidates: Optional[List
             pass
 
     return "192.168.0.22" if is_work else "192.168.1.4"
+
 
