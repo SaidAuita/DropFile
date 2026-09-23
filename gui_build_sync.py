@@ -14,6 +14,7 @@ import uuid
 
 from config import Config
 from i18n import t
+from platform_utils import get_default_lan_server_host
 
 
 class BuildTaskEditDialog(tk.Toplevel):
@@ -401,7 +402,8 @@ class BuildSyncDialog:
 
     def _get_default_target_base(self) -> str:
         """Determines default base destination path (e.g. \\\\host\\Exchange\\Build)."""
-        host = getattr(self.config, "lan_server_host", "").strip() or "192.168.1.4"
+        saved_host = getattr(self.config, "lan_server_host", "").strip()
+        host = get_default_lan_server_host(saved_host)
         ex_path = getattr(self.config, "exchange_path", "")
         if host:
             return f"\\\\{host}\\Exchange\\Build"

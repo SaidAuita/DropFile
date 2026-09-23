@@ -24,6 +24,9 @@ from platform_utils import (
     create_network_shortcut,
     get_available_drive_letters,
     map_network_drive,
+    detect_network_environment,
+    get_default_lan_server_host,
+    detect_lan_server_host,
 )
 
 

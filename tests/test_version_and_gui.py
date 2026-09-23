@@ -203,6 +203,59 @@ class TestServerExchangeDetection(unittest.TestCase):
         self.assertTrue(hasattr(SettingsDialog, "_autodetect_exchange_folder"))
 
 
+class TestLanServerDetection(unittest.TestCase):
+    def test_detect_network_environment_work(self):
+        from platform_utils import detect_network_environment
+        with patch("socket.gethostbyname_ex", return_value=("pc", [], ["192.168.0.15", "10.0.0.1"])):
+            is_work, is_home = detect_network_environment()
+            self.assertTrue(is_work)
+            self.assertFalse(is_home)
+
+    def test_detect_network_environment_home(self):
+        from platform_utils import detect_network_environment
+        with patch("socket.gethostbyname_ex", return_value=("pc", [], ["192.168.1.50"])):
+            is_work, is_home = detect_network_environment()
+            self.assertFalse(is_work)
+            self.assertTrue(is_home)
+
+    def test_get_default_lan_server_host(self):
+        from platform_utils import get_default_lan_server_host
+        with patch("platform_utils.detect_network_environment", return_value=(True, False)):
+            self.assertEqual(get_default_lan_server_host(), "192.168.0.22")
+            # Keenetic domain should be ignored in favor of local work server
+            self.assertEqual(get_default_lan_server_host("photo.buka3033.keenetic.link"), "192.168.0.22")
+            # Valid local custom IP should be preserved
+            self.assertEqual(get_default_lan_server_host("192.168.0.100"), "192.168.0.100")
+
+        with patch("platform_utils.detect_network_environment", return_value=(False, True)):
+            self.assertEqual(get_default_lan_server_host(), "192.168.1.4")
+            self.assertEqual(get_default_lan_server_host("photo.buka3033.keenetic.link"), "192.168.1.4")
+
+    def test_detect_lan_server_host_work_priority(self):
+        from platform_utils import detect_lan_server_host
+        with patch("platform_utils.detect_network_environment", return_value=(True, False)):
+            # If socket fails, fallback to work server
+            with patch("socket.socket") as mock_sock:
+                mock_s = MagicMock()
+                mock_s.connect_ex.return_value = 1
+                mock_sock.return_value = mock_s
+                res = detect_lan_server_host("photo.buka3033.keenetic.link", ["photo.buka3033.keenetic.link"])
+                self.assertEqual(res, "192.168.0.22")
+
+            # If 192.168.0.22 responds on port 445
+            with patch("socket.socket") as mock_sock:
+                mock_s = MagicMock()
+                def fake_connect(addr):
+                    host, port = addr
+                    if host == "192.168.0.22" and port == 445:
+                        return 0
+                    return 1
+                mock_s.connect_ex.side_effect = fake_connect
+                mock_sock.return_value = mock_s
+                res = detect_lan_server_host()
+                self.assertEqual(res, "192.168.0.22")
+
+
 if __name__ == "__main__":
     unittest.main()
 

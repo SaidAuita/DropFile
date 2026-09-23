@@ -1371,3 +1371,94 @@ StartupNotify=true
             return True, f"Desktop entry created at {desktop_file}"
         except Exception as e:
             return False, str(e)
+
+
+def detect_network_environment() -> Tuple[bool, bool]:
+    """
+    Returns (is_work, is_home) based on local IPv4 addresses.
+    - is_work: 192.168.0.x subnet
+    - is_home: 192.168.1.x subnet
+    """
+    is_work = False
+    is_home = False
+    try:
+        import socket
+        local_ips = socket.gethostbyname_ex(socket.gethostname())[2]
+        for ip in local_ips:
+            if ip.startswith("192.168.0."):
+                is_work = True
+            elif ip.startswith("192.168.1."):
+                is_home = True
+    except Exception:
+        pass
+    return is_work, is_home
+
+
+def get_default_lan_server_host(saved_host: str = "") -> str:
+    """
+    Returns default local SMB server host for the current network environment.
+    If saved_host is provided and is a valid local name/IP (not an external DDNS/Keenetic domain),
+    saved_host is preserved.
+    """
+    is_work, is_home = detect_network_environment()
+    default_host = "192.168.0.22" if is_work else "192.168.1.4"
+
+    cleaned = str(saved_host or "").strip()
+    if cleaned:
+        # Ignore external keenetic/public DDNS domains for local SMB shares
+        cleaned_lower = cleaned.lower()
+        if not (".keenetic." in cleaned_lower or cleaned_lower.endswith(".link")):
+            return cleaned
+
+    return default_host
+
+
+def detect_lan_server_host(saved_host: str = "", extra_candidates: Optional[List[str]] = None) -> str:
+    """
+    Auto-detects the local SMB server (\\host\\Exchange, \\host\\DropSync)
+    by scanning port 445 / 139 with short timeouts.
+    Never probes HTTP port 8081 (FileBrowser) to avoid falsely picking Keenetic/remote routers.
+    """
+    is_work, is_home = detect_network_environment()
+
+    if is_work:
+        priority = ["192.168.0.22", "192.168.1.4", "cladovka"]
+    elif is_home:
+        priority = ["192.168.1.4", "cladovka", "192.168.0.22"]
+    else:
+        priority = ["192.168.0.22", "192.168.1.4", "cladovka"]
+
+    candidates: List[str] = []
+    for h in priority:
+        if h not in candidates:
+            candidates.append(h)
+
+    cleaned_saved = str(saved_host or "").strip()
+    if cleaned_saved and cleaned_saved not in candidates:
+        cleaned_lower = cleaned_saved.lower()
+        if not (".keenetic." in cleaned_lower or cleaned_lower.endswith(".link")):
+            candidates.insert(0, cleaned_saved)
+
+    if extra_candidates:
+        for ec in extra_candidates:
+            ec_s = str(ec or "").strip()
+            if ec_s and ec_s not in candidates and ec_s not in ("localhost", "127.0.0.1"):
+                ec_l = ec_s.lower()
+                if not (".keenetic." in ec_l or ec_l.endswith(".link")):
+                    candidates.append(ec_s)
+
+    import socket
+    for host in candidates:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.35)
+            # Only SMB ports 445 / 139 for Windows Share / Exchange
+            if s.connect_ex((host, 445)) == 0 or s.connect_ex((host, 139)) == 0:
+                s.close()
+                return host
+            s.close()
+        except Exception:
+            pass
+
+    return "192.168.0.22" if is_work else "192.168.1.4"
+

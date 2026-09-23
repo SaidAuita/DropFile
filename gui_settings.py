@@ -41,6 +41,8 @@ from win_utils import (
     remove_desktop_shortcut,
     restart_dropfile,
     set_windows_autostart,
+    get_default_lan_server_host,
+    detect_lan_server_host,
 )
 from gui_speed_chart import SpeedChartWidget, SpeedMonitorCard, SpeedMonitorWindow
 from urllib.parse import urlparse
@@ -1743,20 +1745,7 @@ class SettingsDialog:
 
     def _get_initial_lan_host(self) -> str:
         saved = getattr(self.config, "lan_server_host", "").strip()
-        if saved:
-            return saved
-        candidates = []
-        for u in [getattr(self.config, "server_url", ""), getattr(self.config, "backup_server_url", "")]:
-            if u:
-                try:
-                    h = urlparse(u).hostname
-                    if h and h not in ("localhost", "127.0.0.1") and h not in candidates:
-                        candidates.append(h)
-                except Exception:
-                    pass
-        if candidates:
-            return candidates[0]
-        return "192.168.1.4"
+        return get_default_lan_server_host(saved)
 
     def _update_lan_paths(self) -> None:
         host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
@@ -1789,31 +1778,17 @@ class SettingsDialog:
         threading.Thread(target=worker, daemon=True).start()
 
     def _detect_lan_server(self) -> str:
-        candidates = []
+        extra_candidates = []
         for url_str in [getattr(self.config, "server_url", ""), getattr(self.config, "backup_server_url", "")]:
             if url_str:
                 try:
                     h = urlparse(url_str).hostname
-                    if h and h not in ("localhost", "127.0.0.1") and h not in candidates:
-                        candidates.append(h)
+                    if h and h not in ("localhost", "127.0.0.1") and h not in extra_candidates:
+                        extra_candidates.append(h)
                 except Exception:
                     pass
-        for default_h in ["192.168.1.4", "cladovka", "192.168.0.22"]:
-            if default_h not in candidates:
-                candidates.append(default_h)
-
-        import socket
-        for host in candidates:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.35)
-                if s.connect_ex((host, 445)) == 0 or s.connect_ex((host, 8081)) == 0:
-                    s.close()
-                    return host
-                s.close()
-            except Exception:
-                pass
-        return candidates[0] if candidates else "192.168.1.4"
+        saved = getattr(self.config, "lan_server_host", "").strip()
+        return detect_lan_server_host(saved_host=saved, extra_candidates=extra_candidates)
 
     def _get_unc_path(self, share_name: str) -> str:
         host = self.entry_lan_server.get().strip() if hasattr(self, "entry_lan_server") else ""
