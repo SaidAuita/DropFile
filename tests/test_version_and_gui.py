@@ -3,6 +3,7 @@ Unit tests for version tracking, build number, and password visibility toggles.
 """
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from version import __version__, __build__, get_build_number, get_full_version
@@ -287,6 +288,83 @@ class TestLanServerDetection(unittest.TestCase):
                     ok, msg = map_network_drive("192.168.0.22/Exchange")
                     self.assertTrue(ok)
                     self.assertIn("/Volumes/Exchange", msg)
+
+    def test_open_exchange_folder_macos_already_mounted(self):
+        from tray import DropFileTray
+        mock_cfg = MagicMock()
+        mock_cfg.exchange_path = Path("/tmp/local_exchange")
+        mock_tray = DropFileTray.__new__(DropFileTray)
+        mock_tray.config = mock_cfg
+
+        mock_vol = MagicMock()
+        mock_vol.name = "Exchange"
+        mock_vol.is_dir.return_value = True
+
+        with patch("sys.platform", "darwin"), \
+             patch("pathlib.Path.is_dir", return_value=True), \
+             patch("pathlib.Path.iterdir", return_value=[mock_vol]), \
+             patch("tray.open_folder_in_explorer") as mock_open:
+            mock_tray._open_exchange_folder()
+            mock_open.assert_called_once_with(mock_vol)
+
+    def test_open_exchange_folder_macos_connects_smb(self):
+        from tray import DropFileTray
+        mock_cfg = MagicMock()
+        mock_cfg.exchange_path = Path("/tmp/local_exchange")
+        mock_cfg.lan_server_host = ""
+        mock_tray = DropFileTray.__new__(DropFileTray)
+        mock_tray.config = mock_cfg
+
+        with patch("sys.platform", "darwin"), \
+             patch("pathlib.Path.is_dir", return_value=False), \
+             patch("socket.socket") as mock_sock, \
+             patch("platform_utils.detect_network_environment", return_value=(False, True)), \
+             patch("tray.open_folder_in_explorer") as mock_open:
+            mock_s = MagicMock()
+            mock_s.connect_ex.side_effect = lambda addr: 0 if addr[0] == "192.168.1.4" and addr[1] == 445 else 1
+            mock_sock.return_value = mock_s
+
+            mock_tray._open_exchange_folder()
+            mock_open.assert_called_once_with("smb://192.168.1.4/Exchange")
+
+    def test_open_exchange_folder_windows_connects_unc(self):
+        from tray import DropFileTray
+        mock_cfg = MagicMock()
+        mock_cfg.exchange_path = Path("C:/Users/Said/Desktop/DropFile/Exchange")
+        mock_cfg.lan_server_host = ""
+        mock_tray = DropFileTray.__new__(DropFileTray)
+        mock_tray.config = mock_cfg
+
+        with patch("sys.platform", "win32"), \
+             patch("socket.socket") as mock_sock, \
+             patch("platform_utils.detect_network_environment", return_value=(False, True)), \
+             patch("tray.open_folder_in_explorer") as mock_open:
+            mock_s = MagicMock()
+            mock_s.connect_ex.side_effect = lambda addr: 0 if addr[0] == "192.168.1.4" and addr[1] == 445 else 1
+            mock_sock.return_value = mock_s
+
+            mock_tray._open_exchange_folder()
+            mock_open.assert_called_once_with(r"\\192.168.1.4\Exchange")
+
+    def test_open_exchange_folder_offline_fallback(self):
+        from tray import DropFileTray
+        mock_cfg = MagicMock()
+        fallback_path = Path("/tmp/fallback_exchange")
+        mock_cfg.exchange_path = fallback_path
+        mock_cfg.lan_server_host = ""
+        mock_tray = DropFileTray.__new__(DropFileTray)
+        mock_tray.config = mock_cfg
+
+        with patch("sys.platform", "darwin"), \
+             patch("pathlib.Path.is_dir", return_value=False), \
+             patch("socket.socket") as mock_sock, \
+             patch("tray.open_folder_in_explorer") as mock_open:
+            mock_s = MagicMock()
+            mock_s.connect_ex.return_value = 1
+            mock_sock.return_value = mock_s
+
+            mock_tray._open_exchange_folder()
+            mock_open.assert_called_once_with(fallback_path)
 
 
 if __name__ == "__main__":

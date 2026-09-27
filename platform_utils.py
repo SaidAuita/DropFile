@@ -389,7 +389,12 @@ def open_folder_in_file_manager(folder_path: Path | str) -> None:
             except Exception:
                 subprocess.run(["explorer.exe", unc])
         elif sys.platform == "darwin":
-            vol_path = Path(f"/Volumes/{share_name}") if share_name else None
+            vol_path = None
+            if share_name:
+                for cand in [Path(f"/Volumes/{share_name}"), Path(f"/Volumes/{share_name}-1"), Path(f"/Volumes/{share_name} 1")]:
+                    if cand.is_dir():
+                        vol_path = cand
+                        break
             if vol_path and vol_path.is_dir():
                 subprocess.run(["open", str(vol_path)])
             else:

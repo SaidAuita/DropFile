@@ -264,21 +264,70 @@ class DropFileTray:
         return t("tray_copy_name_empty")
 
     def _open_exchange_folder(self, icon=None, item=None) -> None:
-        target = self.config.exchange_path
+        # 1. On macOS, if /Volumes/Exchange (or indexed mount) is already mounted, open it directly
+        if sys.platform == "darwin":
+            vol_dir = Path("/Volumes")
+            if vol_dir.is_dir():
+                try:
+                    for v in vol_dir.iterdir():
+                        if v.name.lower().startswith("exchange") and v.is_dir():
+                            open_folder_in_explorer(v)
+                            return
+                except Exception:
+                    pass
+
+        # 2. If running directly on a Linux server host where DropSync / speed_server is local:
+        if sys.platform.startswith("linux"):
+            try:
+                from config import find_server_exchange_path
+                server_ex = find_server_exchange_path()
+                if server_ex and server_ex.is_dir():
+                    open_folder_in_explorer(server_ex)
+                    return
+            except Exception:
+                pass
+
+        # 3. If exchange_path is explicitly set to a network path (UNC or smb://)
+        target: Any = self.config.exchange_path
+        if str(target).startswith(("\\\\", "//", "smb://")):
+            open_folder_in_explorer(target)
+            return
+
+        # 4. Detect reachable LAN SMB server (192.168.0.22, 192.168.1.4, saved_host, etc.)
         try:
             import socket
-            for srv_host in ["192.168.0.22", "192.168.1.4"]:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.1)
-                err = s.connect_ex((srv_host, 445))
-                s.close()
-                if err == 0:
-                    srv_path = Path(rf"\\{srv_host}\Exchange")
-                    if srv_path.exists():
-                        target = srv_path
+            from platform_utils import (
+                detect_network_environment,
+                format_lan_share_path,
+                normalize_lan_host,
+            )
+
+            is_work, is_home = detect_network_environment()
+            priority = ["192.168.0.22", "192.168.1.4"] if is_work else ["192.168.1.4", "192.168.0.22"]
+
+            saved = getattr(self.config, "lan_server_host", "")
+            cleaned_saved = normalize_lan_host(saved)
+            if cleaned_saved and cleaned_saved not in priority:
+                priority.insert(0, cleaned_saved)
+
+            found_host = None
+            for srv_host in priority:
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.12)
+                    err = s.connect_ex((srv_host, 445))
+                    s.close()
+                    if err == 0:
+                        found_host = srv_host
                         break
+                except Exception:
+                    pass
+
+            if found_host:
+                target = format_lan_share_path(found_host, "Exchange")
         except Exception:
             pass
+
         open_folder_in_explorer(target)
 
     def _open_output_folder(self, icon=None, item=None) -> None:
