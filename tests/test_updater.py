@@ -4,6 +4,7 @@ Tests version string parsing, semantic version comparison, and release response 
 """
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 import sys
@@ -12,7 +13,14 @@ import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from updater import check_for_updates, is_remote_newer, parse_version_string
+from updater import (
+    _apply_update_macos,
+    check_for_updates,
+    download_source_archive,
+    is_macos_prebuilt_compatible,
+    is_remote_newer,
+    parse_version_string,
+)
 
 
 class TestUpdater(unittest.TestCase):
@@ -182,6 +190,97 @@ class TestUpdater(unittest.TestCase):
             # Check that config.json was protected from overwrite
             config_data = json.loads(config_file.read_text(encoding="utf-8"))
             self.assertEqual(config_data.get("my_setting"), "preserve_me")
+
+    def test_is_macos_prebuilt_compatible(self):
+        # Non-darwin should return True
+        with patch("sys.platform", "win32"):
+            self.assertTrue(is_macos_prebuilt_compatible())
+        with patch("sys.platform", "linux"):
+            self.assertTrue(is_macos_prebuilt_compatible())
+
+        # Darwin on Apple Silicon macOS 14 -> compatible
+        with patch("sys.platform", "darwin"), \
+             patch("platform.machine", return_value="arm64"), \
+             patch("platform.mac_ver", return_value=("14.2.1", ("", "", ""), "")):
+            self.assertTrue(is_macos_prebuilt_compatible())
+
+        # Darwin on Intel x86_64 -> incompatible (requires source build)
+        with patch("sys.platform", "darwin"), \
+             patch("platform.machine", return_value="x86_64"), \
+             patch("platform.mac_ver", return_value=("10.15.8", ("", "", ""), "")):
+            self.assertFalse(is_macos_prebuilt_compatible())
+
+        # Darwin on Intel even on macOS 14 -> incompatible with arm64 binary
+        with patch("sys.platform", "darwin"), \
+             patch("platform.machine", return_value="x86_64"), \
+             patch("platform.mac_ver", return_value=("14.0", ("", "", ""), "")):
+            self.assertFalse(is_macos_prebuilt_compatible())
+
+        # Darwin on ARM64 but older macOS < 12 -> incompatible
+        with patch("sys.platform", "darwin"), \
+             patch("platform.machine", return_value="arm64"), \
+             patch("platform.mac_ver", return_value=("11.5", ("", "", ""), "")):
+            self.assertFalse(is_macos_prebuilt_compatible())
+
+    def test_download_source_archive(self):
+        import io
+        import tempfile
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as tmp_home:
+            fake_home = Path(tmp_home)
+            with patch("pathlib.Path.home", return_value=fake_home):
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w") as zf:
+                    zf.writestr("DropFile-v99.99/DropFile.pyw", "#!/usr/bin/env python3\n")
+                    zf.writestr("DropFile-v99.99/Install.command", "#!/bin/bash\n")
+                    zf.writestr("DropFile-v99.99/build_mac.command", "#!/bin/bash\n")
+                    zf.writestr("DropFile-v99.99/README.md", "# DropFile\n")
+                zip_bytes = buf.getvalue()
+
+                with patch("updater._download_file_with_progress") as mock_dl:
+                    def fake_dl(urls, dest, **kwargs):
+                        dest.write_bytes(zip_bytes)
+                        return True, ""
+                    mock_dl.side_effect = fake_dl
+
+                    ok, msg, dest = download_source_archive(
+                        release_info={"tag_name": "v99.99"},
+                        open_folder=False,
+                    )
+
+                    self.assertTrue(ok)
+                    self.assertIsNotNone(dest)
+                    self.assertTrue((dest / "DropFile.pyw").exists())
+                    self.assertTrue((dest / "Install.command").exists())
+                    self.assertTrue((dest / "build_mac.command").exists())
+
+    def test_apply_update_macos_incompatible_architecture(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fake_app = Path(tmp_dir) / "DropFile.app"
+            fake_app.mkdir(parents=True)
+            fake_dest = Path(tmp_dir) / "DropFile-v99.99"
+            fake_dest.mkdir(parents=True)
+            (fake_dest / "Install.command").write_text("#!/bin/bash\n", encoding="utf-8")
+
+            with patch("sys.platform", "darwin"), \
+                 patch("sys.frozen", True, create=True), \
+                 patch("sys.executable", str(fake_app / "Contents" / "MacOS" / "DropFile")), \
+                 patch("updater.is_macos_prebuilt_compatible", return_value=False), \
+                 patch("updater.download_source_archive", return_value=(True, "Downloaded", fake_dest)) as mock_dl_src, \
+                 patch("platform.mac_ver", return_value=("10.15.8", ("", "", ""), "")), \
+                 patch("subprocess.Popen") as mock_popen:
+
+                ok, msg = _apply_update_macos({
+                    "version": "99.99",
+                    "tag_name": "v99.99",
+                    "mac_asset_url": "https://github.com/SaidAuita/DropFile/releases/download/v99.99/DropFile-macOS.zip",
+                })
+
+                self.assertTrue(ok)
+                mock_dl_src.assert_called_once()
+                self.assertIn("Intel x86_64", msg)
+                self.assertIn("10.15.8", msg)
 
 
 if __name__ == "__main__":

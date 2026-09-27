@@ -611,6 +611,119 @@ def _apply_update_via_source_zip(
         os._exit(0)
 
 
+def is_macos_prebuilt_compatible() -> bool:
+    """
+    Checks if current macOS system is compatible with GitHub Actions prebuilt DropFile-macOS.zip.
+    GitHub Actions builds on Apple Silicon (arm64, macOS 14+).
+    Older Intel x86_64 machines (e.g. ThinkPad x230, macOS 10.15 Catalina / 11 Big Sur)
+    require building natively from source via build_mac.command.
+    """
+    if sys.platform != "darwin":
+        return True
+    try:
+        import platform
+        machine = platform.machine().lower()
+        if machine in ("x86_64", "i386"):
+            return False
+        ver = platform.mac_ver()[0]
+        if ver:
+            parts = [int(p) for p in ver.split(".") if p.isdigit()]
+            if parts and parts[0] < 12:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def download_source_archive(
+    release_info: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[int], None]] = None,
+    open_folder: bool = True,
+) -> Tuple[bool, str, Optional[Path]]:
+    """
+    Downloads the GitHub source archive for the current or latest release directly to ~/Downloads,
+    extracts it to ~/Downloads/DropFile-<version>, sets permissions,
+    and optionally reveals it in Finder / File Explorer.
+    Returns (success, message, extracted_dir).
+    """
+    if not release_info:
+        try:
+            has_update, fetched = check_for_updates(timeout=6)
+            if isinstance(fetched, dict) and fetched.get("tag_name"):
+                release_info = fetched
+        except Exception:
+            pass
+
+    tag = (release_info.get("tag_name") if release_info else "") or f"v{__version__}"
+    if not tag.startswith(("v", "V")):
+        tag = f"v{tag}"
+
+    downloads_dir = Path.home() / "Downloads"
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    temp_zip = downloads_dir / f"DropFile-{tag}.zip"
+    dest_dir = downloads_dir / f"DropFile-{tag}"
+
+    source_zip_url = (release_info.get("source_zip_url") if release_info else "") or f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.zip"
+    main_url = f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip"
+
+    candidate_urls = [
+        f"https://gh-proxy.com/{source_zip_url}",
+        f"https://ghproxy.net/{source_zip_url}",
+        f"https://gh.ddlc.top/{source_zip_url}",
+        source_zip_url,
+        f"https://gh-proxy.com/{main_url}",
+        main_url,
+    ]
+
+    ok, err = _download_file_with_progress(
+        candidate_urls,
+        temp_zip,
+        progress_callback=progress_callback,
+        min_size=10240,
+        header_check=b"PK",
+    )
+    if not ok:
+        return False, f"Failed to download source archive: {err}", None
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(temp_zip, "r") as zf:
+            namelist = zf.namelist()
+            top_dir = namelist[0].split("/")[0] if "/" in namelist[0] else ""
+            prefix = f"{top_dir}/" if top_dir else ""
+
+            for member in namelist:
+                if member.endswith("/"):
+                    continue
+                rel_name = member[len(prefix):] if member.startswith(prefix) else member
+                if not rel_name:
+                    continue
+                target_file = dest_dir / rel_name
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member) as src, open(target_file, "wb") as dst:
+                    dst.write(src.read())
+                if rel_name.endswith((".command", ".sh", ".pyw")):
+                    try:
+                        os.chmod(target_file, 0o755)
+                    except Exception:
+                        pass
+
+        # Clean quarantine on macOS / Linux
+        if sys.platform == "darwin" or sys.platform.startswith("linux"):
+            try:
+                subprocess.run(["xattr", "-cr", str(dest_dir)], check=False)
+            except Exception:
+                pass
+
+        if open_folder:
+            from platform_utils import open_folder_in_file_manager
+            open_folder_in_file_manager(dest_dir)
+
+        return True, f"Successfully unpacked to {dest_dir}", dest_dir
+    except Exception as e:
+        return False, f"Failed to extract source archive: {e}", None
+
+
 def _apply_update_macos(
     release_info: Dict[str, Any],
     progress_callback: Optional[Callable[[int], None]] = None,
@@ -620,13 +733,14 @@ def _apply_update_macos(
     is_frozen = getattr(sys, "frozen", False)
     repo_dir = Path(__file__).resolve().parent
 
-    # 1. Check if git repository exists in repo_dir or parent directories
-    if (repo_dir / ".git").is_dir():
-        return _apply_update_via_git(repo_dir, on_before_restart)
+    # 1. Check if git repository exists in repo_dir or parent directories (only when running from source)
+    if not is_frozen:
+        if (repo_dir / ".git").is_dir():
+            return _apply_update_via_git(repo_dir, on_before_restart)
 
-    for parent in list(repo_dir.parents)[:3]:
-        if (parent / ".git").is_dir():
-            return _apply_update_via_git(parent, on_before_restart)
+        for parent in list(repo_dir.parents)[:3]:
+            if (parent / ".git").is_dir():
+                return _apply_update_via_git(parent, on_before_restart)
 
     # 2. Check if running inside a macOS .app bundle
     app_bundle = None
@@ -637,6 +751,36 @@ def _apply_update_macos(
 
     mac_asset_url = release_info.get("mac_asset_url")
     if is_frozen and app_bundle and mac_asset_url:
+        # Check architecture and OS compatibility:
+        # GitHub Actions builds on Apple Silicon (arm64, macOS 14+).
+        # On Intel x86_64 or macOS < 12 (Catalina 10.15, Big Sur 11), the prebuilt binary
+        # will fail with "Bad CPU type in executable" or dyld symbol missing!
+        if not is_macos_prebuilt_compatible():
+            ok, msg, dest = download_source_archive(
+                release_info, progress_callback=progress_callback, open_folder=True
+            )
+            if ok and dest:
+                start_cmd = None
+                for cand in ["Install.command", "build_mac.command", "install_mac.command"]:
+                    if (dest / cand).exists():
+                        start_cmd = dest / cand
+                        break
+                if start_cmd:
+                    try:
+                        subprocess.Popen(["open", "-a", "Terminal", str(start_cmd)])
+                    except Exception:
+                        pass
+                import platform
+                cur_ver = platform.mac_ver()[0]
+                cmd_name = start_cmd.name if start_cmd else "Install.command"
+                return True, (
+                    f"Для вашей системы (Intel x86_64 / macOS {cur_ver}) "
+                    f"готовый бинарник GitHub не подходит (собран для Apple Silicon).\n\n"
+                    f"Архив с исходным кодом DropFile v{release_info.get('version')} скачан в:\n{dest}\n\n"
+                    f"Запущен скрипт {cmd_name} в Терминале для создания нативной версии."
+                )
+            return ok, msg
+
         candidate_urls = [
             f"https://gh-proxy.com/{mac_asset_url}",
             f"https://ghproxy.net/{mac_asset_url}",

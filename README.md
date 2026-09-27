@@ -414,11 +414,19 @@ The compiled binary will be placed at `dist\DropFile.exe`.
    cd DropFile
    ```
    *(Or download the ZIP archive from GitHub and unzip it into `~/DropFile`)*
-2. Double-click **`install_mac.command`** in Finder (or run `./install_mac.command` in Terminal).
+2. Double-click **`Install.command`** in Finder (or run `./install_mac.command` in Terminal).
    - Automatically configures an isolated virtual environment (`.venv`) and installs required packages (including native PyObjC Cocoa support).
    - Builds and installs **`/Applications/DropFile.app`** with `LSUIElement=1` (runs natively in the top menu bar near the clock without Dock clutter).
    - Creates a Desktop sync shortcut (`~/Desktop/DropFile`).
 3. Click the DropFile cloud icon in your top macOS menu bar -> select **"Settings"** to enter your server credentials.
+
+> 🍎 **For Intel Macs & Hackintosh (macOS 10.15 Catalina / Big Sur, e.g. ThinkPad x230)**:
+> - Precompiled `DropFile-macOS.zip` releases on GitHub are built on Apple Silicon (ARM64, macOS 14+) and cannot execute directly on Intel CPUs (*«Bad CPU type in executable»*).
+> - On Intel Macs, compile natively in 2 steps:
+>   1. Run `Install.command` to configure `.venv` and dependencies.
+>   2. Run `build_mac.command` to compile the native Intel standalone `/Applications/DropFile.app`.
+> - You can download the latest source code archive at any time via the **«📦 Download Source (.zip)»** button in DropFile Settings.
+> - The in-app auto-updater detects Intel x86_64 architecture and macOS versions older than 12, automatically downloading and preparing the native source archive instead of the incompatible prebuilt ARM64 binary.
 
 > 📖 **Full macOS Installation Guide**: See [`doc/mac_install.md`](doc/mac_install.md) for step-by-step commands to install Python 3 via curl or Homebrew, LaunchAgent autostart setup, and troubleshooting.
 
@@ -1035,11 +1043,19 @@ python build_exe.py
    cd DropFile
    ```
    *(Либо скачайте ZIP-архив с GitHub и распакуйте в `~/DropFile`)*
-2. Дважды кликните по файлу **`install_mac.command`** в Finder (или выполните `./install_mac.command` в Терминале):
+2. Дважды кликните по файлу **`Install.command`** в Finder (или выполните `./install_mac.command` в Терминале):
    - Установщик автоматически создаст изолированное виртуальное окружение (`.venv`) и установит зависимости (включая нативный Cocoa / PyObjC).
    - Соберёт и установит приложение **`/Applications/DropFile.app`** со свойством `LSUIElement=1` (работает в верхнем статус-баре около часов, без лишней иконки в Dock).
    - Создаст удобный ярлык рабочей папки на Рабочем столе (`~/Desktop/DropFile`).
 3. В строке меню macOS (вверху экрана около часов) появится иконка облака DropFile. Нажмите её, выберите **«Параметры»**, введите адрес сервера FileBrowser, логин и пароль.
+
+> 🍎 **Для Intel Mac и Hackintosh (macOS 10.15 Catalina / Big Sur, например ThinkPad x230)**:
+> - Официальный бинарник `DropFile-macOS.zip` в GitHub Releases собирается для Apple Silicon (ARM64, macOS 14+) и на процессорах Intel x86_64 не запускается (*«Несовместимый тип ЦП / Bad CPU type»*).
+> - На Intel Mac нативная сборка создается в 2 шага:
+>   1. Запустите `Install.command` для настройки `.venv` и зависимостей.
+>   2. Запустите `build_mac.command` для компиляции нативного автономного `/Applications/DropFile.app`.
+> - Скачать архив с исходниками новой версии можно в любой момент по кнопке **«📦 Скачать исходники (.zip)»** в окне настроек DropFile.
+> - Встроенное автообновление само определяет Intel x86_64 и macOS старее 12, автоматически скачивая архив исходников вместо несовместимого ARM64 бинарника.
 
 > 📖 **Полное пошаговое руководство по macOS**: см. файл [`doc/mac_install.md`](doc/mac_install.md) (быстрые команды установки Python 3 через `curl` или Homebrew, проверка работы Tkinter, автозапуск через LaunchAgent и решение возможных проблем).
 

@@ -29,8 +29,12 @@ from config import Config
 from fb_client import FileBrowserClient
 from i18n import SUPPORTED_LANGUAGES, get_current_language, set_current_language, t
 from state_db import StateDatabase
-from updater import apply_update, check_for_updates
-from version import __version__, __build__, get_build_number, get_full_version
+from updater import (
+    apply_update,
+    check_for_updates,
+    download_source_archive,
+    is_macos_prebuilt_compatible,
+)
 from win_utils import (
     create_desktop_shortcut,
     create_network_shortcut,
@@ -729,6 +733,14 @@ class SettingsDialog:
         self.lbl_backup_sub.config(text=t("settings_backup_sub"))
         self.btn_export.config(text=t("settings_export_btn"))
         self.btn_import.config(text=t("settings_import_btn"))
+        if hasattr(self, "lbl_updates_hdr"):
+            self.lbl_updates_hdr.config(text=f"🔄 {t('settings_updates_header')}")
+        if hasattr(self, "lbl_updates_sub"):
+            self.lbl_updates_sub.config(text=t("settings_updates_sub"))
+        if hasattr(self, "btn_check_update_tab"):
+            self.btn_check_update_tab.config(text=f"🔍 {t('btn_check_updates')}")
+        if hasattr(self, "btn_download_source"):
+            self.btn_download_source.config(text=f"📦 {t('btn_download_source')}")
 
 
         # Log Tab
@@ -2263,6 +2275,37 @@ class SettingsDialog:
             backup_row, text=t("settings_import_btn"), command=self._import_settings
         )
         self.btn_import.pack(side="left")
+
+        # Software Updates & Source Archives section
+        ttk.Separator(parent, orient="horizontal").pack(fill="x", pady=(8, 8))
+        self.lbl_updates_hdr = ttk.Label(parent, text=f"🔄 {t('settings_updates_header')}", style="Header.TLabel")
+        self.lbl_updates_hdr.pack(anchor="w", pady=(0, 2))
+
+        self.lbl_updates_sub = ttk.Label(
+            parent,
+            text=t("settings_updates_sub"),
+            style="Subheader.TLabel",
+            justify="left",
+        )
+        self.lbl_updates_sub.pack(anchor="w", pady=(0, 6))
+        self.tab_settings.register_autowrap(self.lbl_updates_sub)
+
+        updates_row = tk.Frame(parent, bg="#FFFFFF")
+        updates_row.pack(fill="x", pady=(0, 4))
+
+        self.btn_check_update_tab = ttk.Button(
+            updates_row,
+            text=f"🔍 {t('btn_check_updates')}",
+            command=self._check_for_updates_ui,
+        )
+        self.btn_check_update_tab.pack(side="left", padx=(0, 8))
+
+        self.btn_download_source = ttk.Button(
+            updates_row,
+            text=f"📦 {t('btn_download_source')}",
+            command=self._download_source_archive_ui,
+        )
+        self.btn_download_source.pack(side="left")
 
     def _add_folder_to_ignore(self) -> None:
         """Opens folder dialog to pick a folder to add to exceptions."""
@@ -4359,6 +4402,8 @@ class SettingsDialog:
         """Triggers asynchronous update check against GitHub Releases."""
         if hasattr(self, "btn_check_update"):
             self.btn_check_update.config(state="disabled", text=t("update_checking"))
+        if hasattr(self, "btn_check_update_tab"):
+            self.btn_check_update_tab.config(state="disabled", text=t("update_checking"))
 
         def worker():
             has_update, info = check_for_updates()
@@ -4374,6 +4419,8 @@ class SettingsDialog:
 
         if hasattr(self, "btn_check_update"):
             self.btn_check_update.config(state="normal", text=f"🔍 {t('btn_check_updates')}")
+        if hasattr(self, "btn_check_update_tab"):
+            self.btn_check_update_tab.config(state="normal", text=f"🔍 {t('btn_check_updates')}")
 
         if info.get("error"):
             if info.get("not_found"):
@@ -4405,6 +4452,9 @@ class SettingsDialog:
             preview = body[:300] + ("..." if len(body) > 300 else "")
             msg += f"\n\nRelease notes:\n{preview}"
 
+        if sys.platform == "darwin" and not is_macos_prebuilt_compatible():
+            msg += f"\n\n🍎 {t('update_mac_incompatible_notice')}"
+
         do_update = messagebox.askyesno(
             t("update_avail_title"),
             msg,
@@ -4417,12 +4467,16 @@ class SettingsDialog:
         """Downloads release binary or runs git pull and triggers self-update restart."""
         if hasattr(self, "btn_check_update"):
             self.btn_check_update.config(state="disabled", text=t("update_downloading"))
+        if hasattr(self, "btn_check_update_tab"):
+            self.btn_check_update_tab.config(state="disabled", text=t("update_downloading"))
 
         def on_progress(percent: int):
-            if self._is_window_alive() and hasattr(self, "btn_check_update"):
-                self.window.after(
-                    0, lambda: self.btn_check_update.config(text=f"⬇️ {percent}%...")
-                )
+            if self._is_window_alive():
+                txt = f"⬇️ {percent}%..."
+                if hasattr(self, "btn_check_update"):
+                    self.window.after(0, lambda: self.btn_check_update.config(text=txt))
+                if hasattr(self, "btn_check_update_tab"):
+                    self.window.after(0, lambda: self.btn_check_update_tab.config(text=txt))
 
         def worker():
             def cleanup():
@@ -4463,8 +4517,77 @@ class SettingsDialog:
                             self.btn_check_update.config(
                                 state="normal", text=f"🔍 {t('btn_check_updates')}"
                             )
+                        if hasattr(self, "btn_check_update_tab"):
+                            self.btn_check_update_tab.config(
+                                state="normal", text=f"🔍 {t('btn_check_updates')}"
+                            )
 
                     self.window.after(0, show_update_failure)
+            else:
+                # If apply_update succeeded without terminating (e.g. source downloaded on Intel Mac)
+                if self._is_window_alive():
+                    def show_update_success():
+                        if not self._is_window_alive():
+                            return
+                        messagebox.showinfo(
+                            t("update_source_downloaded_title"),
+                            err or t("update_latest_title"),
+                            parent=self.window,
+                        )
+                        if hasattr(self, "btn_check_update"):
+                            self.btn_check_update.config(
+                                state="normal", text=f"🔍 {t('btn_check_updates')}"
+                            )
+                        if hasattr(self, "btn_check_update_tab"):
+                            self.btn_check_update_tab.config(
+                                state="normal", text=f"🔍 {t('btn_check_updates')}"
+                            )
+
+                    self.window.after(0, show_update_success)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _download_source_archive_ui(self) -> None:
+        """Downloads GitHub source archive .zip, unpacks to ~/Downloads, and opens directory."""
+        if hasattr(self, "btn_download_source"):
+            self.btn_download_source.config(state="disabled", text=t("update_downloading"))
+
+        def on_progress(percent: int):
+            if self._is_window_alive() and hasattr(self, "btn_download_source"):
+                self.window.after(
+                    0, lambda: self.btn_download_source.config(text=f"⬇️ {percent}%...")
+                )
+
+        def worker():
+            ok, msg, dest = download_source_archive(
+                progress_callback=on_progress,
+                open_folder=True,
+            )
+            if not self._is_window_alive():
+                return
+
+            def on_complete():
+                if not self._is_window_alive():
+                    return
+                if hasattr(self, "btn_download_source"):
+                    self.btn_download_source.config(
+                        state="normal", text=f"📦 {t('btn_download_source')}"
+                    )
+                if ok and dest:
+                    ver = __version__
+                    messagebox.showinfo(
+                        t("update_source_downloaded_title"),
+                        t("update_source_downloaded_msg", version=ver, path=str(dest)),
+                        parent=self.window,
+                    )
+                else:
+                    messagebox.showerror(
+                        t("update_error_title"),
+                        t("update_error_msg", msg=msg),
+                        parent=self.window,
+                    )
+
+            self.window.after(0, on_complete)
 
         threading.Thread(target=worker, daemon=True).start()
 
