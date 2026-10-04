@@ -68,6 +68,7 @@ if getattr(sys, "frozen", False):
 
 from platform_utils import (
     acquire_single_instance_lock,
+    open_folder_in_file_manager,
     create_desktop_shortcut,
     ensure_macos_tk_compatibility,
     install_systemd_user_service,
