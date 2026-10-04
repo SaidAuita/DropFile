@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 DropFile In-App Auto-Updater.
 Supports:

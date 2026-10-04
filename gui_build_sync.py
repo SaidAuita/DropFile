@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 GUI dialogs for Build Drops Synchronization in DropFile.
 Features modern clean Tkinter styling, responsive Treeview,

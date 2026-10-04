@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Build script to compile DropFile into a standalone Linux executable using PyInstaller.
 Produces a single binary executable in dist/dropfile.

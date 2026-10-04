@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Configuration manager for DropFile.
 Supports portable mode (local config.json) or user AppData storage.

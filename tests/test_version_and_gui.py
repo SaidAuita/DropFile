@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unit tests for version tracking, build number, and password visibility toggles.
 """

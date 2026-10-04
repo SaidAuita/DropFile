@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Build script to compile DropFile into a standalone Windows .exe executable using PyInstaller.
 Produces a single, standalone, windowless (no console popup) DropFile.exe with embedded icon.

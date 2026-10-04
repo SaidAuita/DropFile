@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 DropFile — Native macOS Standalone Application Builder using PyInstaller.
 Creates:

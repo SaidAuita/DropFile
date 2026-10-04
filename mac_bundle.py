@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Helper script to package DropFile into a native macOS Application Bundle (.app).
 Creates:

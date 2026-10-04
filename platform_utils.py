@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Platform integration utilities for DropFile.
 Cross-platform support for:

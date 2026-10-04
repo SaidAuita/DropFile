@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unit tests for DropFile auto-updater module.
 Tests version string parsing, semantic version comparison, and release response handling.

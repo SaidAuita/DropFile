@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Dynamic icon generator for DropFile system tray and Windows .ico executable icon.
 Generates clean, scalable, high-resolution icons using Pillow with badges for:

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 System tray interface for DropFile using pystray.
 Provides tray icons with real-time status indication, context menu,

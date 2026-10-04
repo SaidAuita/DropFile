@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unit test for testing that DropFile entrypoint and all root modules load cleanly without NameError or ImportError.
 """

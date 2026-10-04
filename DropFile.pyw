@@ -1,3 +1,4 @@
+﻿from __future__ import annotations
 """
 DropFile — Background Dropbox-like file synchronization utility.
 Main entry point. Runs silently in the background with system tray integration.
@@ -880,7 +881,11 @@ def _handle_fatal_exception(exc: BaseException) -> None:
     import subprocess
     import traceback
     err_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    print(f"[DropFile FATAL CRASH] {err_text}", file=sys.stderr)
+    try:
+        if sys.stderr and hasattr(sys.stderr, "write"):
+            sys.stderr.write(f"[DropFile FATAL CRASH] {err_text}\n")
+    except Exception:
+        pass
 
     crash_log = None
     try:
@@ -936,3 +941,5 @@ if __name__ == "__main__":
     except BaseException as e:
         _handle_fatal_exception(e)
         sys.exit(1)
+
+

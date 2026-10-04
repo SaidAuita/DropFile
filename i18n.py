@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Internationalization (i18n) module for DropFile.
 Supports 10 languages with English as default:

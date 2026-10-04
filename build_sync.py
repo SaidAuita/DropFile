@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Build Drops Synchronization Engine for DropFile.
 Monitors configured project build directories for new zip/archive builds,

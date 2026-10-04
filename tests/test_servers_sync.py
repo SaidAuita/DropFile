@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unit tests for dual-server comparison and synchronization features in DropFile.
 """

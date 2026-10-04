@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 DropFile Remote Control & Emergency Actions Protocol.
 Provides secure, out-of-band management of remote computers over FileBrowser synchronization.

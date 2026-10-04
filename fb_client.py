@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 FileBrowser API Client for DropFile.
 Interacts with FileBrowser REST API over HTTPS.

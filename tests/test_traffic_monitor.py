@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unit tests for DropFile TrafficMonitor, Speed Chart metrics, and LAN Share utilities.
 """

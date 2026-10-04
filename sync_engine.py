@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 DropFile Synchronization Engine.
 Coordinates local watchdog filesystem events with remote FileBrowser polling.

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 State database for DropFile.
 Tracks file metadata (mtime, size, hash) to enable accurate bidirectional synchronization,

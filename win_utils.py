@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Windows integration utilities for DropFile.
 Re-exports cross-platform implementations from platform_utils.py for backward compatibility.

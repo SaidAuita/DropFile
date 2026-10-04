@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 DropFile — Universal macOS Application Bundle Packager.
 Creates dist/DropFile-macOS.zip containing DropFile.app with POSIX permissions,

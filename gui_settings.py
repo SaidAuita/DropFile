@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Modern Tkinter Settings and Activity Log dialog for DropFile.
 Features native Windows 10/11 visual styles, high-DPI scaling,
@@ -52,6 +53,7 @@ from win_utils import (
 )
 from gui_speed_chart import SpeedChartWidget, SpeedMonitorCard, SpeedMonitorWindow
 from urllib.parse import urlparse
+from version import __version__, __build__, get_build_number, get_full_version
 import secrets
 
 try:

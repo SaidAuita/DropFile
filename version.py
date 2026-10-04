@@ -1,3 +1,4 @@
+﻿from __future__ import annotations
 """
 DropFile version definition.
 """
@@ -5,8 +6,8 @@ DropFile version definition.
 import subprocess
 from pathlib import Path
 
-__version__ = "1.30.6"
-__build__ = "119"
+__version__ = "1.30.7"
+__build__ = "120"
 
 
 
@@ -35,3 +36,4 @@ def get_build_number() -> str:
 def get_full_version() -> str:
     """Returns full version with build, e.g. '1.26.3 (build 84)'."""
     return f"{__version__} (build {get_build_number()})"
+

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Main execution script for DropSync Server.
 Run with: python3 -m dropsync_server.main [options]
