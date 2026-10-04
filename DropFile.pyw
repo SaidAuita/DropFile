@@ -12,6 +12,39 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+# Safe stream redirect for PyInstaller windowless (--noconsole) mode
+class _SafeStream:
+    def __init__(self, log_path=None):
+        self._log_path = log_path
+    def write(self, s):
+        if not s:
+            return
+        if self._log_path:
+            try:
+                with open(self._log_path, "a", encoding="utf-8") as f:
+                    f.write(s)
+            except Exception:
+                pass
+    def flush(self):
+        pass
+
+try:
+    if sys.platform.startswith("win"):
+        _app_dir = Path(os.environ.get("APPDATA", "~")).expanduser() / "DropFile"
+    elif sys.platform == "darwin":
+        _app_dir = Path.home() / "Library" / "Application Support" / "DropFile"
+    else:
+        _app_dir = Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser() / "DropFile"
+    _app_dir.mkdir(parents=True, exist_ok=True)
+    _safe_log = _SafeStream(_app_dir / "dropfile.log")
+except Exception:
+    _safe_log = _SafeStream(None)
+
+if sys.stdout is None or not hasattr(sys.stdout, "write"):
+    sys.stdout = _safe_log
+if sys.stderr is None or not hasattr(sys.stderr, "write"):
+    sys.stderr = _safe_log
+
 # Add project directory to sys.path and set cwd
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
@@ -941,5 +974,3 @@ if __name__ == "__main__":
     except BaseException as e:
         _handle_fatal_exception(e)
         sys.exit(1)
-
-
