@@ -54,6 +54,7 @@ class DropSyncEngine:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
         self._traffic_task: Optional[asyncio.Task] = None
+        self._periodic_scan_task: Optional[asyncio.Task] = None
         self._receiving_files: Dict[str, Dict[str, Any]] = {}  # {rel_path: {temp_path, hasher, bytes_received, total_size}}
         self._current_transfer: Optional[Dict[str, Any]] = None
         self._batch_transfer: Optional[Dict[str, Any]] = None
@@ -81,10 +82,15 @@ class DropSyncEngine:
         # Start periodic traffic stats recorder
         self._traffic_task = asyncio.create_task(self._record_traffic_stats_loop())
 
+        # Start periodic background fallback scan
+        self._periodic_scan_task = asyncio.create_task(self._periodic_scan_loop())
+
     async def stop(self) -> None:
         self._running = False
         if self._traffic_task and not self._traffic_task.done():
             self._traffic_task.cancel()
+        if self._periodic_scan_task and not self._periodic_scan_task.done():
+            self._periodic_scan_task.cancel()
         for task in list(self._active_stream_tasks):
             task.cancel()
         self.watcher.stop()
@@ -226,11 +232,10 @@ class DropSyncEngine:
 
     # --- Local Scanning & Indexing ---
 
-    async def _scan_and_index_local_files(self) -> None:
-        """Indexes all local files in sync_dir into StateDatabase."""
-        print("[Engine] Indexing local files...")
-        count = 0
+    async def _scan_and_index_local_files(self) -> List[Dict[str, Any]]:
+        """Indexes all local files in sync_dir into StateDatabase. Returns newly added or updated files."""
         sync_dir = self.config.sync_dir
+        updated_files: List[Dict[str, Any]] = []
 
         for root, dirs, files in os.walk(str(sync_dir)):
             # Skip hidden internal directories
@@ -246,18 +251,61 @@ class DropSyncEngine:
                     stat = full_path.stat()
                     existing = self.state_db.get_file(rel)
 
-                    # Only compute hash if file is new or mtime/size changed
-                    if existing and existing["mtime"] == stat.st_mtime and existing["size"] == stat.st_size:
+                    # Only compute hash if file is new or mtime/size changed or was marked deleted
+                    if existing and existing["mtime"] == stat.st_mtime and existing["size"] == stat.st_size and not existing.get("deleted"):
                         continue
 
                     file_hash = await asyncio.to_thread(StateDatabase.calculate_file_hash, full_path)
                     self.state_db.upsert_file(rel, stat.st_size, stat.st_mtime, file_hash, deleted=0)
-                    count += 1
+                    updated_files.append({
+                        "rel_path": rel,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                        "hash": file_hash,
+                    })
                 except Exception as e:
                     print(f"[Engine] Error indexing {f}: {e}")
 
-        print(f"[Engine] Indexing complete. Checked/updated {count} file(s).")
+        if updated_files:
+            print(f"[Engine] Indexing complete. Checked/updated {len(updated_files)} file(s).")
         self._cleanup_empty_deleted_dirs()
+        return updated_files
+
+    async def _periodic_scan_loop(self) -> None:
+        """Periodic background scan to detect files missed by inotify (e.g. Samba/network copies)."""
+        interval = self.config.poll_interval if self.config.poll_interval > 0 else 30
+        print(f"[Engine] Periodic background fallback scan active (interval: {interval}s)")
+        reconcile_tick = 0
+        while self._running:
+            try:
+                await asyncio.sleep(interval)
+                updated = await self._scan_and_index_local_files()
+                if updated and self.transport.is_connected:
+                    for item in updated:
+                        print(f"[Engine] Periodic scan offering discovered file: {item['rel_path']} ({item['size']} bytes)")
+                        msg = pack_json_message(
+                            MSG_FILE_OFFER,
+                            {
+                                "rel_path": item["rel_path"],
+                                "size": item["size"],
+                                "mtime": item["mtime"],
+                                "hash": item["hash"],
+                            },
+                        )
+                        await self.transport.broadcast_text(msg)
+
+                # Periodic state reconciliation with active peers every 5 minutes (10 * 30s)
+                reconcile_tick += 1
+                if reconcile_tick >= 10:
+                    reconcile_tick = 0
+                    for peer in list(self.transport.active_peers.values()):
+                        if peer.authenticated:
+                            await peer.send_text(pack_json_message(MSG_MANIFEST_REQ))
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Engine] Error in periodic scan loop: {e}")
 
     # --- Local Watcher Callbacks (Run on watcher thread -> scheduled on asyncio event loop) ---
 
@@ -361,7 +409,12 @@ class DropSyncEngine:
 
         if msg_type == MSG_MANIFEST_REQ:
             manifest = self.state_db.get_manifest()
-            await peer.send_text(pack_json_message(MSG_MANIFEST_RESP, {"manifest": manifest}))
+            payload = pack_json_message(MSG_MANIFEST_RESP, {"manifest": manifest})
+            payload_len = len(payload.encode("utf-8"))
+            if payload_len > 1000000:
+                print(f"[Engine] Manifest size ({payload_len} bytes) exceeds legacy peer frame limit (1MB). Skipping outbound manifest response to avoid peer 1009 disconnect. Bi-directional sync is handled via peer manifest comparison.")
+                return
+            await peer.send_text(payload)
             return
 
         if msg_type == MSG_MANIFEST_RESP:

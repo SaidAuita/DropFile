@@ -87,7 +87,7 @@ def build():
         except Exception:
             pass
 
-        for deploy_target in [root.parent / "DropFile.exe", Path("D:/DropFile_exe/DropFile.exe")]:
+        for deploy_target in [root.parent / "DropFile.exe", Path("D:/DropFile/DropFile.exe"), Path("D:/DropFile_exe/DropFile.exe")]:
             if deploy_target.parent.exists():
                 try:
                     shutil.copy2(dist_exe, deploy_target)

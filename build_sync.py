@@ -158,7 +158,7 @@ class BuildSyncEngine:
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         final_dest = dest_dir / src.name
-        temp_dest = dest_dir / f".tmp_{time.time_ns()}_{src.name}"
+        temp_dest = dest_dir / f"~tmp_{time.time_ns()}_{src.name}"
 
         try:
             shutil.copy2(src, temp_dest)
@@ -168,6 +168,19 @@ class BuildSyncEngine:
                 except Exception:
                     pass
             temp_dest.replace(final_dest)
+
+            # Strip all attributes (Hidden, System, Archive) on Windows / SMB shares
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(str(final_dest), 0x80)
+            except Exception:
+                pass
+            try:
+                import subprocess
+                subprocess.run(f'attrib -a -h -s "{final_dest}"', shell=True, capture_output=True, timeout=5)
+            except Exception:
+                pass
+
             return final_dest
         finally:
             if temp_dest.exists():
@@ -188,7 +201,7 @@ class BuildSyncEngine:
         matching_files: List[Path] = []
         try:
             for item in target_dir.iterdir():
-                if item.is_file() and not item.name.startswith((".tmp", "~$")):
+                if item.is_file() and not item.name.startswith((".tmp", "~$", "~tmp")):
                     if fnmatch.fnmatch(item.name.lower(), pattern.lower()):
                         matching_files.append(item)
         except Exception as e:

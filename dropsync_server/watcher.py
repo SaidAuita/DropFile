@@ -172,7 +172,20 @@ class FileSystemWatcher:
                             pass
 
                 def on_created(self, event):
-                    if not event.is_directory:
+                    if event.is_directory:
+                        try:
+                            dir_path = Path(event.src_path).resolve()
+                            for root, _, files in os.walk(str(dir_path)):
+                                for f in files:
+                                    p = Path(root) / f
+                                    try:
+                                        rel = p.resolve().relative_to(watcher_self.root_dir)
+                                        watcher_self._notify_change_debounced(str(rel))
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    else:
                         try:
                             rel = Path(event.src_path).resolve().relative_to(watcher_self.root_dir)
                             watcher_self._notify_change_debounced(str(rel))
@@ -190,7 +203,25 @@ class FileSystemWatcher:
                         pass
 
                 def on_moved(self, event):
-                    if not event.is_directory:
+                    if event.is_directory:
+                        try:
+                            rel_src = Path(event.src_path).resolve().relative_to(watcher_self.root_dir)
+                            watcher_self._notify_dir_delete(str(rel_src))
+                        except Exception:
+                            pass
+                        try:
+                            dir_path = Path(event.dest_path).resolve()
+                            for root, _, files in os.walk(str(dir_path)):
+                                for f in files:
+                                    p = Path(root) / f
+                                    try:
+                                        rel = p.resolve().relative_to(watcher_self.root_dir)
+                                        watcher_self._notify_change_debounced(str(rel))
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    else:
                         try:
                             rel_src = Path(event.src_path).resolve().relative_to(watcher_self.root_dir)
                             watcher_self._notify_delete(str(rel_src))

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 """
 DropFile version definition.
 """
@@ -6,8 +6,8 @@ DropFile version definition.
 import subprocess
 from pathlib import Path
 
-__version__ = "1.30.7"
-__build__ = "120"
+__version__ = "1.30.8"
+__build__ = "121"
 
 
 

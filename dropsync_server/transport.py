@@ -111,7 +111,7 @@ class DropSyncTransport:
                 host=self.config.listen_host,
                 port=self.config.listen_port,
                 ssl=ssl_ctx,
-                max_size=self.config.chunk_size + 65536,  # Allow chunk + header
+                max_size=max(64 * 1024 * 1024, self.config.chunk_size + 65536),  # Allow large manifests up to 64MB
                 ping_interval=30,
                 ping_timeout=60,
             )
@@ -174,8 +174,8 @@ class DropSyncTransport:
             async for raw_msg in ws:
                 await self._process_incoming_message(peer, raw_msg)
 
-        except websockets.exceptions.ConnectionClosed:
-            pass
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"[Transport] Inbound connection closed ({peer_id}): code={getattr(e, 'code', None)}, reason='{getattr(e, 'reason', None)}'")
         except Exception as e:
             print(f"[Transport] Inbound connection error ({peer_id}): {e}")
         finally:
@@ -209,7 +209,7 @@ class DropSyncTransport:
                 async with websockets.connect(
                     url,
                     ssl=ssl_ctx,
-                    max_size=self.config.chunk_size + 65536,
+                    max_size=max(64 * 1024 * 1024, self.config.chunk_size + 65536),
                     ping_interval=30,
                     ping_timeout=60,
                 ) as ws:
